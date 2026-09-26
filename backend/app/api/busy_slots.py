@@ -88,24 +88,26 @@ def _reschedule_affected_classes(
     Attempt to auto-reschedule all classes of `teacher` on `conflict_day`.
     Returns a dict with 'auto_rescheduled' and 'cancelled_classes' lists.
     """
-    from app.services.timetable_service import get_published_version, list_versions, create_draft
+    from app.services.timetable_service import get_published_version, list_versions, create_draft, get_version
     from app.scheduler.validator import validate_schedule
     from app.actions.suggestions import suggest_alternatives
-    from app.models.user import User as UserModel
+    from app.models.user import User as UserModel, RoleEnum
 
     # Get the admin user for version creation
-    admin_user = db.query(UserModel).filter(UserModel.role == "admin").first()
+    admin_user = db.query(UserModel).filter(UserModel.role == RoleEnum.ADMIN).first()
     if not admin_user:
         admin_user = db.query(UserModel).first()
     if not admin_user:
         return {"auto_rescheduled": [], "cancelled_classes": []}
 
-    # Load current schedule (published or latest)
-    version = get_published_version(db)
-    if not version:
-        versions = list_versions(db)
-        version = versions[0] if versions else None
-    if not version or not version.entries:
+    # Load current schedule (latest draft/version)
+    versions = list_versions(db)
+    if versions:
+        version = get_version(db, versions[0].id)
+    else:
+        version = None
+        
+    if not version or not getattr(version, 'entries', None):
         return {"auto_rescheduled": [], "cancelled_classes": []}
 
     schedule = [
@@ -117,7 +119,7 @@ def _reschedule_affected_classes(
         }
         for e in version.entries
     ]
-
+    
     # Find affected entries
     affected = [e for e in schedule if e.get("teacher") == teacher and _entry_conflicts_busy(e, conflict_day)]
     if not affected:

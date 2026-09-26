@@ -193,6 +193,14 @@ a { color: inherit; text-decoration: none; }
 .form-control:focus { outline: none; border-color: var(--clr-primary); box-shadow: 0 0 0 3px var(--clr-primary-10); }
 select.form-control { cursor: pointer; }
 
+/* ── Form Utility Classes ────────────────────────────────── */
+.responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--sp-3);
+}
+
+
 /* ── Input group ─────────────────────────────────────────── */
 .input-group { position: relative; display: flex; align-items: center; }
 .input-group .input-icon {
@@ -652,16 +660,27 @@ select.form-control { cursor: pointer; }
   .public-hero h1 { font-size: var(--fs-2xl); }
   .class-detail { grid-template-columns: 1fr; }
   .filter-bar { padding: var(--sp-2) var(--sp-3); }
-  .action-panel { display: none; }
+  .action-panel { 
+    display: flex;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .action-panel::-webkit-scrollbar { display: none; }
 }
+
+.mobile-nav { display: none; }
 
 /* Mobile bottom sheet */
 @media (max-width: 768px) {
+  .work-area { padding-bottom: 60px; }
   .mobile-nav {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--clr-bg-2); border-top: 1px solid var(--clr-border);
     display: flex; justify-content: space-around; padding: var(--sp-2) 0;
     z-index: 50;
+    padding-bottom: env(safe-area-inset-bottom, 8px);
   }
   .mobile-nav-item {
     display: flex; flex-direction: column; align-items: center; gap: 2px;

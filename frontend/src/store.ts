@@ -39,12 +39,16 @@ export const useAuthStore = create<AuthState>()(
 
 // ── Timetable workspace state ─────────────────────────────────────────────────
 
-import type { TimetableVersion, TimetableEntry, TimetableFilters, ParsedActionItem } from './types';
+import type { TimetableVersion, TimetableEntry, TimetableFilters, ParsedActionItem, CatalogTeacher, CatalogProgram, CatalogSubject } from './types';
+import { getCatalogTeachers, getCatalogPrograms, getCatalogSubjects } from './api';
 
 interface WorkspaceState {
   currentVersionId: number | null;
   entries: TimetableEntry[];
   versions: TimetableVersion[];
+  catalogTeachers: CatalogTeacher[];
+  catalogPrograms: CatalogProgram[];
+  catalogSubjects: CatalogSubject[];
   filters: TimetableFilters;
   density: 'comfortable' | 'compact';
   sidebarTab: 'dashboard' | 'versions' | 'validation' | 'publish';
@@ -58,12 +62,16 @@ interface WorkspaceState {
   setSidebarTab: (t: WorkspaceState['sidebarTab']) => void;
   setPendingChatQuery: (q: string | null) => void;
   setPendingDeterminateActions: (actions: ParsedActionItem[] | null) => void;
+  loadCatalog: () => Promise<void>;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   currentVersionId: null,
   entries: [],
   versions: [],
+  catalogTeachers: [],
+  catalogPrograms: [],
+  catalogSubjects: [],
   filters: { program: 'All', semester: 'All', teacher: '', subject: '', room: '', day: '', search: '' },
   density: 'comfortable',
   sidebarTab: 'dashboard',
@@ -77,4 +85,16 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   setSidebarTab: (sidebarTab) => set({ sidebarTab }),
   setPendingChatQuery: (q) => set({ pendingChatQuery: q }),
   setPendingDeterminateActions: (actions) => set({ pendingDeterminateActions: actions }),
+  loadCatalog: async () => {
+    try {
+      const [teachers, programs, subjects] = await Promise.all([
+        getCatalogTeachers(),
+        getCatalogPrograms(),
+        getCatalogSubjects()
+      ]);
+      set({ catalogTeachers: teachers, catalogPrograms: programs, catalogSubjects: subjects });
+    } catch (e) {
+      console.error('Failed to load catalog', e);
+    }
+  },
 }));

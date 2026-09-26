@@ -1,6 +1,7 @@
 import { Search } from 'lucide-react'
 import type { TimetableFilters } from '../../types'
-import { PROGRAMS, SEMESTERS, DAYS } from '../../types'
+import { SEMESTERS, DAYS } from '../../types'
+import { useWorkspaceStore } from '../../store'
 
 interface Props {
   filters: TimetableFilters
@@ -10,6 +11,10 @@ interface Props {
 }
 
 export default function FilterBar({ filters, onChange, density, onDensityChange }: Props) {
+  const { catalogPrograms, catalogTeachers, catalogSubjects } = useWorkspaceStore()
+  const PROGRAMS = Array.from(new Set(['All', ...catalogPrograms.map(p => p.name), 'B.Tech', 'M.Tech', 'M.Sc']))
+  const TEACHERS = Array.from(new Set(catalogTeachers.map(t => t.short_name)))
+
   return (
     <div className="filter-bar">
       <div className="input-group" style={{ flex: '1 1 180px', maxWidth: 280 }}>
@@ -39,10 +44,14 @@ export default function FilterBar({ filters, onChange, density, onDensityChange 
       <input
         className="filter-select"
         style={{ minWidth: 90 }}
+        list="filter-teachers"
         placeholder="Teacher…"
         value={filters.teacher}
         onChange={e => onChange({ teacher: e.target.value })}
       />
+      <datalist id="filter-teachers">
+        {TEACHERS.map(t => <option key={t} value={t} />)}
+      </datalist>
 
       <input
         className="filter-select"

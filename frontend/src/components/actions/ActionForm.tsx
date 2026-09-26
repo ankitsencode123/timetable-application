@@ -46,9 +46,7 @@ function violationMessage(v: Record<string, string>): string {
   return v.note ?? v.rule   // fall back to note or raw code
 }
 
-const TEACHERS = ['SK', 'SKS', 'SC', 'SCh', 'PB', 'PBn', 'RD', 'RM', 'VP']
 const ROOMS = ['R#205', 'R#207A', 'R#207B', 'R#208', 'R#209', 'R#303', 'R#403']
-const PROGRAMS = ['B.Tech', 'M.Tech', 'M.Sc']
 const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
 
 function TargetSelector({ entries, onSelect, label = 'Select Class', selected }: {
@@ -91,7 +89,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function ActionForm({ actionType, onClose }: Props) {
-  const { currentVersionId, entries, setCurrentVersion } = useWorkspaceStore()
+  const { currentVersionId, entries, setCurrentVersion, catalogTeachers, catalogPrograms, catalogSubjects } = useWorkspaceStore()
+  const TEACHERS = Array.from(new Set([...catalogTeachers.map(t => t.short_name), 'SK', 'SKS', 'SC', 'SCh', 'PB', 'PBn', 'RD', 'RM', 'VP']))
+  const PROGRAMS = Array.from(new Set([...catalogPrograms.map(p => p.name), 'B.Tech', 'M.Tech', 'M.Sc']))
+
   const [target, setTarget] = useState<TimetableEntry | null>(null)
   const [targetB, setTargetB] = useState<TimetableEntry | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
@@ -233,7 +234,7 @@ export default function ActionForm({ actionType, onClose }: Props) {
 
             {/* ADD_CLASS form */}
             {(actionType === 'ADD_CLASS' || actionType === 'REPLACE_CLASS') && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
+              <div className="responsive-grid">
                 <Field label="Program">
                   <select className="form-control" value={fields.program ?? ''} onChange={e => set('program', e.target.value)}>
                     <option value="">Select…</option>
@@ -265,10 +266,23 @@ export default function ActionForm({ actionType, onClose }: Props) {
                   <input className="form-control" type="time" value={fields.end_time ?? ''} onChange={e => set('end_time', e.target.value)} />
                 </Field>
                 <Field label="Subject Code">
-                  <input className="form-control" placeholder="e.g. cn" value={fields.subject_code ?? ''} onChange={e => set('subject_code', e.target.value)} />
+                  <input className="form-control" list="action-subject-codes" placeholder="e.g. cn" value={fields.subject_code ?? ''} onChange={e => {
+                    const val = e.target.value
+                    set('subject_code', val)
+                    if (!fields.subject_name) {
+                      const subj = catalogSubjects.find(s => s.code === val)
+                      if (subj) set('subject_name', subj.name)
+                    }
+                  }} />
+                  <datalist id="action-subject-codes">
+                    {catalogSubjects.map(s => <option key={s.id} value={s.code}>{s.name} ({s.program})</option>)}
+                  </datalist>
                 </Field>
                 <Field label="Subject Name">
-                  <input className="form-control" placeholder="e.g. Computer Networks" value={fields.subject_name ?? ''} onChange={e => set('subject_name', e.target.value)} />
+                  <input className="form-control" list="action-subject-names" placeholder="e.g. Computer Networks" value={fields.subject_name ?? ''} onChange={e => set('subject_name', e.target.value)} />
+                  <datalist id="action-subject-names">
+                    {Array.from(new Set(catalogSubjects.map(s => s.name))).map((n, i) => <option key={i} value={n} />)}
+                  </datalist>
                 </Field>
                 <Field label="Teacher">
                   <select className="form-control" value={fields.teacher ?? ''} onChange={e => set('teacher', e.target.value)}>
@@ -287,7 +301,7 @@ export default function ActionForm({ actionType, onClose }: Props) {
 
             {/* MOVE / CHANGE_TIME extra fields */}
             {(actionType === 'MOVE_CLASS' || actionType === 'CHANGE_TIME' || actionType === 'CHANGE_DAY') && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--sp-3)' }}>
+              <div className="responsive-grid">
                 {(actionType === 'MOVE_CLASS' || actionType === 'CHANGE_DAY') && (
                   <Field label="New Day">
                     <select className="form-control" value={fields.new_day ?? ''} onChange={e => set('new_day', e.target.value)}>

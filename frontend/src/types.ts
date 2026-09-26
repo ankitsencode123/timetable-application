@@ -139,6 +139,33 @@ export interface TimetableFilters {
   search: string;
 }
 
+export interface CatalogTeacher {
+  id: number;
+  short_name: string;
+  full_name: string;
+  subjects_csv: string;
+  is_internal: boolean;
+}
+
+export interface CatalogSubject {
+  id: number;
+  code: string;
+  name: string;
+  program: string;
+  semester: string;
+  entry_type: string;
+  weekly_hours: number;
+}
+
+export interface CatalogProgram {
+  id: number;
+  name: string;
+  semesters_count: number;
+  description: string;
+  is_active: boolean;
+}
+
+
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 export const PROGRAMS = ['All', 'B.Tech', 'M.Tech', 'M.Sc'] as const;
 export const SEMESTERS = ['All', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'] as const;

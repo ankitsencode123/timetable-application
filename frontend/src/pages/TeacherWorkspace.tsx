@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Calendar, Search, RefreshCw, Maximize2 } from 'lucide-react'
+import { Calendar, Search, RefreshCw, Maximize2, LayoutDashboard, History, ShieldCheck, Rocket } from 'lucide-react'
 import { useWorkspaceStore, useAuthStore } from '../store'
 import { getCurrentDraft, listVersions, getVersion } from '../api'
 import Sidebar from '../components/sidebar/Sidebar'
@@ -21,6 +21,7 @@ export default function TeacherWorkspace() {
   // Load initial draft + version list on mount
   useEffect(() => {
     async function init() {
+      useWorkspaceStore.getState().loadCatalog()
       try {
         const draft = await getCurrentDraft()
         const detail = await getVersion(draft.id)
@@ -57,7 +58,7 @@ export default function TeacherWorkspace() {
       <Sidebar />
 
       {/* Main area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+      <div className="work-area" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         {/* Top header */}
         <header className="app-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -144,6 +145,25 @@ export default function TeacherWorkspace() {
             <ChatPanel />
           </>
         )}
+      </div>
+
+      {/* Mobile Navigation */}
+      <div className="mobile-nav">
+        {[
+          { id: 'dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { id: 'versions', icon: <History size={20} />, label: 'Versions' },
+          { id: 'validation', icon: <ShieldCheck size={20} />, label: 'Validation' },
+          { id: 'publish', icon: <Rocket size={20} />, label: 'Publish' },
+        ].map(item => (
+          <button
+            key={item.id}
+            className={`mobile-nav-item ${sidebarTab === item.id ? 'active' : ''}`}
+            onClick={() => setSidebarTab(item.id as typeof sidebarTab)}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ))}
       </div>
     </div>
   )

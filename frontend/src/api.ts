@@ -5,6 +5,7 @@
 import type {
   TimetableEntry, TimetableVersion, VersionDetail,
   ValidationResult, ActionExecuteResponse, ActionChatResponse,
+  CatalogTeacher, CatalogSubject, CatalogProgram,
 } from './types';
 
 const envBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL;
@@ -224,6 +225,18 @@ export async function listTeacherEntries(): Promise<TimetableEntry[]> {
 }
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
+
+export async function getCatalogTeachers(): Promise<CatalogTeacher[]> {
+  return request<CatalogTeacher[]>('/catalog/teachers');
+}
+
+export async function getCatalogSubjects(): Promise<CatalogSubject[]> {
+  return request<CatalogSubject[]>('/catalog/subjects');
+}
+
+export async function getCatalogPrograms(): Promise<CatalogProgram[]> {
+  return request<CatalogProgram[]>('/catalog/programs');
+}
 
 export async function createCatalogBundle(payload: unknown): Promise<{ status: string; message: string }> {
   return request('/catalog/bundle', { method: 'POST', body: JSON.stringify(payload) });

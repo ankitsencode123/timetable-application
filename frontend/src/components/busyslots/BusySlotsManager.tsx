@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Loader2, Calendar, Clock, CheckCircle2, AlertTriangle, XCircle, ArrowRight } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
-import { getCurrentDraft, getVersion, listVersions } from '../../api'
+import { getCurrentDraft, getVersion, listVersions, req as request } from '../../api'
 
 interface BusySlot {
   id: number
@@ -42,24 +42,8 @@ interface CreateResult {
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-async function req(path: string, init: RequestInit = {}) {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
-  const csrf = match ? decodeURIComponent(match[1]) : null
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
-      ...(init.headers ?? {}),
-    },
-    credentials: 'include',
-  })
-  if (res.status === 204) return null
-  return res.json()
-}
-
 async function fetchTeachers(): Promise<{ short_name: string }[]> {
-  try { return await req('/catalog/teachers') } catch { return [] }
+  try { return await request('/catalog/teachers') } catch { return [] }
 }
 
 export default function BusySlotsManager() {
@@ -75,7 +59,7 @@ export default function BusySlotsManager() {
 
   async function load() {
     setLoading(true)
-    try { setSlots(await req('/busy-slots')) } catch { setSlots([]) }
+    try { setSlots(await request('/busy-slots')) } catch { setSlots([]) }
     setLoading(false)
   }
 
@@ -83,9 +67,9 @@ export default function BusySlotsManager() {
     load()
     Promise.all([
       fetchTeachers(),
-      req('/timetable/draft').catch(() => ({ entries: [] }))
-    ]).then(([catTs, draft]) => {
-      const ts = new Set(catTs.map((t: any) => t.short_name))
+      request('/timetable/draft').catch(() => ({ entries: [] }))
+    ]).then(([catTs, draft]: [any, any]) => {
+      const ts = new Set<string>(catTs.map((t: any) => t.short_name))
       if (draft && Array.isArray(draft.entries)) {
         draft.entries.forEach((e: any) => {
           if (e.teacher) ts.add(e.teacher)
@@ -106,7 +90,7 @@ export default function BusySlotsManager() {
       }
       if (form.scope === 'permanent') body.day_of_week = form.day_of_week
       else body.specific_date = form.specific_date
-      const result: CreateResult = await req('/busy-slots', { method: 'POST', body: JSON.stringify(body) })
+      const result: CreateResult = await request('/busy-slots', { method: 'POST', body: JSON.stringify(body) })
       setLastResult(result)
       if (result.auto_rescheduled && result.auto_rescheduled.length > 0) {
         try {
@@ -127,8 +111,12 @@ export default function BusySlotsManager() {
 
   async function remove(id: number) {
     if (!confirm('Remove this busy slot?')) return
-    await req(`/busy-slots/${id}`, { method: 'DELETE' })
-    setSlots(s => s.filter(x => x.id !== id))
+    try {
+      await request(`/busy-slots/${id}`, { method: 'DELETE' })
+      setSlots(s => s.filter(x => x.id !== id))
+    } catch (e: any) {
+      alert(`Delete failed: ${e.message}`)
+    }
   }
 
   return (
