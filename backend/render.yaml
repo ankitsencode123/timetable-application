@@ -7,7 +7,7 @@ services:
     plan: free
     envVars:
       - key: DATABASE_URL
-        value: postgresql://postgres:GnYbI1NcTi1HrKhI@db.cevdlzpgrplcczxlgjkw.supabase.co:5432/postgres
+        value: postgresql://postgres.cevdlzpgrplcczxlgjkw:GnYbI1NcTi1HrKhI@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: COOKIE_SECURE
