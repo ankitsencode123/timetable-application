@@ -59,6 +59,8 @@ def seed_all():
         seed_catalog_if_needed(db)
 
         print("=== Seeding timetable ===")
+        from app.services.auth_service import seed_admin_if_needed
+        seed_admin_if_needed(db)
         admin = db.query(User).filter(User.role == RoleEnum.ADMIN).first()
         if admin:
             seed_default_timetable_if_needed(db, admin.id)
