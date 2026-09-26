@@ -141,7 +141,7 @@ export default function PublicPage() {
 
       {/* AI Chat Drawer */}
       {chatOpen && (
-        <div style={{ position: 'fixed', bottom: 0, right: 0, width: isMobile ? '100%' : 400, height: isMobile ? '70vh' : '500px', background: 'var(--clr-bg-2)', borderTop: '1px solid var(--clr-border)', borderLeft: '1px solid var(--clr-border)', borderTopLeftRadius: isMobile ? 24 : 16, boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', zIndex: 100 }}>
+        <div style={{ position: 'fixed', bottom: 0, right: 0, width: isMobile ? '100%' : 550, height: isMobile ? '80vh' : '650px', background: 'var(--clr-bg-2)', borderTop: '1px solid var(--clr-border)', borderLeft: '1px solid var(--clr-border)', borderTopLeftRadius: isMobile ? 24 : 16, boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', zIndex: 100 }}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--clr-primary)' }}>
               <Bot size={16} /> Timetable Assistant
@@ -150,8 +150,8 @@ export default function PublicPage() {
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-3)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
             {messages.map((m, i) => (
-              <div key={i} className={`chat-msg ${m.role}`} style={{ maxWidth: '90%' }}>
-                <div style={{ wordBreak: 'break-word', whiteSpace: 'normal', fontSize: '13px' }}>
+              <div key={i} className={`chat-msg ${m.role}`} style={{ maxWidth: '95%' }}>
+                <div style={{ wordBreak: 'break-word', whiteSpace: 'normal', fontSize: '14.5px', lineHeight: '1.6' }}>
                   {m.role === 'assistant' ? (
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                   ) : (
@@ -162,10 +162,10 @@ export default function PublicPage() {
             ))}
             <div ref={chatEndRef} />
           </div>
-          <div style={{ padding: '10px var(--sp-3)', borderTop: '1px solid var(--clr-border)' }}>
-            <div className="chat-suggestions" style={{ marginBottom: 8, gap: 4 }}>
-              <button className="chat-suggestion" style={{ padding: '2px 8px', fontSize: 10 }} onClick={() => setInput('Where is DBMS?')}>Where is DBMS?</button>
-              <button className="chat-suggestion" style={{ padding: '2px 8px', fontSize: 10 }} onClick={() => setInput('What does B.Tech 5th have today?')}>What does B.Tech 5th have today?</button>
+          <div style={{ padding: '12px var(--sp-3)', borderTop: '1px solid var(--clr-border)' }}>
+            <div className="chat-suggestions" style={{ marginBottom: 10, gap: 6 }}>
+              <button className="chat-suggestion" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setInput('Where is DBMS?')}>Where is DBMS?</button>
+              <button className="chat-suggestion" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setInput('What does B.Tech 5th have today?')}>What does B.Tech 5th have today?</button>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
