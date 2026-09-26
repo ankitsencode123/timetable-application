@@ -60,5 +60,6 @@ app.include_router(api_router, prefix="/api")
 
 
 @app.get("/api/health")
+@app.head("/api/health")
 def health_check():
     return {"status": "ok", "version": "1.0.0"}
