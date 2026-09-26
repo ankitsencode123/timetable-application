@@ -398,6 +398,33 @@ select.form-control { cursor: pointer; }
   background: transparent; border: none;
   color: var(--clr-text-3); font-size: var(--fs-xs); text-align: center;
 }
+.chat-msg table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--sp-3) 0;
+  font-size: 13px;
+}
+.chat-msg th, .chat-msg td {
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid var(--clr-border);
+  background: var(--clr-bg-2);
+}
+.chat-msg th {
+  background: var(--clr-bg-3);
+  font-weight: 600;
+  color: var(--clr-text-2);
+  white-space: nowrap;
+}
+.chat-msg td {
+  white-space: nowrap;
+}
+.chat-msg td:nth-child(3) {
+  white-space: normal; /* Allow subject name to wrap if needed */
+}
+.chat-msg table-wrapper {
+  overflow-x: auto;
+}
 .chat-input-area {
   padding: 10px var(--sp-4) 12px;
   border-top: 1px solid var(--clr-border);
