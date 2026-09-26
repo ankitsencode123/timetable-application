@@ -9,7 +9,8 @@ import FilterBar from '../components/filters/FilterBar'
 import TimetableGrid from '../components/timetable/TimetableGrid'
 import ClassDetailModal from '../components/timetable/ClassDetailModal'
 
-function fmtDate(s: string) {
+function fmtDate(s?: string | null) {
+  if (!s) return 'Recently';
   return new Date(s).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 

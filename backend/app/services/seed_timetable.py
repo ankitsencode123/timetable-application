@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.timetable import TimetableVersion, VersionStatus
@@ -89,6 +90,7 @@ def seed_default_timetable_if_needed(db: Session, admin_user_id: int) -> None:
     version = TimetableVersion(
         created_by=admin_user_id,
         status=VersionStatus.PUBLISHED,
+        published_at=datetime.now(timezone.utc),
         change_summary="Initial default timetable (seeded on first boot)",
     )
     db.add(version)
