@@ -10,14 +10,17 @@ from typing import Any
 import uuid
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
-# Fix passlib bug with bcrypt >= 4.0 (missing __about__)
-import bcrypt
-if not hasattr(bcrypt, "__about__"):
+# ── Passlib/bcrypt compatibility fix ──────────────────────────────────────────
+# bcrypt >= 4.0 removed __about__; passlib still tries to read it at import.
+# Patch MUST happen before `from passlib.context import CryptContext`.
+import bcrypt as _bcrypt_mod
+if not hasattr(_bcrypt_mod, "__about__"):
     class _BcryptAbout:
-        __version__ = getattr(bcrypt, "__version__", "4.0.0")
-    bcrypt.__about__ = _BcryptAbout
+        __version__ = getattr(_bcrypt_mod, "__version__", "4.0.0")
+    _bcrypt_mod.__about__ = _BcryptAbout
+
+from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
