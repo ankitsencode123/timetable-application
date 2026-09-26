@@ -22,11 +22,14 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ── Passwords ──────────────────────────────────────────────────────────────────
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    # bcrypt limits passwords to 72 bytes. Truncate to avoid ValueError
+    safe_plain = plain[:72]
+    return _pwd_context.hash(safe_plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    safe_plain = plain[:72]
+    return _pwd_context.verify(safe_plain, hashed)
 
 
 # ── JWT ────────────────────────────────────────────────────────────────────────
