@@ -12,6 +12,13 @@ import uuid
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+# Fix passlib bug with bcrypt >= 4.0 (missing __about__)
+import bcrypt
+if not hasattr(bcrypt, "__about__"):
+    class _BcryptAbout:
+        __version__ = getattr(bcrypt, "__version__", "4.0.0")
+    bcrypt.__about__ = _BcryptAbout
+
 from app.core.config import get_settings
 
 settings = get_settings()
