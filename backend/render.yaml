@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: chronosync-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql://postgres:GnYbI1NcTi1HrKhI@db.cevdlzpgrplcczxlgjkw.supabase.co:5432/postgres
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: "none"
+      - key: CORS_ORIGINS
+        value: "https://YOUR_VERCEL_FRONTEND_URL"
+      - key: ADMIN_EMAIL
+        value: admin@college.edu
+      - key: ADMIN_PASSWORD
+        value: Admin@1234
+      - key: ADMIN_FULL_NAME
+        value: Administrator
+      - key: DEMO_TEACHER_PASSWORD
+        value: Teacher@1234
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b

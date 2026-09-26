@@ -1,0 +1,32 @@
+# Python / Backend
+backend/venv/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/**/__pycache__/
+backend/*.db
+backend/dev.db
+backend/timetable.db
+backend/.env
+backend/.pytest_cache/
+backend/alembic/__pycache__/
+
+# Scratch / debug files
+backend/test_*.py
+backend/tmp_*.py
+backend/test_*.txt
+backend/test_generate.txt
+backend/seed_teachers.py
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/tsconfig.tsbuildinfo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
