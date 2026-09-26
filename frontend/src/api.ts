@@ -7,7 +7,8 @@ import type {
   ValidationResult, ActionExecuteResponse, ActionChatResponse,
 } from './types';
 
-const BASE = '/api';
+const envBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+const BASE = envBaseUrl ? `${envBaseUrl.replace(/\/+$/, '')}/api` : '/api';
 
 // ── CSRF helper ──────────────────────────────────────────────────────────────
 // The server sets a readable `csrf_token` cookie (NOT httponly).
