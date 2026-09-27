@@ -58,7 +58,7 @@ Ensure you have the following installed:
 
 ## Deployment
 
-ChronoSync is optimized for split-stack deployment:
+Timely is optimized for split-stack deployment:
 - **Frontend**: Hosted on platforms like Vercel.
 - **Backend**: Hosted on Render or similar platforms.
 
