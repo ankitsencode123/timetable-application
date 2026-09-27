@@ -9,6 +9,8 @@ import type { User } from './types';
 interface AuthState {
   user: User | null;
   isLoggedIn: boolean;
+  csrfToken: string | null;
+  setCsrfToken: (t: string) => void;
   login: (user: User) => void;
   updateUser: (partial: Partial<User>) => void;
   logout: () => void;
@@ -19,6 +21,8 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       isLoggedIn: false,
+      csrfToken: null,
+      setCsrfToken: (csrfToken) => set({ csrfToken }),
       login: (user) => {
         set({ user, isLoggedIn: true });
       },
@@ -26,13 +30,13 @@ export const useAuthStore = create<AuthState>()(
         set(s => ({ user: s.user ? { ...s.user, ...partial } : s.user }));
       },
       logout: () => {
-        set({ user: null, isLoggedIn: false });
+        set({ user: null, isLoggedIn: false, csrfToken: null });
       },
     }),
     {
       name: 'auth-user',
-      // Only persist user info, never tokens
-      partialize: (s) => ({ user: s.user, isLoggedIn: s.isLoggedIn }),
+      // Only persist user info and non-sensitive CSRF (which isn't a direct sec threat on client)
+      partialize: (s) => ({ user: s.user, isLoggedIn: s.isLoggedIn, csrfToken: s.csrfToken }),
     }
   )
 );

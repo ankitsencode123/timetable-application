@@ -733,11 +733,12 @@ select.form-control, select.input { cursor: pointer; }
   .class-detail { grid-template-columns: 1fr; }
   .filter-bar { padding: var(--sp-2) var(--sp-3); }
   .action-panel {
-    display: flex; overflow-x: auto;
-    flex-wrap: nowrap; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding-bottom: 8px;
   }
-  .action-panel::-webkit-scrollbar { display: none; }
+  .header-search { display: none; }
 }
 
 .mobile-nav { display: none; }

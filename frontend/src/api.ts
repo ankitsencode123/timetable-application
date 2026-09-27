@@ -16,6 +16,9 @@ const BASE = envBaseUrl ? `${envBaseUrl.replace(/\/+$/, '')}/api` : '/api';
 // We read it and send it as the X-CSRF-Token header on mutations.
 
 function getCsrfToken(): string | null {
+  const localCsrf = localStorage.getItem('csrf_token');
+  if (localCsrf) return localCsrf;
+  
   const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 }
@@ -76,15 +79,20 @@ export async function login(form: LoginForm): Promise<AuthResponse> {
     err.status = res.status;
     throw err;
   }
-  return res.json();
+  const data = await res.json();
+  if (data.csrf_token) localStorage.setItem('csrf_token', data.csrf_token);
+  return data;
 }
 
 export async function logout(): Promise<void> {
   await request('/auth/logout', { method: 'POST' });
+  localStorage.removeItem('csrf_token');
 }
 
 export async function refreshSession(): Promise<AuthResponse> {
-  return request<AuthResponse>('/auth/refresh', { method: 'POST' });
+  const data = await request<AuthResponse>('/auth/refresh', { method: 'POST' });
+  if (data.csrf_token) localStorage.setItem('csrf_token', data.csrf_token);
+  return data;
 }
 
 export async function getMe() {
