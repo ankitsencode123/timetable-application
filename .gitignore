@@ -30,3 +30,5 @@ frontend/tsconfig.tsbuildinfo
 .Spotlight-V100
 .Trashes
 Thumbs.db
+*.log
+code_good_contents*.txt

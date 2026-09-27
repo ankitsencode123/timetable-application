@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Calendar, Search, RefreshCw, Maximize2, LayoutDashboard, History, ShieldCheck, Rocket } from 'lucide-react'
+import { RefreshCw, Search, LayoutDashboard, History, ShieldCheck, Rocket, Calendar } from 'lucide-react'
 import { useWorkspaceStore, useAuthStore } from '../store'
 import { getCurrentDraft, listVersions, getVersion } from '../api'
 import Sidebar from '../components/sidebar/Sidebar'
@@ -18,7 +18,6 @@ export default function TeacherWorkspace() {
   } = useWorkspaceStore()
   const user = useAuthStore((s) => s.user)
 
-  // Load initial draft + version list on mount
   useEffect(() => {
     async function init() {
       useWorkspaceStore.getState().loadCatalog()
@@ -53,25 +52,17 @@ export default function TeacherWorkspace() {
   }
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      {/* Sidebar */}
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--paper)' }}>
       <Sidebar />
 
-      {/* Main area */}
       <div className="work-area" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        {/* Top header */}
+        {/* Header */}
         <header className="app-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Calendar size={20} style={{ color: 'var(--clr-primary)' }} />
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 'var(--fs-md)', background: 'linear-gradient(135deg, var(--clr-primary), var(--clr-purple))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                ChronoSync — Teacher Workspace
-              </div>
-              {currentVersionId && (
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)', marginTop: 1 }}>
-                  Editing Version #{currentVersionId}
-                </div>
-              )}
+          <div className="header-logo">
+            <div className="header-logo-box">CT</div>
+            <div className="header-logo-text">
+              <div className="name">Courselab</div>
+              <div className="sub">Timetable Studio</div>
             </div>
           </div>
           <div className="header-actions">
@@ -79,7 +70,7 @@ export default function TeacherWorkspace() {
               <RefreshCw size={13} />
             </button>
             <div className="header-search">
-              <Search size={13} style={{ color: 'var(--clr-text-3)', flexShrink: 0 }} />
+              <Search size={13} style={{ color: 'var(--ink-soft)', flexShrink: 0 }} />
               <input
                 placeholder="Search timetable…"
                 value={filters.search}
@@ -90,17 +81,13 @@ export default function TeacherWorkspace() {
           </div>
         </header>
 
-        {/* If sidebar tab is not dashboard, show that panel full-width */}
         {sidebarTab !== 'dashboard' ? (
           <div style={{ flex: 1, overflow: 'auto' }}>
             {renderPanel()}
           </div>
         ) : (
           <>
-            {/* Action buttons */}
             <ActionPanel />
-
-            {/* Filters */}
             <FilterBar
               filters={filters}
               onChange={setFilters}
@@ -108,32 +95,30 @@ export default function TeacherWorkspace() {
               onDensityChange={setDensity}
             />
 
-            {/* Timetable — fills remaining space */}
             <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '0 var(--sp-4) var(--sp-2)', minHeight: 0 }}>
               {/* Version info bar */}
               {currentVersionId ? (
-                <div style={{ padding: '6px 0', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <div style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span className="badge badge-yellow">Draft</span>
-                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)' }}>Version #{currentVersionId}</span>
-                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)' }}>·</span>
-                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)' }}>{entries.length} entries</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>Version #{currentVersionId}</span>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--line)' }}>·</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>{entries.length} entries</span>
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ marginLeft: 'auto' }}
                     onClick={() => setSidebarTab('validation')}
                   >
-                    <Maximize2 size={11} /> Validate
+                    Validate
                   </button>
                   <button className="btn btn-success btn-sm" onClick={() => setSidebarTab('publish')}>
                     Publish →
                   </button>
                 </div>
               ) : (
-                <div style={{ padding: '8px 0' }}>
-                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)' }}>No version loaded — generate or select a version from the sidebar.</span>
+                <div style={{ padding: '8px 0', flexShrink: 0 }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>No version loaded — generate or select a version.</span>
                 </div>
               )}
-
               <TimetableGrid
                 entries={entries}
                 filters={filters}
@@ -141,7 +126,6 @@ export default function TeacherWorkspace() {
               />
             </div>
 
-            {/* AI Chat panel at bottom */}
             <ChatPanel />
           </>
         )}
@@ -150,10 +134,10 @@ export default function TeacherWorkspace() {
       {/* Mobile Navigation */}
       <div className="mobile-nav">
         {[
-          { id: 'dashboard', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { id: 'versions', icon: <History size={20} />, label: 'Versions' },
-          { id: 'validation', icon: <ShieldCheck size={20} />, label: 'Validation' },
-          { id: 'publish', icon: <Rocket size={20} />, label: 'Publish' },
+          { id: 'dashboard',  icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { id: 'versions',   icon: <History size={20} />,         label: 'Versions' },
+          { id: 'validation', icon: <ShieldCheck size={20} />,     label: 'Validate' },
+          { id: 'publish',    icon: <Rocket size={20} />,          label: 'Publish' },
         ].map(item => (
           <button
             key={item.id}
@@ -173,21 +157,22 @@ function PublishPanel() {
   const { currentVersionId } = useWorkspaceStore()
   return (
     <div style={{ padding: 'var(--sp-5)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
-      <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 700 }}>Publish Timetable</h3>
+      <div>
+        <div className="mono-label" style={{ marginBottom: 4 }}>Workspace</div>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-xl)', fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em' }}>Publish timetable</h2>
+      </div>
       {currentVersionId ? (
         <>
           <div className="publish-banner">
-            <Calendar size={28} style={{ color: 'var(--clr-success)', flexShrink: 0 }} />
+            <Calendar size={24} style={{ color: 'var(--accent)', flexShrink: 0 }} />
             <div>
-              <div style={{ fontWeight: 700, fontSize: 'var(--fs-md)' }}>Version #{currentVersionId}</div>
-              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)', marginTop: 2 }}>
-                Run validation first to ensure all H1–H11 constraints pass before publishing.
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-md)', color: 'var(--ink)' }}>Version #{currentVersionId}</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--ink-soft)', marginTop: 2 }}>
+                Run validation first to ensure all H1–H11 constraints pass.
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 'var(--sp-3)' }}>
-            <VersionsList />
-          </div>
+          <VersionsList />
         </>
       ) : (
         <div className="empty-state">

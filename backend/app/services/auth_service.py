@@ -184,11 +184,29 @@ def create_user(
 
 
 def disable_user(db: Session, user_id: int) -> User:
+    from app.models.timetable import TimetableVersion, VersionStatus
+    from app.models.timetable_entry import TimetableEntry
+    from app.scheduler.validator import teacher_set
+    
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise ValueError("User not found")
     user.is_active = False
     revoke_all_user_tokens(db, user_id)
+    
+    # Remove all classes of that teacher from the active DRAFT routine
+    draft = db.query(TimetableVersion).filter(
+        TimetableVersion.status == VersionStatus.DRAFT
+    ).order_by(TimetableVersion.created_at.desc()).first()
+    
+    if draft:
+        entries = db.query(TimetableEntry).filter(TimetableEntry.version_id == draft.id).all()
+        for entry in entries:
+            teachers = teacher_set({"teacher": entry.teacher})
+            # Match by full_name, or if email was used
+            if user.full_name in teachers:
+                db.delete(entry)
+                
     db.commit()
     return user
 

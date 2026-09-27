@@ -156,7 +156,7 @@ def get_user_activity(
     logs = (
         db.query(AuditLog)
         .filter(AuditLog.user_id == user_id)
-        .order_by(AuditLog.created_at.desc())
+        .order_by(AuditLog.timestamp.desc())
         .limit(limit)
         .all()
     )
@@ -165,7 +165,7 @@ def get_user_activity(
             "id": log.id,
             "action": log.action,
             "details": log.details,
-            "created_at": log.created_at,
+            "created_at": log.timestamp,
         }
         for log in logs
     ]

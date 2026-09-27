@@ -86,8 +86,8 @@ function AlternativeCard({
   return (
     <div style={{
       alignSelf: 'flex-start',
-      background: 'var(--clr-bg-4)',
-      border: '1px solid var(--clr-border)',
+      background: 'var(--card-bg)',
+      border: '1px solid var(--line)',
       borderRadius: 'var(--radius-lg)',
       padding: '12px 14px',
       maxWidth: '92%',
@@ -97,8 +97,8 @@ function AlternativeCard({
     }}>
       {/* Error reason */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <AlertCircle size={14} style={{ color: 'var(--clr-error)', flexShrink: 0, marginTop: 2 }} />
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-error)', fontWeight: 600 }}>
+        <AlertCircle size={14} style={{ color: 'var(--violation)', flexShrink: 0, marginTop: 2 }} />
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--violation)', fontWeight: 600 }}>
           {failedResult.error || 'Action could not be applied due to a constraint conflict.'}
         </span>
       </div>
@@ -108,8 +108,8 @@ function AlternativeCard({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
           {rich.map((rs: any, i: number) => (
             <label key={i} style={{
-              background: 'var(--clr-primary-10)',
-              border: `1px solid ${selectedIndex === i ? 'var(--clr-primary)' : 'var(--clr-primary-20)'}`,
+              background: selectedIndex === i ? 'var(--accent-soft)' : 'color-mix(in oklab, var(--accent) 6%, transparent)',
+              border: `1px solid ${selectedIndex === i ? 'var(--accent)' : 'color-mix(in oklab, var(--accent) 20%, transparent)'}`,
               borderRadius: 'var(--radius)',
               padding: '10px 12px',
               display: 'flex',
@@ -119,13 +119,13 @@ function AlternativeCard({
             }}>
               <input type="radio" name="rich-suggestion" checked={selectedIndex === i} onChange={() => setSelectedIndex(i)} style={{ marginTop: 2 }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text)', fontWeight: 600 }}>
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--ink)', fontWeight: 600 }}>
                   Suggestion {i + 1}: {rs.title}
                 </span>
-                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-2)' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>
                   — {rs.description}
                 </span>
-                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-success)', fontWeight: 600 }}>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)', fontWeight: 600 }}>
                   {rs.status || 'Conflict-free and validated'}
                 </span>
               </div>
@@ -158,8 +158,8 @@ function AlternativeCard({
             <ChevronRight size={11} style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
           </button>
         ) : (
-          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)', fontWeight: 600, padding: '4px 8px' }}>
-            Nothing Available.
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', fontWeight: 600, padding: '4px 8px' }}>
+            Nothing available.
           </span>
         )}
 
@@ -340,9 +340,11 @@ export default function ChatPanel() {
       {/* Header */}
       <div className="chat-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Bot size={16} style={{ color: 'var(--clr-primary)' }} />
-          <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>AI Assistant</span>
-          {loading && <Loader2 size={14} style={{ color: 'var(--clr-primary)', animation: 'spin 0.7s linear infinite' }} />}
+          <div style={{ width: 22, height: 22, background: 'var(--accent-soft)', borderRadius: 4, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent)', fontWeight: 700, letterSpacing: '0.05em' }}>AI</span>
+          </div>
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--ink)' }}>AI Assistant</span>
+          {loading && <Loader2 size={14} style={{ color: 'var(--accent)', animation: 'spin 0.7s linear infinite' }} />}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button className="btn-icon" title="Clear" onClick={() => { setMessages([]); setAlternative(null) }}>
@@ -370,9 +372,9 @@ export default function ChatPanel() {
                 {msg.parsed_actions && msg.parsed_actions.length > 0 && (
                   <div style={{ marginTop: 8 }}>
                     {msg.parsed_actions.map((a, i) => (
-                      <div key={i} style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-2)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
-                        <span style={{ width: 18, height: 18, background: 'var(--clr-primary-20)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--clr-primary)', flexShrink: 0 }}>{i + 1}</span>
-                        <span style={{ fontWeight: 600, color: 'var(--clr-text)' }}>{a.action}</span>
+                      <div key={i} style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                        <span style={{ width: 18, height: 18, background: 'var(--accent-soft)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>{i + 1}</span>
+                        <span style={{ fontWeight: 600, color: 'var(--ink)' }}>{a.action}</span>
                       </div>
                     ))}
                   </div>
@@ -392,14 +394,14 @@ export default function ChatPanel() {
 
             {/* Confirm panel */}
             {confirm && !alternative && (
-              <div style={{ alignSelf: 'flex-start', background: 'var(--clr-bg-4)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius-lg)', padding: '12px 14px', maxWidth: '90%' }}>
-                <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--clr-warning)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <AlertCircle size={12} /> Preview — confirm to apply
+              <div style={{ alignSelf: 'flex-start', background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', padding: '12px 14px', maxWidth: '90%' }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--amber)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  <AlertCircle size={11} /> Preview — confirm to apply
                 </div>
                 <div className="confirm-actions-list" style={{ margin: 0, marginBottom: 10 }}>
                   {confirm.actions.map((a, i) => (
-                    <div key={i} className="confirm-action-item" style={{ color: 'var(--clr-text)' }}>
-                      <span style={{ fontWeight: 600, color: 'var(--clr-primary)', fontSize: 'var(--fs-xs)' }}>{a.action}</span>
+                    <div key={i} className="confirm-action-item" style={{ color: 'var(--ink)' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent)', fontSize: 'var(--fs-xs)' }}>{a.action}</span>
                     </div>
                   ))}
                 </div>

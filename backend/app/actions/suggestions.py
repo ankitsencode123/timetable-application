@@ -12,7 +12,7 @@ import json
 from typing import List, Dict, Any, Optional
 
 from app.scheduler.constraints import ROOM_FACILITIES, INTERNAL_TEACHERS, normalize_program
-from app.scheduler.validator import overlaps, to_minutes, validate_schedule, validate_schema, fetch_global_busy_days
+from app.scheduler.validator import overlaps, to_minutes, validate_schedule, validate_schema, fetch_global_busy_days, teacher_set
 
 
 STANDARD_SLOTS = [
@@ -261,8 +261,8 @@ def suggest_free_slots_for_teacher(
             for e in schedule:
                 if e.get("day") != day:
                     continue
-                teachers_in_entry = {t.strip() for t in str(e.get("teacher", "")).split(",") if t.strip()}
-                if teacher in teachers_in_entry:
+                teachers_in_entry = teacher_set(e)
+                if teacher_set({"teacher": teacher}) & teachers_in_entry:
                     try:
                         if overlaps(start, end, e["start"], e["end"]):
                             clash = True
@@ -545,9 +545,11 @@ def _universal_move_suggestion(
       3. All slots at every standard duration (120, 180, 90, 60, 150)
       4. Brute-force: all slots × all rooms for each duration
     """
-    _teacher = teacher or orig_target.get("teacher") if orig_target else entry.get("teacher")
+    _teacher = teacher or (orig_target.get("teacher") if orig_target else entry.get("teacher"))
     global_busy_map = fetch_global_busy_days()
-    teacher_global_busy_days = global_busy_map.get(_teacher, set()) if _teacher else set()
+    teacher_global_busy_days = set()
+    for t in teacher_set({"teacher": _teacher}):
+        teacher_global_busy_days.update(global_busy_map.get(t, set()))
     merged_busy_days = (busy_days or set()) | teacher_global_busy_days
 
     is_add = (action_type == "ADD_CLASS")
@@ -636,8 +638,10 @@ def suggest_alternatives(
     entry = mutated_entry if mutated_entry else (violation.get("a") or violation.get("entry") or {})
 
     global_busy_map = fetch_global_busy_days()
-    _primary_teacher = teacher or violation.get("teacher") or entry.get("teacher") or ""
-    teacher_global_busy_days = global_busy_map.get(_primary_teacher, set()) if _primary_teacher else set()
+    _raw_teacher = teacher or violation.get("teacher") or entry.get("teacher") or ""
+    teacher_global_busy_days = set()
+    for t in teacher_set({"teacher": _raw_teacher}):
+        teacher_global_busy_days.update(global_busy_map.get(t, set()))
     merged_busy_days = (busy_days or set()) | teacher_global_busy_days
 
     # ── Normalize entry so it always has all required schedule keys ──────

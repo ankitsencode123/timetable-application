@@ -1,16 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Calendar, Search, LogIn, Clock, Bot, Send, Loader2 } from 'lucide-react'
+import { Send, Loader2, X } from 'lucide-react'
 import { getPublicTimetable, getPublicMeta, publicChat } from '../api'
 import type { TimetableEntry, TimetableFilters } from '../types'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import FilterBar from '../components/filters/FilterBar'
 import TimetableGrid from '../components/timetable/TimetableGrid'
-import ClassDetailModal from '../components/timetable/ClassDetailModal'
 
 function fmtDate(s?: string | null) {
-  if (!s) return 'Recently';
+  if (!s) return 'Recently'
   return new Date(s).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
@@ -21,7 +20,7 @@ export default function PublicPage() {
   const [loading, setLoading] = useState(true)
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
   const [activeDay, setActiveDay] = useState('Monday')
-  
+
   // Public Chat state
   const [chatOpen, setChatOpen] = useState(false)
   const [input, setInput] = useState('')
@@ -68,65 +67,66 @@ export default function PublicPage() {
     }
   }
 
-  // Filter for grid
-  // In mobile mode, also filter by activeDay
   const mobileFilters = { ...filters, day: isMobile ? activeDay : filters.day }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--paper)' }}>
+      
       {/* Header */}
-      <header className="public-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, background: 'var(--clr-primary-20)', borderRadius: 'var(--radius)' }}>
-            <Calendar size={18} style={{ color: 'var(--clr-primary)' }} />
-          </div>
-          <div style={{ fontWeight: 800, fontSize: 'var(--fs-lg)', background: 'linear-gradient(135deg, var(--clr-primary), var(--clr-purple))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            ChronoSync
+      <header className="public-header" style={{ justifyContent: 'space-between' }}>
+        <div className="header-logo">
+          <div className="header-logo-box">CT</div>
+          <div className="header-logo-text">
+            <div className="name">Courselab</div>
+            <div className="sub">Timetable Studio</div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--sp-3)' }}>
-          <button className="btn btn-primary" onClick={() => setChatOpen(true)}>
-            <Bot size={14} /> Ask AI
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+          <button className="btn btn-primary btn-sm" onClick={() => setChatOpen(true)}>
+            Ask AI
           </button>
-          <Link to="/login" className="btn btn-ghost">
-            <LogIn size={14} /> Teacher Login
+          <Link to="/login" className="btn btn-ghost btn-sm">
+            Staff login
           </Link>
         </div>
       </header>
 
-      {/* Hero section */}
-      <div className="public-hero" style={{ flexShrink: 0 }}>
-        <h1>Academic Timetable</h1>
-        <p>Current published schedule for all programs</p>
-        
+      {/* Title + meta */}
+      <div style={{ padding: 'var(--sp-5) var(--sp-6) var(--sp-3)', borderBottom: '1px solid var(--line)', background: 'var(--paper)', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, flexShrink: 0 }}>
+        <div>
+          <div className="mono-label" style={{ marginBottom: 4 }}>Published schedule</div>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em' }}>
+            Class timetable
+          </h1>
+        </div>
         {loading ? (
-          <div style={{ marginTop: 'var(--sp-4)', display: 'flex', justifyContent: 'center' }}><Loader2 size={24} style={{ animation: 'spin 1s linear infinite', color: 'var(--clr-primary)' }} /></div>
+          <span className="spinner" />
         ) : meta ? (
-          <div style={{ marginTop: 'var(--sp-4)', display: 'inline-flex', alignItems: 'center', gap: 8, background: 'var(--clr-success-bg)', border: '1px solid rgba(16,185,129,0.3)', padding: '6px 12px', borderRadius: 999 }}>
-            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-success)', fontWeight: 600 }}>Active Version #{meta.version_id}</span>
-            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Clock size={11} /> Published {fmtDate(meta.published_at)}
-            </span>
-          </div>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-soft)', background: 'color-mix(in oklab, var(--ink) 5%, transparent)', borderRadius: 'var(--radius)', padding: '5px 10px' }}>
+            v{meta.version_id} · {fmtDate(meta.published_at)}
+          </span>
         ) : (
-          <div style={{ marginTop: 'var(--sp-4)', fontSize: 'var(--fs-sm)', color: 'var(--clr-warning)' }}>No published timetable currently available.</div>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--violation)' }}>No published timetable.</span>
         )}
       </div>
 
       <FilterBar filters={filters} onChange={f => setFilters(s => ({ ...s, ...f }))} />
 
-      {/* Main Grid / Mobile view */}
+      {/* Main Grid */}
       <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {!loading && entries.length > 0 && (
           <div style={{ flex: 1, padding: 'var(--sp-4)', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {isMobile && (
-              <div className="tabs" style={{ background: 'transparent', padding: 0, marginBottom: 'var(--sp-3)', overflowX: 'auto', gap: 8 }}>
+              <div style={{ display: 'flex', overflowX: 'auto', gap: 6, marginBottom: 'var(--sp-3)', paddingBottom: 4 }}>
                 {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map(d => (
-                  <button key={d} className={`tab ${activeDay === d ? 'active' : ''}`} style={{ flexShrink: 0, background: activeDay === d ? 'var(--clr-primary)' : 'var(--clr-bg-3)', color: activeDay === d ? '#fff' : 'inherit' }} onClick={() => setActiveDay(d)}>{d}</button>
+                  <button
+                    key={d}
+                    className={`day-btn ${activeDay === d ? 'active' : ''}`}
+                    onClick={() => setActiveDay(d)}
+                  >{d}</button>
                 ))}
               </div>
             )}
-            
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
               <TimetableGrid
                 entries={entries}
@@ -137,46 +137,73 @@ export default function PublicPage() {
             </div>
           </div>
         )}
+        {!loading && entries.length === 0 && (
+          <div className="empty-state" style={{ flex: 1 }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <h3>No timetable published yet</h3>
+            <p>Check back later for the latest schedule.</p>
+          </div>
+        )}
       </div>
 
       {/* AI Chat Drawer */}
       {chatOpen && (
-        <div style={{ position: 'fixed', bottom: 0, right: 0, width: isMobile ? '100%' : 550, height: isMobile ? '80vh' : '650px', background: 'var(--clr-bg-2)', borderTop: '1px solid var(--clr-border)', borderLeft: '1px solid var(--clr-border)', borderTopLeftRadius: isMobile ? 24 : 16, boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column', zIndex: 100 }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--clr-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--clr-primary)' }}>
-              <Bot size={16} /> Timetable Assistant
+        <div style={{
+          position: 'fixed', bottom: 0, right: 0,
+          width: isMobile ? '100%' : 520,
+          height: isMobile ? '80vh' : '600px',
+          background: 'var(--card-bg)',
+          borderTop: '1px solid var(--line)',
+          borderLeft: isMobile ? 'none' : '1px solid var(--line)',
+          borderTopLeftRadius: isMobile ? 20 : 12,
+          boxShadow: 'var(--shadow)',
+          display: 'flex', flexDirection: 'column', zIndex: 100,
+        }}>
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 24, height: 24, background: 'var(--accent-soft)', borderRadius: 6, display: 'grid', placeItems: 'center' }}>
+                <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>AI</span>
+              </div>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--ink)' }}>
+                Timetable Assistant
+              </span>
             </div>
-            <button className="btn-icon" onClick={() => setChatOpen(false)}>✕</button>
+            <button className="btn-icon" onClick={() => setChatOpen(false)}><X size={14} /></button>
           </div>
+
           <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-3)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
             {messages.map((m, i) => (
-              <div key={i} className={`chat-msg ${m.role}`} style={{ maxWidth: '95%' }}>
-                <div style={{ wordBreak: 'break-word', whiteSpace: 'normal', fontSize: '14.5px', lineHeight: '1.6' }}>
+              <div key={i} className={`chat-msg ${m.role}`}>
+                <div style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}>
                   {m.role === 'assistant' ? (
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                  ) : (
-                    m.content
-                  )}
+                  ) : m.content}
                 </div>
               </div>
             ))}
             <div ref={chatEndRef} />
           </div>
-          <div style={{ padding: '12px var(--sp-3)', borderTop: '1px solid var(--clr-border)' }}>
-            <div className="chat-suggestions" style={{ marginBottom: 10, gap: 6 }}>
-              <button className="chat-suggestion" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setInput('Where is DBMS?')}>Where is DBMS?</button>
-              <button className="chat-suggestion" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setInput('What does B.Tech 5th have today?')}>What does B.Tech 5th have today?</button>
+
+          <div style={{ padding: '10px var(--sp-3)', borderTop: '1px solid var(--line)' }}>
+            <div className="chat-suggestions" style={{ marginBottom: 8 }}>
+              <button className="chat-suggestion" onClick={() => setInput('Where is DBMS?')}>Where is DBMS?</button>
+              <button className="chat-suggestion" onClick={() => setInput('What does B.Tech 5th have today?')}>B.Tech 5th today?</button>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 className="form-control"
-                placeholder="Ask a question..."
+                placeholder="Ask about the timetable…"
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && sendChat()}
                 disabled={chatLoading}
               />
-              <button className="btn btn-primary" onClick={sendChat} disabled={!input.trim() || chatLoading} style={{ padding: '0 12px' }}>
+              <button
+                className="btn btn-primary"
+                onClick={sendChat}
+                disabled={!input.trim() || chatLoading}
+                style={{ padding: '0 12px', flexShrink: 0 }}
+              >
                 {chatLoading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={14} />}
               </button>
             </div>

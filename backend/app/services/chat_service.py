@@ -71,6 +71,9 @@ def handle_public_chat(message: str, db: Session | None = None) -> dict:
             except Exception:
                 pass
 
+        from app.scheduler.constraints import INTERNAL_TEACHERS
+        internal_teachers_str = ", ".join(sorted(INTERNAL_TEACHERS))
+
         timetable_context = live_context or EXISTING_TIMETABLE_MD
 
         system_prompt = f"""You are a helpful timetable assistant for a university.
@@ -82,6 +85,8 @@ TIMETABLE:
 
 FACULTY:
 {FACULTY_MASTER_MD}
+Note: The following short names correspond to INTERNAL teachers: {internal_teachers_str}. Any others are visiting/external.
+
 
 ROOMS:
 {ROOM_EXAMPLE_MD}

@@ -31,7 +31,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isJson = !init.headers?.toString().includes('urlencoded');
   const headers: HeadersInit = {
     ...(isJson ? { 'Content-Type': 'application/json' } : {}),
-    ...(init.body ? csrfHeaders() : {}),
+    ...(init.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init.method.toUpperCase()) ? csrfHeaders() : {}),
     ...(init.headers ?? {}),
   };
 

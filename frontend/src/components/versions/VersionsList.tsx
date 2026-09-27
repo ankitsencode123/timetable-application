@@ -6,10 +6,8 @@ import { useWorkspaceStore } from '../../store'
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
-    PUBLISHED: 'badge-green',
-    VALIDATED: 'badge-blue',
-    DRAFT: 'badge-yellow',
-    ARCHIVED: 'badge-gray',
+    PUBLISHED: 'badge-green', VALIDATED: 'badge-blue',
+    DRAFT: 'badge-yellow', ARCHIVED: 'badge-gray',
   }
   return <span className={`badge ${map[status] ?? 'badge-gray'}`}>{status}</span>
 }
@@ -18,27 +16,17 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-interface PublishDialogProps {
-  version: TimetableVersion
-  onClose: () => void
-  onPublished: () => void
-}
-
-function PublishDialog({ version, onClose, onPublished }: PublishDialogProps) {
+function PublishDialog({ version, onClose, onPublished }: {
+  version: TimetableVersion; onClose: () => void; onPublished: () => void
+}) {
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   async function doPublish() {
     setLoading(true); setErr(null)
-    try {
-      await publishVersion(version.id)
-      onPublished()
-      onClose()
-    } catch (e: unknown) {
-      setErr((e as Error).message)
-    } finally {
-      setLoading(false)
-    }
+    try { await publishVersion(version.id); onPublished(); onClose() }
+    catch (e: unknown) { setErr((e as Error).message) }
+    finally { setLoading(false) }
   }
 
   const hasViolations = (version.validation_result?.violation_count ?? 0) > 0
@@ -52,36 +40,32 @@ function PublishDialog({ version, onClose, onPublished }: PublishDialogProps) {
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)' }}>
-            After publishing, this timetable becomes visible to everyone in the public timetable area.
+          <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--ink-soft)' }}>
+            After publishing, this timetable becomes visible to everyone in the public area.
           </p>
-          <div style={{ background: 'var(--clr-bg-3)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
+          <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {isValidated
-                ? (!hasViolations ? <CheckCircle2 size={14} style={{ color: 'var(--clr-success)' }} /> : <span style={{ fontSize: 12 }}>⚠</span>)
+              {isValidated && !hasViolations
+                ? <CheckCircle2 size={14} style={{ color: 'var(--accent)' }} />
                 : <span style={{ fontSize: 12 }}>⚠</span>
               }
-              <span style={{ color: isValidated && !hasViolations ? 'var(--clr-success)' : 'var(--clr-warning)' }}>
-                {isValidated 
+              <span style={{ color: isValidated && !hasViolations ? 'var(--accent)' : 'var(--amber)' }}>
+                {isValidated
                   ? (!hasViolations ? 'All constraints satisfied' : `${version.validation_result?.violation_count} violation(s) detected`)
                   : 'Pending validation — please run Validate first'}
               </span>
             </div>
           </div>
           {hasViolations && (
-            <div style={{ background: 'var(--clr-error-bg)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', fontSize: 'var(--fs-xs)', color: 'var(--clr-error)' }}>
-              ⚠ This version has constraint violations. Publishing is blocked unless overridden by an Admin. Please fix violations first.
+            <div style={{ background: 'var(--violation-soft)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', fontSize: 'var(--fs-xs)', color: 'var(--violation)' }}>
+              This version has constraint violations. Publishing is blocked unless overridden by an Admin. Please fix violations first.
             </div>
           )}
-          {err && <div style={{ color: 'var(--clr-error)', fontSize: 'var(--fs-sm)' }}>{err}</div>}
+          {err && <div style={{ color: 'var(--violation)', fontSize: 'var(--fs-sm)' }}>{err}</div>}
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-success"
-            disabled={loading || hasViolations}
-            onClick={doPublish}
-          >
+          <button className="btn btn-success" disabled={loading} onClick={doPublish}>
             {loading ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Rocket size={14} />}
             Publish
           </button>
@@ -110,13 +94,13 @@ export default function VersionsList() {
     try {
       const v = await getVersion(id)
       setCurrentVersion(v.id, v.entries)
-      setSidebarTab('dashboard')  // switch back to timetable grid view
+      setSidebarTab('dashboard')
     } catch { /* ignore */ }
   }
 
   if (loading) return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--sp-8)' }}>
-      <Loader2 size={28} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--clr-primary)' }} />
+      <Loader2 size={24} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--accent)' }} />
     </div>
   )
 
@@ -130,8 +114,11 @@ export default function VersionsList() {
   return (
     <div style={{ padding: 'var(--sp-4)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-        <h3 style={{ fontSize: 'var(--fs-md)', fontWeight: 700 }}>Version History</h3>
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)' }}>{versions.length} version{versions.length !== 1 ? 's' : ''}</span>
+        <div>
+          <div className="mono-label" style={{ marginBottom: 2 }}>Workspace</div>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-xl)', fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em' }}>Version history</h2>
+        </div>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>{versions.length} version{versions.length !== 1 ? 's' : ''}</span>
       </div>
 
       {versions.map(v => {
@@ -142,14 +129,14 @@ export default function VersionsList() {
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>Version #{v.id}</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--ink)' }}>Version #{v.id}</span>
                   {statusBadge(v.status)}
                   {isCurrent && <span className="badge badge-blue">Current</span>}
                 </div>
-                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <Clock size={11} /> {fmtDate(v.created_at)}
                 </div>
-                {v.change_summary && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-2)', marginTop: 2 }}>{v.change_summary}</div>}
+                {v.change_summary && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', marginTop: 2 }}>{v.change_summary}</div>}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
@@ -157,11 +144,7 @@ export default function VersionsList() {
                 <Eye size={12} /> View
               </button>
               {!isPublished && (
-                <button
-                  className="btn btn-success btn-sm"
-                  onClick={() => setPublishTarget(v)}
-                  disabled={v.status === 'ARCHIVED'}
-                >
+                <button className="btn btn-success btn-sm" onClick={() => setPublishTarget(v)} disabled={v.status === 'ARCHIVED'}>
                   <Rocket size={12} /> Publish
                 </button>
               )}
