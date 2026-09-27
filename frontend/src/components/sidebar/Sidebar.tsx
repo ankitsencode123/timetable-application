@@ -22,7 +22,7 @@ export default function Sidebar() {
       <div style={{ padding: '0 var(--sp-4) var(--sp-4)', borderBottom: '1px solid var(--clr-border)', marginBottom: 'var(--sp-3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Calendar size={18} style={{ color: 'var(--clr-primary)' }} />
-          <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--clr-text)' }}>TimeRAG</span>
+          <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--clr-text)' }}>Timely</span>
         </div>
         {user && (
           <div style={{ marginTop: 10 }}>
