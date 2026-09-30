@@ -9,6 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 
+from datetime import datetime
+try:
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Asia/Kolkata")
+except ImportError:
+    import pytz
+    tz = pytz.timezone("Asia/Kolkata")
 
 def _build_schedule_context(db: Session, version_id: int | None = None) -> str:
     """Build a compact schedule context string for the LLM."""
@@ -75,10 +82,15 @@ def handle_public_chat(message: str, db: Session | None = None) -> dict:
         internal_teachers_str = ", ".join(sorted(INTERNAL_TEACHERS))
 
         timetable_context = live_context or EXISTING_TIMETABLE_MD
+        
+        current_date = datetime.now(tz).strftime('%A, %B %d, %Y')
 
         system_prompt = f"""You are a helpful timetable assistant for a university.
 Answer ONLY from the timetable data provided below. Be concise and precise.
 If you cannot find the information, say so clearly.
+
+CURRENT DATE:
+Today is {current_date}. Use this to understand questions about "today" or "tomorrow".
 
 TIMETABLE:
 {timetable_context}

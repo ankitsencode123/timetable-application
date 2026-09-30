@@ -1,0 +1,54 @@
+{
+  "success": false,
+  "results": [
+    {
+      "action_type": "CHANGE_ROOM",
+      "success": false,
+      "change_log": "",
+      "error": "Teacher SK is unavailable on Monday due to a busy slot.",
+      "violated_constraint": {
+        "rule": "H12_teacher_busy",
+        "teacher": "SK",
+        "day": "Monday",
+        "entry": {
+          "day": "Monday",
+          "program": "B.Tech",
+          "semester": "5th",
+          "start": "14:30",
+          "end": "17:30",
+          "subject": "cn-p",
+          "teacher": "SK",
+          "room": "R#208"
+        },
+        "note": "Teacher SK is unavailable on Monday due to a busy slot."
+      },
+      "suggestions": {
+        "rich_suggestions": [
+          {
+            "title": "Reschedule cn-p to Tuesday 14:30\u201317:30 \u2014 Class \u2014 Tuesday, 14:30\u201317:30",
+            "description": "Resolves all conflicts by safely relocating the class to a fully available slot.",
+            "status": "Conflict-free and validated",
+            "action": {
+              "action": "MOVE_CLASS",
+              "target": {
+                "day": "Monday",
+                "start_time": "14:30"
+              },
+              "new_day": "Tuesday",
+              "new_start_time": "14:30",
+              "new_end_time": "17:30"
+            }
+          }
+        ],
+        "note": "Constraint violated: H12_teacher_busy"
+      },
+      "before": null,
+      "after": null
+    }
+  ],
+  "new_version_id": 2,
+  "violations": [],
+  "schema_errors": [],
+  "change_log": "",
+  "partial_applied": true
+}

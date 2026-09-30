@@ -202,14 +202,14 @@ export async function validateVersion(id: number): Promise<ValidationResult & { 
 // ── Actions (authenticated) ───────────────────────────────────────────────────
 
 export async function executeActions(
-  actions: unknown[], version_id?: number | null, partial_ok = false,
+  actions: unknown[], version_id?: number | null, partial_ok = false, skip_suggestions = false
 ): Promise<ActionExecuteResponse> {
   // Independent actions should not be lost because an unrelated action fails.
   // The backend still validates the combined schedule before saving.
   partial_ok = partial_ok || actions.length > 1
   return request<ActionExecuteResponse>('/actions/execute', {
     method: 'POST',
-    body: JSON.stringify({ actions, version_id, partial_ok }),
+    body: JSON.stringify({ actions, version_id, partial_ok, skip_suggestions }),
   });
 }
 

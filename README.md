@@ -1,5 +1,6 @@
-# Timely
-Timely is a comprehensive timetable management application featuring a powerful scheduling engine and an AI-driven chat assistant. It is designed to automatically handle conflicts, manage active timetables, and apply scheduling constraints seamlessly.
+# ChronoSync
+
+ChronoSync is a comprehensive timetable management application featuring a powerful scheduling engine and an AI-driven chat assistant. It is designed to automatically handle conflicts, manage active timetables, and apply scheduling constraints seamlessly.
 
 ## Architecture
 
@@ -58,7 +59,7 @@ Ensure you have the following installed:
 
 ## Deployment
 
-Timely is optimized for split-stack deployment:
+ChronoSync is optimized for split-stack deployment:
 - **Frontend**: Hosted on platforms like Vercel.
 - **Backend**: Hosted on Render or similar platforms.
 

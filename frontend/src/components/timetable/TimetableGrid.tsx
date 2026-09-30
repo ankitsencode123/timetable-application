@@ -29,13 +29,14 @@ export default function TimetableGrid({ entries, filters, density = 'comfortable
   const filtered = useMemo(() => {
     const q = filters.search?.toLowerCase() ?? ''
     return entries.filter(e => {
-      if (filters.program && filters.program !== 'All' && e.program !== filters.program) return false
+      const sanitizedProgram = (e.program || '').replace(/\.$/, '')
+      if (filters.program && filters.program !== 'All' && sanitizedProgram !== filters.program) return false
       if (filters.semester && filters.semester !== 'All' && e.semester !== filters.semester) return false
       if (filters.teacher && !e.teacher.toLowerCase().includes(filters.teacher.toLowerCase())) return false
       if (filters.subject && !e.subject_name.toLowerCase().includes(filters.subject.toLowerCase()) && !e.subject_code.toLowerCase().includes(filters.subject.toLowerCase())) return false
       if (filters.room && !e.room.toLowerCase().includes(filters.room.toLowerCase())) return false
       if (filters.day && e.day !== filters.day) return false
-      if (q && !e.subject_name.toLowerCase().includes(q) && !e.subject_code.toLowerCase().includes(q) && !e.teacher.toLowerCase().includes(q) && !e.room.toLowerCase().includes(q) && !e.program.toLowerCase().includes(q)) return false
+      if (q && !e.subject_name.toLowerCase().includes(q) && !e.subject_code.toLowerCase().includes(q) && !e.teacher.toLowerCase().includes(q) && !e.room.toLowerCase().includes(q) && !sanitizedProgram.toLowerCase().includes(q)) return false
       return true
     })
   }, [entries, filters])

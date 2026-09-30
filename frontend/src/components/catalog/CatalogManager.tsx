@@ -1,27 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Loader2, Pencil, Check, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
+import { req } from '../../api'
 
 const PROGRAMS = ['B.Tech', 'M.Tech', 'M.Sc']
 const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
 const ENTRY_TYPES = ['Theory', 'Practical', 'Both']
-
-async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
-  const csrf = match ? decodeURIComponent(match[1]) : null
-  const res = await fetch(`/api${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
-      ...(init.headers ?? {}),
-    },
-    credentials: 'include',
-  })
-  if (res.status === 204) return undefined as T
-  if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.detail ?? `HTTP ${res.status}`) }
-  return res.json()
-}
 
 // ── Types ──────────────────────────────────────────
 interface Teacher { id: number; short_name: string; full_name: string; subjects_csv: string; is_internal: boolean; user_id: number; auto_email?: string; auto_password?: string }
@@ -451,24 +435,15 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
               }
             }
             try {
-              const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
-              const csrf = match ? decodeURIComponent(match[1]) : null
-              const res = await fetch('/api/actions/execute', {
+              const data = await req<any>('/actions/execute', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
-                },
-                credentials: 'include',
                 body: JSON.stringify({ actions: [action], version_id: versionId }),
               })
-              const data = await res.json()
               if (data.success) {
                 versionId = data.new_version_id || versionId
                 if (data.new_version_id) {
                   try {
-                    const vres = await fetch(`/api/timetable/versions/${data.new_version_id}`, { credentials: 'include' })
-                    const vdata = await vres.json()
+                    const vdata = await req<any>(`/versions/${data.new_version_id}`)
                     store.setCurrentVersion(vdata.id, vdata.entries)
                   } catch (_) {}
                 }

@@ -40,6 +40,7 @@ def _parse_timetable_md(md: str) -> list[dict]:
             continue
 
         day, program, semester, time_range, info = cells[0], cells[1], cells[2], cells[3], cells[4]
+        program = program.replace("B.Tech.", "B.Tech").replace("M.Tech.", "M.Tech").replace("M.Sc.", "M.Sc")
 
         # Parse time range HH:MM-HH:MM
         m = re.match(r"(\d{1,2}:\d{2})-(\d{1,2}:\d{2})", time_range.strip())

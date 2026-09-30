@@ -104,6 +104,7 @@ def execute_actions(
         user=user,
         version_id=req.version_id,
         partial_ok=req.partial_ok,
+        skip_suggestions=req.skip_suggestions,
     )
 
     result = engine.execute(parsed)

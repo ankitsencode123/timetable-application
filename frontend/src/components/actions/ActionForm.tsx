@@ -99,6 +99,7 @@ export default function ActionForm({ actionType, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ActionExecuteResponse | null>(null)
   const [step, setStep] = useState<'form' | 'confirm' | 'alternative' | 'done'>('form')
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [expanded, setExpanded] = useState(false)
 
@@ -145,7 +146,7 @@ export default function ActionForm({ actionType, onClose }: Props) {
   async function execute() {
     setLoading(true)
     try {
-      const res = await executeActions([buildPayload()], currentVersionId)
+      const res = await executeActions([buildPayload()], currentVersionId, false, true)
       setResult(res)
       if (res.success) {
         setStep('done')
@@ -156,6 +157,15 @@ export default function ActionForm({ actionType, onClose }: Props) {
       } else {
         // Always show the alternative step on failure so user sees context + suggestions
         setStep('alternative')
+        setSuggestionLoading(true)
+        try {
+          const resSugg = await executeActions([buildPayload()], currentVersionId, false, false)
+          setResult(resSugg)
+        } catch (e2) {
+          console.error(e2)
+        } finally {
+          setSuggestionLoading(false)
+        }
       }
     } catch (e: unknown) {
       setResult({ success: false, results: [{ action_type: actionType, success: false, error: (e as Error).message, change_log: '' }], new_version_id: null, violations: [], schema_errors: [], change_log: '', partial_applied: false })
@@ -378,7 +388,12 @@ export default function ActionForm({ actionType, onClose }: Props) {
               </div>
 
               {/* Suggested fix cards */}
-              {(s?.rich_suggestions?.length ?? 0) > 0 ? (
+              {suggestionLoading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 'var(--sp-5)', background: 'var(--clr-bg-3)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)' }}>
+                  <Loader2 size={32} style={{ animation: 'spin 1s linear infinite', color: 'var(--clr-primary)' }} />
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)', fontWeight: 500 }}>Searching for smart alternatives…</div>
+                </div>
+              ) : (s?.rich_suggestions?.length ?? 0) > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--clr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
                     <Lightbulb size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />Smart Suggestions

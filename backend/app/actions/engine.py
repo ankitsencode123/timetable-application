@@ -322,11 +322,13 @@ class ActionEngine:
         user: User,
         version_id: Optional[int] = None,
         partial_ok: bool = False,
+        skip_suggestions: bool = False,
     ):
         self.db = db
         self.user = user
         self.version_id = version_id
         self.partial_ok = partial_ok
+        self.skip_suggestions = skip_suggestions
 
     # ------------------------------------------------------------------
 
@@ -445,11 +447,14 @@ class ActionEngine:
                             mutated_entry = c
                             break
 
-                sugg = suggest_alternatives(
-                    current_schedule, action.action.value, first_v,
-                    teacher=teacher, need_lab=need_lab, orig_target=orig_target,
-                    mutated_entry=mutated_entry
-                )
+                sugg = {}
+                if not self.skip_suggestions:
+                    sugg = suggest_alternatives(
+                        current_schedule, action.action.value, first_v,
+                        teacher=teacher, need_lab=need_lab, orig_target=orig_target,
+                        mutated_entry=mutated_entry
+                    )
+                
                 fail_result = ActionResult(
                     action_type=action.action.value,
                     success=False,

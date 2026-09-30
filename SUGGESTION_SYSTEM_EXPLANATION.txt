@@ -1,0 +1,426 @@
+================================================================================
+          COMPREHENSIVE ARCHITECTURAL & TECHNICAL EXPLANATION OF THE
+                           TIMETABLE SUGGESTION SYSTEM
+================================================================================
+
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+ 1. Executive Summary & Core Philosophy
+ 2. System Architecture & Component Interactions
+ 3. The Hard-Constraint Validation Subsystem (H1–H12)
+ 4. Deep Dive: Suggestion Generation Engine (app/actions/suggestions.py)
+ 5. Detailed Step-by-Step Algorithmic Pipeline
+ 6. Rule-Specific Resolution Strategies (H1 through H12)
+ 7. Candidate Search Tiers, Scoring & Ranking Mathematics
+ 8. Fallback Protocols & The Ultimate Suggestion Guarantee
+ 9. Data Models, Schemas & Payload Structures
+10. Frontend UI Integration & One-Click Execution Workflow
+11. Edge Cases, Time Snapping & Concurrency Resilience
+================================================================================
+
+
+1. EXECUTIVE SUMMARY & CORE PHILOSOPHY
+--------------------------------------------------------------------------------
+The Timetable Suggestion System is an automated, mathematically validated decision-
+support engine built into the Timetable Application. Its fundamental goal is to 
+eliminate trial-and-error when a user (or AI Assistant) attempts a timetable 
+modification that fails one or more institutional hard constraints.
+
+Key Architectural Guarantees:
+  A. Zero Hallucinations: Suggestions are never generated using generative LLM 
+     guesses. Every proposed alternative is computed using exact algorithmic search 
+     and validated via deterministic constraint checkers.
+  B. 100% Pre-Validated Alternatives: Before any suggestion is presented to the 
+     user in `rich_suggestions`, the engine performs an in-memory simulation of 
+     the proposed change and runs full constraint validation across all rules 
+     (H1–H11/H12). As a result, clicking "Apply Suggestion" is mathematically 
+     guaranteed to succeed without producing any new violations.
+  C. Non-Disruptive Solutions: When resolving a conflict (such as a teacher clash 
+     or room double-booking), the engine prioritizes moving only the specific 
+     class causing or involved in the action rather than reshuffling unrelated 
+     classes across the institute.
+  D. Universal Guarantee: The engine features multi-tier fallback mechanisms 
+     that ensure at least one alternative slot is returned even when the schedule 
+     is heavily constrained or near 100% capacity.
+
+
+2. SYSTEM ARCHITECTURE & COMPONENT INTERACTIONS
+--------------------------------------------------------------------------------
+The Suggestion System does not operate in isolation; it is deeply embedded into 
+the transactional lifecycle of timetable mutations managed by the ActionEngine.
+
+Component Diagram & Information Flow:
+
+ +-----------------------+        +--------------------------+
+ |  User UI (Modal/Chat) |        |  NLP Parser / Button UI  |
+ +-----------+-----------+        +------------+-------------+
+             |                                 |
+             +----------------+----------------+
+                              |
+                              v
+             +----------------------------------+
+             |      POST /actions/execute       |
+             +----------------+-----------------+
+                              |
+                              v
+             +----------------------------------+
+             |       app.actions.engine         |
+             |         (ActionEngine)           |
+             +----------------+-----------------+
+                              |
+                     Simulates Action
+                              |
+                              v
+             +----------------------------------+
+             |     app.scheduler.validator      |
+             |       (validate_schedule)        |
+             +----------------+-----------------+
+                              |
+                Fails Constraint? (e.g. H1, H2)
+                              |
+                              v
+             +----------------------------------+
+             |    app.actions.suggestions       |
+             |     (suggest_alternatives)       |
+             +----------------+-----------------+
+                              |
+                  1. Normalizes Spec
+                  2. Searches Free Slots/Rooms
+                  3. Simulates & Checks H1-H11
+                  4. Ranks & Packages Actions
+                              |
+                              v
+             +----------------------------------+
+             |  ActionResultSchema.suggestions  |
+             |        (rich_suggestions)        |
+             +----------------+-----------------+
+                              |
+               Returned to Frontend UI Card
+                              |
+            User clicks "Apply Suggestion"
+                              |
+                              v
+             +----------------------------------+
+             | POST /actions/execute (Proposed) |
+             +----------------------------------+
+
+Key Modules Involved:
+  - `backend/app/actions/engine.py`: Single orchestration point (`ActionEngine`). 
+    Intercepts action execution failures and invokes the suggestion engine.
+  - `backend/app/actions/suggestions.py`: Primary suggestion engine. Contains slot 
+    finders, simulation helpers, constraint checkers, ranking logic, and payload builders.
+  - `backend/app/scheduler/validator.py`: The hard constraint validator 
+    (`validate_schedule` & `validate_schema`). Enforces H1–H11 rules.
+  - `backend/app/scheduler/constraints.py`: Master catalog tables (room 
+    facilities, authorised subject maps, internal teacher lists).
+  - `frontend/src/components/actions/ActionForm.tsx` & `RescheduleModal.tsx`: Render 
+    interactive suggestion cards and dispatch one-click fixes.
+
+
+3. THE HARD-CONSTRAINT VALIDATION SUBSYSTEM (H1–H12)
+--------------------------------------------------------------------------------
+The timetable engine defines 12 core hard constraints. A suggestion is valid 
+IF AND ONLY IF applying it introduces ZERO new violations compared to the baseline.
+
+Summary of Constraints Monitored:
+  - H1_semester_clash: Two classes for the same Program + Semester cannot overlap 
+    in time on the same day.
+  - H2_teacher_clash: A teacher cannot be scheduled for two overlapping classes 
+    simultaneously.
+  - H3_room_clash: A room cannot host two overlapping classes simultaneously.
+  - H4_room_not_lab: Practical/Lab sessions must be scheduled in rooms equipped 
+    with lab facilities (`lab=True` in `ROOM_FACILITIES`).
+  - H5_multiple_theory_same_day: A teacher cannot teach more than 1 theory class 
+    on the same day.
+  - H5_multiple_practical_same_day: A teacher cannot teach more than 1 practical 
+    session on the same day.
+  - H6_no_free_day / H6_teacher_free_day: Permanent internal faculty (SKS, RKP, 
+    SCh, NC, RD, PB, SK) MUST have at least 1 completely free working day per week.
+  - H7_teacher_not_authorised: Teachers can only teach subjects for which they 
+    are authorized.
+  - H8_wrong_weekly_hours: Total scheduled minutes for a subject must match the 
+    curriculum requirements.
+  - H9_wrong_practical_duration / H9_saturday_practical: Practical sessions must 
+    meet required duration (typically 3 hours) and cannot be scheduled on Saturdays.
+  - H10_missing_subject: Required curriculum subjects must be scheduled.
+  - H11_wrong_semester_subject: Subjects assigned to a timetable entry must 
+    belong to the authoritative curriculum catalogue for that Program + Semester.
+  - H12_teacher_busy: Classes cannot be scheduled during a teacher's marked 
+    busy slots (from `TeacherBusySlot` DB model).
+
+
+4. DEEP DIVE: SUGGESTION GENERATION ENGINE (app/actions/suggestions.py)
+--------------------------------------------------------------------------------
+When `ActionEngine.execute()` detects that a candidate action introduces a NEW 
+violation, it extracts the first violated constraint object and passes it to:
+
+    `suggest_alternatives(schedule, action_type, violation, ...)`
+
+Parameters:
+  - `schedule`: The baseline schedule array prior to the failed action.
+  - `action_type`: The string code of the requested action (e.g., "MOVE_CLASS", 
+    "ADD_CLASS", "EXTEND_CLASS", "CHANGE_ROOM").
+  - `violation`: The violation dictionary produced by `validate_schedule()`.
+  - `teacher`: Optional explicit teacher short code.
+  - `need_lab`: Boolean indicating if lab facilities are required.
+  - `orig_target`: Dictionary defining the original class being targeted.
+  - `mutated_entry`: The candidate dictionary that caused the failure.
+  - `busy_days`: Set of days on which the teacher is unavailable.
+
+Key Helper Functions in `suggestions.py`:
+  1. `_fingerprint(err: dict) -> str`: Serializes a violation dict into a JSON string 
+     so violations can be uniquely identified by rule, location, and entries involved.
+  2. `_count_new_violations(base, candidate) -> int`: Compares baseline violations 
+     with candidate violations using fingerprints to isolate newly introduced errors.
+  3. `_is_fully_valid(base, candidate) -> bool`: Returns `True` if `_count_new_violations` is 0.
+  4. `_is_physically_valid(base, candidate) -> bool`: Checks whether candidate 
+     introduces zero physical overlap errors (H1, H2, H3 only), used for forced fallbacks.
+  5. Simulation Functions (`_simulate_move`, `_simulate_room_change`, `_simulate_add`, 
+     `_simulate_remove`): Perform deep copies of the schedule and apply the action in-memory.
+
+
+5. DETAILED STEP-BY-STEP ALGORITHMIC PIPELINE
+--------------------------------------------------------------------------------
+When `suggest_alternatives()` is called, it follows a 9-step execution pipeline:
+
+Step 1: Normalization & Sanitization
+  - Extracts the entry dict from `mutated_entry` or `violation["a"]` / `violation["entry"]`.
+  - Standardizes keys: ensures `subject_code`, `subject_name`, `program`, `semester`, 
+    `type`, and `room` are present.
+  - Merges teacher-specific global busy slots (fetched via `fetch_global_busy_days()`) 
+    with any action-level busy day constraints.
+
+Step 2: Duration Analysis & Snapping
+  - Calculates the class duration in minutes: `duration = end_minutes - start_minutes`.
+  - If start/end are missing or invalid, defaults to 120 minutes (2 hours).
+  - Calls `_normalize_duration(duration)` to snap non-standard durations to the nearest 
+    standard duration (120, 180, 90, 60, or 150 minutes).
+
+Step 3: Action Type Pre-Routing
+  - Special handling for `EXTEND_CLASS`: Immediately evaluates every 30-minute endpoint 
+    extension on the class's current day up to 17:30. Runs full `_is_fully_valid()` on each. 
+    If valid extension endpoints are found, returns `EXTEND_CLASS` rich suggestions.
+
+Step 4: Rule-Specific Strategy Selection
+  - Evaluates `violation["rule"]` and dispatches to tailored search routines (see Section 6).
+
+Step 5: Candidate Slot & Room Enumeration
+  - Invokes `suggest_free_rooms()`, `suggest_free_slots_for_teacher()`, or 
+    `_all_slots_of_duration()` to generate potential `(day, start, end, room)` candidate tuples.
+
+Step 6: Exhaustive In-Memory Simulation & Full Constraint Validation
+  - For each candidate tuple, constructs a simulated schedule via `_simulate_move()` or `_simulate_add()`.
+  - Calls `_is_fully_valid(schedule, candidate_schedule)`.
+  - Rejects any candidate that causes ANY new H1–H12 violation.
+
+Step 7: Distance Scoring & Ranking
+  - Ranks all validated candidates using a mathematical distance tuple (see Section 7).
+  - Selects the top candidates (up to `MAX_RANKED_SUGGESTIONS = 3`).
+
+Step 8: Action Payload Construction
+  - Transforms validated candidate slots into concrete, executable action objects:
+    * `MOVE_CLASS` (with optional `new_room` override)
+    * `CHANGE_ROOM`
+    * `ADD_CLASS`
+    * `REMOVE_CLASS`
+    * `CHANGE_TEACHER`
+  - Attaches human-readable titles, descriptions, and status indicators.
+
+Step 9: Fallback & Guarantee Check
+  - If zero fully valid suggestions exist after rule-specific strategies, runs the Universal 
+    Fallback Search (`_universal_move_suggestion`).
+  - If still empty, activates the Physical-Only Viability Fallback (`_is_physically_valid`).
+  - If still empty, returns an Emergency Reschedule payload.
+
+
+6. RULE-SPECIFIC RESOLUTION STRATEGIES (H1 THROUGH H12)
+--------------------------------------------------------------------------------
+The engine employs dedicated resolution logic based on the specific rule code:
+
+- Rule H3_room_clash / H4_room_not_lab / H4_unknown_room:
+  1. Room-Only Fix: Calls `suggest_free_rooms(day, start, end, need_lab)`.
+     For each free room, simulates `_simulate_room_change()` or `_simulate_move()`.
+     If fully valid, creates a `CHANGE_ROOM` or `MOVE_CLASS` (with `new_room`) suggestion.
+  2. Slot + Room Fix: If room-only fails, invokes `_universal_move_suggestion()` to find 
+     a new time slot AND free room.
+
+- Rule H1_semester_clash:
+  1. Generates all possible time slots across working days for the class duration.
+  2. Filters out the exact conflicting original slot.
+  3. Validates each candidate slot (testing both the existing room and alternative free rooms).
+  4. Returns `MOVE_CLASS` or `ADD_CLASS` suggestions for the top 3 conflict-free slots.
+
+- Rule H2_teacher_clash:
+  1. Searches `suggest_free_slots_for_teacher()` to find slots where the teacher is 
+     not scheduled for any other class.
+  2. For each slot, verifies room availability and full constraint compliance.
+  3. Returns `MOVE_CLASS` suggestions moving the target class to teacher-free slots.
+
+- Rule H5_multiple_theory_same_day / H5_multiple_practical_same_day:
+  1. Identifies the conflict day where the teacher already has a class.
+  2. Filters candidate slots to exclude `conflict_day`.
+  3. Finds conflict-free slots on OTHER working days and proposes a `MOVE_CLASS`.
+
+- Rule H6_no_free_day / H6_teacher_free_day:
+  1. Identifies the days the teacher is currently working.
+  2. Searches for alternative slots that place the class onto an ALREADY working day 
+     (or relocate it away from the teacher's sole free day).
+  3. Proposes a `MOVE_CLASS` that keeps the teacher's total working days <= 5.
+
+- Rule H7_teacher_not_authorised / H7_unallocated_subject:
+  1. Scans the schedule catalog to identify all teachers who are authorized to teach 
+     the subject.
+  2. For each authorized teacher, simulates assigning them to the class.
+  3. If valid, generates a `CHANGE_TEACHER` suggestion.
+  4. If no authorized teacher is available, generates a `REMOVE_CLASS` suggestion.
+
+- Rule H8_wrong_weekly_hours / H9_wrong_practical_duration / H9_saturday_practical:
+  1. For Saturday practicals: Filters candidate slots to Monday–Friday only (`day != "Saturday"`).
+  2. For practical duration errors: Forces duration search to 180 minutes (3 hours).
+  3. Generates `MOVE_CLASS` suggestions pointing to compliant weekday slots.
+
+- Rule H11_wrong_semester_subject:
+  1. Checks `PROGRAMME_SUBJECT_MAP` to find the correct Program + Semester for the subject.
+  2. Primary Suggestion: Proposes a `REMOVE_CLASS` action to remove the invalid subject.
+  3. Secondary Suggestion: Proposes adding/moving the class under its correct Program + Semester.
+
+
+7. CANDIDATE SEARCH TIERS, SCORING & RANKING MATHEMATICS
+--------------------------------------------------------------------------------
+When multiple candidate slots pass full validation, the engine ranks them to present 
+the most convenient alternatives first.
+
+Ranking Criteria (Tuple Comparison):
+Each valid candidate slot is assigned a tuple `_rank`:
+
+  `_rank = (day_priority, time_distance, working_day_index, start_minutes)`
+
+Where:
+  1. `day_priority`: `0` if candidate `day == preferred_day` (same day as original request), `1` otherwise.
+     --> Prioritizes keeping the class on the requested day whenever possible.
+  2. `time_distance`: `abs(candidate_start_minutes - preferred_start_minutes)`.
+     --> Prioritizes time slots closest to the user's requested time.
+  3. `working_day_index`: Index of the day in `["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]`.
+     --> Chronological day ordering as a tie-breaker.
+  4. `start_minutes`: Start time in minutes from midnight (e.g. 10:00 = 600).
+     --> Earlier times preferred as a final tie-breaker.
+
+The candidate list is sorted in ascending order of `_rank`, and the top `MAX_RANKED_SUGGESTIONS` (3) 
+are returned.
+
+
+8. FALLBACK PROTOCOLS & THE ULTIMATE SUGGESTION GUARANTEE
+--------------------------------------------------------------------------------
+To prevent the engine from ever returning an empty suggestion set when an action fails, 
+a 4-stage fallback hierarchy is enforced in `suggest_alternatives()`:
+
+Tier 1: Rule-Specific Strategy Search
+  - Tries specific search logic (e.g. teacher-free slots, room changes).
+
+Tier 2: Universal Search (`_universal_move_suggestion`)
+  - Evaluates search sub-tiers sequentially:
+    * Sub-Tier 2A: Teacher-aware free slots at normalized duration.
+    * Sub-Tier 2B: All standard timetable slots at normalized duration.
+    * Sub-Tier 2C: All standard slots across ALL standard durations (120, 180, 90, 60, 150 min).
+    * Sub-Tier 2D: Brute-force: Every slot in search window (09:00 to 17:30) x Every room in catalog.
+
+Tier 3: Physical-Only Viability Fallback (`_is_physically_valid`)
+  - If strict H1–H11 validation fails for all slots (e.g., weekly teacher hour limits are 
+    exceeded across the board), the engine relaxes soft/administrative rules and evaluates 
+    ONLY physical overlaps (`H1_semester_clash`, `H2_teacher_clash`, `H3_room_clash`).
+  - Precomputes baseline physical fingerprints once to maintain performance.
+  - If a slot introduces zero physical clashes, returns a forced reschedule suggestion with 
+    a status note: "Guaranteed alternative slot (avoids physical overlaps but may trigger strict constraint warnings)."
+
+Tier 4: Emergency Capacity Reschedule
+  - If the timetable is at 100% mathematical capacity and zero physically free slots exist, 
+    the engine selects the first default slot (`Monday 10:00-12:00` in `Room 1`) and returns an 
+    Emergency Reschedule payload with status: "Forced alternative (schedule is at maximum capacity)."
+
+
+9. DATA MODELS, SCHEMAS & PAYLOAD STRUCTURES
+--------------------------------------------------------------------------------
+The suggestion engine returns a JSON structure inside `ActionResult.suggestions`:
+
+Example JSON Payload Returned by API:
+```json
+{
+  "rich_suggestions": [
+    {
+      "title": "Move Computer Networks to Tuesday 10:00–12:00 in R#207A — B.Tech 5th",
+      "description": "Resolves the class overlap by shifting Computer Networks to a fully validated time slot in R#207A.",
+      "status": "Conflict-free and validated",
+      "action": {
+        "action": "MOVE_CLASS",
+        "target": {
+          "day": "Monday",
+          "start_time": "10:00",
+          "end_time": "12:00",
+          "program": "B.Tech",
+          "semester": "5th",
+          "subject_code": "cn"
+        },
+        "new_day": "Tuesday",
+        "new_start_time": "10:00",
+        "new_end_time": "12:00",
+        "new_room": "R#207A"
+      }
+    }
+  ],
+  "note": "Semester clash — try a different day or time slot."
+}
+```
+
+Structure of a `rich_suggestions` Item:
+  - `title` (string): Summary string including action, subject, new day/time, room, and program/sem context.
+  - `description` (string): Explanation of why this suggestion resolves the conflict.
+  - `status` (string): Validation guarantee label (e.g., "Conflict-free and validated").
+  - `action` (dict): Complete, self-contained `ParsedAction` payload ready to be sent directly 
+    to `POST /actions/execute`.
+
+
+10. FRONTEND UI INTEGRATION & ONE-CLICK EXECUTION WORKFLOW
+--------------------------------------------------------------------------------
+The frontend interacts with suggestions across three key UI surfaces:
+
+1. Action Form Modal (`frontend/src/components/actions/ActionForm.tsx`)
+   - When a user submits an action form (e.g., Add Class or Move Class) and the backend 
+     returns `success: false`, `ActionForm` transitions to step `'alternative'`.
+   - It parses `result.results[0].suggestions.rich_suggestions` and renders interactive radio cards.
+   - User selects a suggestion card and clicks "Apply Suggestion".
+   - `applyAlternative()` takes `selectedSuggestion.action` and dispatches it directly to 
+     `executeActions([proposed], currentVersionId)`.
+
+2. Reschedule Modal (`frontend/src/components/timetable/RescheduleModal.tsx`)
+   - When a manual drag/reschedule attempt fails, `RescheduleModal` extracts `rich_suggestions`.
+   - Renders "Conflict-Free Alternatives" cards with direct "Apply" buttons.
+   - Clicking "Apply" invokes `applySuggestion(rs.action)`, which calls `/actions/execute` and 
+     instantly updates the timetable store on success.
+
+3. AI Chat Panel (`frontend/src/components/chat/ChatPanel.tsx`)
+   - When natural language commands fail validation in `/actions/chat`, the chat assistant response 
+     includes formatted suggestion summaries and attaches executable suggestion payloads to the 
+     message object, allowing users to apply proposed fixes directly from chat messages.
+
+
+11. EDGE CASES, TIME SNAPPING & CONCURRENCY RESILIENCE
+--------------------------------------------------------------------------------
+- Non-Standard Class Durations:
+  If an action requests an unusual duration (e.g. 75 minutes), `_normalize_duration()` snaps 
+  it to the nearest standard duration (90 min) before searching slots. This prevents candidate 
+  search from generating invalid fractional time blocks.
+
+- Dynamic Catalog Updates:
+  When administrators add new subjects, teachers, or programs via the admin API, `reload_catalog()` 
+  is triggered, dynamically updating `PROGRAMME_SUBJECT_MAP`, `INTERNAL_TEACHERS`, and `VALID_PROGRAMS` 
+  in memory so suggestion searches immediately recognize newly added entities.
+
+- Stale Suggestions / Concurrency:
+  If the timetable version updates between when a suggestion is displayed and when the user clicks 
+  "Apply Suggestion", `ActionEngine.execute()` re-validates the proposed action against the LATEST 
+  version. If new conflicts have arisen in the interim, execution gracefully fails and returns 
+  freshly recalculated suggestions.
+
+================================================================================
+                                END OF DOCUMENT
+================================================================================

@@ -57,6 +57,8 @@ class ActionExecuteRequest(BaseModel):
     # Independent actions are evaluated and committed separately by default.
     # Callers that require all-or-nothing behavior can explicitly pass False.
     partial_ok:  bool = True
+    skip_suggestions: bool = False
+
 
 
 class ActionExecuteResponse(BaseModel):
