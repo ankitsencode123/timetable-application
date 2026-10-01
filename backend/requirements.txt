@@ -16,4 +16,5 @@ psycopg2-binary>=2.9.0
 psycopg[binary]>=3.1.0
 gunicorn>=21.0.0
 email-validator>=2.0.0
+ortools>=9.6.0
 

@@ -45,6 +45,13 @@ def create_draft(
     
     db.commit()
     db.refresh(version)
+    # Invalidate the fast suggester's in-memory index so the next suggestion
+    # request rebuilds it from the new schedule.
+    try:
+        from app.scheduler.fast_suggester import invalidate_caches
+        invalidate_caches()
+    except Exception:
+        pass
     return version
 
 

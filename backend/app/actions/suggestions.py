@@ -14,6 +14,54 @@ from typing import List, Dict, Any, Optional
 from app.scheduler.constraints import ROOM_FACILITIES, INTERNAL_TEACHERS, normalize_program
 from app.scheduler.validator import overlaps, to_minutes, validate_schedule, validate_schema, fetch_global_busy_days, teacher_set
 
+# ---------------------------------------------------------------------------
+# Fast Suggester — bitmask Tier-1 + CP-SAT Tier-2 engine
+# Set USE_FAST_SUGGESTER = False to revert to the old brute-force engine.
+# ---------------------------------------------------------------------------
+USE_FAST_SUGGESTER = True
+
+try:
+    from app.scheduler import fast_suggester as _fast
+    _FAST_AVAILABLE = True
+except Exception:
+    _FAST_AVAILABLE = False
+
+
+def _fast_find_valid_slots(schedule, entry, free_slots, need_lab, orig_target, simulate_as_add, limit):
+    """Delegate to fast_suggester.find_valid_slots when available, else fall back."""
+    if USE_FAST_SUGGESTER and _FAST_AVAILABLE:
+        return _fast.find_valid_slots(
+            schedule, entry,
+            free_slots=free_slots,
+            need_lab=need_lab,
+            orig_target=orig_target,
+            simulate_as_add=simulate_as_add,
+            limit=limit,
+        )
+    return _find_valid_slots(schedule, entry, free_slots or [], need_lab, orig_target, simulate_as_add, limit)
+
+
+def _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, duration_minutes, busy_days):
+    """Delegate to fast_suggester.universal_move_suggestion when available, else fall back."""
+    if USE_FAST_SUGGESTER and _FAST_AVAILABLE:
+        return _fast.universal_move_suggestion(
+            schedule, entry, action_type, need_lab, orig_target, teacher, duration_minutes, busy_days=busy_days
+        )
+    return _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, duration_minutes, busy_days)
+
+
+def _fast_find_valid_room(schedule, entry, free_rooms, orig_target, simulate_as_move, simulate_as_add,
+                          target_day, target_start, target_end):
+    """Delegate to fast_suggester.find_valid_room when available, else fall back."""
+    if USE_FAST_SUGGESTER and _FAST_AVAILABLE:
+        return _fast.find_valid_room(
+            schedule, entry, free_rooms, orig_target=orig_target,
+            simulate_as_move=simulate_as_move, simulate_as_add=simulate_as_add,
+            target_day=target_day, target_start=target_start, target_end=target_end,
+        )
+    return _find_valid_room(schedule, entry, free_rooms, orig_target, simulate_as_move, simulate_as_add,
+                            target_day, target_start, target_end)
+
 
 STANDARD_SLOTS = [
     ("10:00", "12:00"),
@@ -789,7 +837,7 @@ def suggest_alternatives(
         )
 
         for valid_room in free_rooms[:3]:
-            is_valid = _find_valid_room(
+            is_valid = _fast_find_valid_room(
                 schedule, entry, [valid_room], orig_target=orig_target,
                 simulate_as_move=is_move_action and not is_add_action,
                 simulate_as_add=is_add_action,
@@ -812,7 +860,7 @@ def suggest_alternatives(
 
         # If room-only fix didn't work, also try moving to a different slot+room
         if not suggestions["rich_suggestions"]:
-            valid_slot = _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur, busy_days)
+            valid_slot = _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur, busy_days)
             if valid_slot:
                 subject_name = entry.get("subject_code") or entry.get("subject") or "Class"
                 if is_add_action:
@@ -876,13 +924,14 @@ def suggest_alternatives(
                     )
                 )
             ]
-            valid_slots = _find_valid_slots(
+            valid_slots = _fast_find_valid_slots(
                 schedule,
                 target_cand,
                 target_slots,
-                need_lab=need_lab,
-                orig_target=target_cand_orig,
-                simulate_as_add=(action_type == "ADD_CLASS"),
+                need_lab,
+                target_cand_orig,
+                (action_type == "ADD_CLASS"),
+                MAX_RANKED_SUGGESTIONS,
             )
             for valid_slot in valid_slots:
                 subject_name = target_cand.get("subject_code") or target_cand.get("subject") or "Class"
@@ -902,9 +951,9 @@ def suggest_alternatives(
         suggestions["free_slots"] = []
         suggestions["note"] = f"Free slots for teacher {_teacher}" if _teacher else "Available alternative slots"
 
-        valid_slots = _find_valid_slots(
-            schedule, entry, free_slots, need_lab=need_lab,
-            orig_target=orig_target, simulate_as_add=(action_type == "ADD_CLASS"),
+        valid_slots = _fast_find_valid_slots(
+            schedule, entry, free_slots, need_lab, orig_target,
+            (action_type == "ADD_CLASS"), MAX_RANKED_SUGGESTIONS,
         )
         for valid_slot in valid_slots:
                 subject_name = entry.get("subject_code") or entry.get("subject") or "Class"
@@ -935,9 +984,9 @@ def suggest_alternatives(
         if not other_day_slots:
             other_day_slots = [s for s in _all_slots_of_duration(dur) if s["day"] != conflict_day]
 
-        valid_slots = _find_valid_slots(
-            schedule, entry, other_day_slots, need_lab=need_lab,
-            orig_target=orig_target, simulate_as_add=is_add_action,
+        valid_slots = _fast_find_valid_slots(
+            schedule, entry, other_day_slots, need_lab, orig_target,
+            is_add_action, MAX_RANKED_SUGGESTIONS,
         )
         for valid_slot in valid_slots:
                 if is_add_action:
@@ -966,7 +1015,7 @@ def suggest_alternatives(
         # valid slot for 'entry' that leaves at least one day completely free.
         # Usually, putting 'entry' on an ALREADY busy day solves this.
         
-        valid_slots = _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, _teacher, dur, busy_days)
+        valid_slots = _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, _teacher, dur, busy_days)
         if valid_slots:
             sub = entry.get("subject_code") or entry.get("subject") or "class"
             if is_add_action:
@@ -982,7 +1031,7 @@ def suggest_alternatives(
         conflict_day = violation.get("day") or day
         suggestions["note"] = f"Teacher {_teacher} is busy on {conflict_day}. Finding a new slot."
         
-        valid_slots = _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, _teacher, dur, busy_days)
+        valid_slots = _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, _teacher, dur, busy_days)
         if valid_slots:
             sub = entry.get("subject_code") or entry.get("subject") or "class"
             if is_add_action:
@@ -1060,7 +1109,7 @@ def suggest_alternatives(
         subject_name = subject_code or "Class"
         suggestions["note"] = f"'{subject_code}' has wrong weekly hours. Expected {expected_min // 60}h, got {actual_min // 60}h."
         # We can suggest moving or removing to fix hours — best we can do is move to a free slot
-        valid_slot = _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur, busy_days)
+        valid_slot = _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur, busy_days)
         if valid_slot:
             if is_add_action:
                 proposed = _build_proposed_add_class(entry, valid_slot)
@@ -1081,10 +1130,11 @@ def suggest_alternatives(
             suggestions["note"] = "Practical sessions are not allowed on Saturdays."
             # Move to a weekday
             weekday_slots = [s for s in _all_slots_of_duration(dur) if s["day"] != "Saturday"]
-            valid_slot = _find_valid_slot(schedule, entry, weekday_slots, need_lab=True, orig_target=orig_target, simulate_as_add=is_add_action)
+            valid_slot = _fast_find_valid_slots(schedule, entry, weekday_slots, True, orig_target, is_add_action, 1)
+            valid_slot = valid_slot[0] if valid_slot else None
         else:
             suggestions["note"] = f"Practical '{subject_name}' has the wrong duration."
-            valid_slot = _universal_move_suggestion(schedule, entry, action_type, need_lab=True, orig_target=orig_target, teacher=teacher, duration_minutes=180)  # try 3h for practicals
+            valid_slot = _fast_universal_move_suggestion(schedule, entry, action_type, True, orig_target, teacher, 180, busy_days)  # try 3h for practicals
 
         if valid_slot:
             if is_add_action:
@@ -1103,7 +1153,7 @@ def suggest_alternatives(
     elif rule == "H10_missing_subject":
         subject_code = violation.get("subject_code") or ""
         suggestions["note"] = f"Required subject '{subject_code}' is not scheduled at all."
-        valid_slot = _universal_move_suggestion(schedule, entry, "ADD_CLASS", need_lab, None, teacher, dur)
+        valid_slot = _fast_universal_move_suggestion(schedule, entry, "ADD_CLASS", need_lab, None, teacher, dur, merged_busy_days)
         if valid_slot and entry:
             proposed = _build_proposed_add_class(entry, valid_slot)
             room_txt = f" in {valid_slot['room']}" if "room" in valid_slot else ""
@@ -1143,7 +1193,7 @@ def suggest_alternatives(
                         new_entry = copy.deepcopy(entry)
                         new_entry["program"] = correct_prog
                         new_entry["semester"] = correct_sem
-                        valid_slot = _universal_move_suggestion(schedule, new_entry, "ADD_CLASS", need_lab, None, teacher, dur)
+                        valid_slot = _fast_universal_move_suggestion(schedule, new_entry, "ADD_CLASS", need_lab, None, teacher, dur, merged_busy_days)
                         if valid_slot:
                             proposed_add = _build_proposed_add_class(new_entry, valid_slot)
                             _add_rich_suggestion(proposed_add, f"Re-add '{subject_name}' under {correct_prog} {correct_sem}", f"Moves this class to the correct program/semester combination in a conflict-free slot.")
@@ -1155,7 +1205,7 @@ def suggest_alternatives(
         suggestions["note"] = f"Constraint violated: {rule}"
         # Universal fallback: try to find a safe slot for any move-type action
         if is_slot_action:
-            valid_slot = _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur)
+            valid_slot = _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur, merged_busy_days)
             if valid_slot:
                 subject_name = entry.get("subject_code") or entry.get("subject") or "Class"
                 if is_add_action:
@@ -1167,7 +1217,7 @@ def suggest_alternatives(
 
     # ── FINAL FALLBACK: only add a fully validated slot ───────────────────────
     if not suggestions["rich_suggestions"]:
-        valid_slot = _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur)
+        valid_slot = _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, dur, merged_busy_days)
         if valid_slot:
             subject_name = entry.get("subject_code") or entry.get("subject") or "Class"
             if is_add_action:

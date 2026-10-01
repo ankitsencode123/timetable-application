@@ -35,6 +35,13 @@ async def lifespan(app: FastAPI):
         admin = db.query(User).filter(User.role == RoleEnum.ADMIN).first()
         if admin:
             seed_default_timetable_if_needed(db, admin.id)
+
+        # Warm up the fast suggester: pre-imports OR-Tools & primes busy-day cache.
+        try:
+            from app.scheduler.fast_suggester import warmup as _fast_warmup
+            _fast_warmup()
+        except Exception:
+            pass
     finally:
         db.close()
 
