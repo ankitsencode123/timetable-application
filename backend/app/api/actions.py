@@ -179,19 +179,30 @@ def chat_execute(
 
     # Build feedback message
     if result.success:
+        per_action_lines = []
+        for r in result.results:
+            per_action_lines.append(f"  ✓ {r.action_type}")
         execution_summary = (
-            f"✓ Applied successfully. New version #{result.new_version_id} created.\n"
-            + (result.change_log or "")
+            f"✓ All {len(result.results)} action(s) applied. New version #{result.new_version_id} created.\n"
+            + "\n".join(per_action_lines)
         )
     else:
-        failed = [r for r in result.results if not r.success]
-        error_lines = []
-        for r in failed:
-            error_lines.append(f"  • [{r.action_type}] {r.error or 'Unknown error'}")
-            if r.violated_constraint:
-                vc = r.violated_constraint
-                error_lines.append(f"    Violated: {vc.get('rule', 'constraint')} — {vc.get('message', '')}")
-        execution_summary = "⚠ Action failed:\n" + "\n".join(error_lines)
+        per_action_lines = []
+        for r in result.results:
+            if r.success:
+                per_action_lines.append(f"  ✓ {r.action_type}")
+            else:
+                error_detail = r.error or "Unknown error"
+                if r.violated_constraint:
+                    vc = r.violated_constraint
+                    error_detail += f" [{vc.get('rule', 'constraint')} — {vc.get('message', '')}]"
+                per_action_lines.append(f"  ✗ {r.action_type}: {error_detail}")
+        success_count = sum(1 for r in result.results if r.success)
+        fail_count = len(result.results) - success_count
+        execution_summary = (
+            f"⚠ {success_count} action(s) applied, {fail_count} failed:\n"
+            + "\n".join(per_action_lines)
+        )
 
     return ActionChatResponse(
         parsed_actions=actions_out,
@@ -224,6 +235,11 @@ def _build_interpretation(parsed: list) -> str:
     if not parsed:
         return "No actions parsed."
 
+    count = len(parsed)
+    header = (
+        f"Interpreted **{count} action{'s' if count > 1 else ''}** in your request:"
+    )
+
     lines = []
     for i, a in enumerate(parsed, 1):
         action_name = str(a.action).replace("_", " ").title()
@@ -233,14 +249,16 @@ def _build_interpretation(parsed: list) -> str:
         target = getattr(a, "target", None)
         if target:
             t = target.model_dump(exclude_none=True)
+            if "subject_code" in t or "subject_name" in t:
+                subj = t.get("subject_name") or t.get("subject_code", "")
+                detail_parts.append(f"**{subj}**")
             if "day" in t:
-                detail_parts.append(t["day"])
-            if "start_time" in t:
-                detail_parts.append(f"{t['start_time']}–{t.get('end_time', '?')}")
-            if "subject_code" in t:
-                detail_parts.append(f"[{t['subject_code']}]")
+                if "start_time" in t:
+                    detail_parts.append(f"{t['day']} {t['start_time']}–{t.get('end_time', '?')}")
+                else:
+                    detail_parts.append(t["day"])
             if "teacher" in t:
-                detail_parts.append(f"teacher={t['teacher']}")
+                detail_parts.append(f"teacher: {t['teacher']}")
             if "program" in t:
                 detail_parts.append(f"{t['program']} {t.get('semester', '')}")
 
@@ -257,22 +275,26 @@ def _build_interpretation(parsed: list) -> str:
         if new_start:
             dest_parts.append(f"{new_start}–{new_end or '?'}")
         if new_teacher:
-            dest_parts.append(f"teacher→{new_teacher}")
+            dest_parts.append(f"teacher → {new_teacher}")
         if new_room:
-            dest_parts.append(f"room→{new_room}")
+            dest_parts.append(f"room → {new_room}")
 
         # ADD_CLASS / REPLACE_CLASS spec
         spec = getattr(a, "spec", None) or getattr(a, "new_spec", None)
         if spec:
             s = spec.model_dump(exclude_none=True)
+            subj = s.get("subject_name") or s.get("subject_code", "")
+            if subj:
+                detail_parts.append(f"**{subj}**")
             detail_parts += [
                 s.get("program", ""), s.get("semester", ""),
-                s.get("day", ""), f"{s.get('start_time', '')}–{s.get('end_time', '')}",
-                f"[{s.get('subject_code', '')}]", f"teacher={s.get('teacher', '')}",
+                s.get("day", ""),
+                f"{s.get('start_time', '')}–{s.get('end_time', '')}" if s.get("start_time") else "",
+                f"teacher: {s.get('teacher', '')}" if s.get("teacher") else "",
             ]
 
         detail = ", ".join(p for p in detail_parts if p)
         dest = " → " + ", ".join(p for p in dest_parts if p) if dest_parts else ""
         lines.append(f"  {i}. **{action_name}**: {detail}{dest}" if detail else f"  {i}. **{action_name}**")
 
-    return "Interpreted as:\n" + "\n".join(lines)
+    return header + "\n" + "\n".join(lines)

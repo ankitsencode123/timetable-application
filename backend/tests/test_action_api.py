@@ -90,6 +90,6 @@ def test_teacher_chat_router_integration(client, teacher_headers):
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert "understood" in data["message"].lower()
+        assert "found **1 action**" in data["message"].lower()
         assert len(data["parsed_actions"]) == 1
         assert data["parsed_actions"][0]["action"] == "CANCEL_CLASS"

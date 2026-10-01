@@ -110,18 +110,22 @@ def smart_schedule(
 
     # ── Find free slots for the teacher ──────────────────────────────────
     duration = 180 if req.entry_type == "Practical" else 120
-    free_slots = suggest_free_slots_for_teacher(schedule, req.teacher, duration, busy_days=busy_days)
+    all_free_slots = suggest_free_slots_for_teacher(schedule, req.teacher, duration, busy_days=busy_days)
 
-    if req.preferred_day:
-        preferred = [s for s in free_slots if s["day"] == req.preferred_day]
-        if preferred:
-            free_slots = preferred
+    # Preferred-day: search that day FIRST, fall back to all days if needed
+    preferred_day_only_slots = (
+        [s for s in all_free_slots if s["day"] == req.preferred_day]
+        if req.preferred_day else []
+    )
+    free_slots = preferred_day_only_slots or all_free_slots
+    expanded_to_all_days = bool(req.preferred_day and not preferred_day_only_slots)
 
     need_lab = req.entry_type == "Practical"
     
     perfect_options: List[NormalProposal] = []
     imperfect_options: List[NormalProposal] = []
 
+    # --- Pass 1: search within free_slots (may be restricted to preferred day) ---
     for slot in free_slots:
         if len(perfect_options) >= 3:
             break
@@ -191,6 +195,69 @@ def smart_schedule(
 
     final_proposals = perfect_options if perfect_options else imperfect_options[:3]
     is_perfect = len(perfect_options) > 0
+
+    # --- Pass 2: if preferred-day search found nothing, expand to all days ---
+    if not final_proposals and preferred_day_only_slots and all_free_slots:
+        # Re-run search over all remaining days (excluding preferred, already tried)
+        other_slots = [s for s in all_free_slots if s["day"] != req.preferred_day]
+        perfect_options2: List[NormalProposal] = []
+        imperfect_options2: List[NormalProposal] = []
+        for slot in other_slots:
+            if len(perfect_options2) >= 3:
+                break
+            candidate_entry = {
+                "day": slot["day"], "start": slot["start"], "end": slot["end"],
+                "program": req.program, "semester": req.semester,
+                "subject_code": req.subject_code, "subject_name": req.subject_name,
+                "teacher": req.teacher, "type": req.entry_type,
+                "room": req.room or "",
+            }
+            rooms_to_try = ([req.room] if req.room else []) + suggest_free_rooms(
+                schedule, slot["day"], slot["start"], slot["end"], need_lab=need_lab
+            )
+            if rooms_to_try:
+                room = rooms_to_try[0]
+                trial_entry = {**candidate_entry, "room": room}
+                candidate_schedule = schedule + [trial_entry]
+                cand_v = validate_schedule(candidate_schedule)
+                new_violations = [item for item in cand_v if _fingerprint(item) not in base_fps]
+                proposed = {
+                    "action": "ADD_CLASS",
+                    "spec": {
+                        "program": req.program, "semester": req.semester,
+                        "day": slot["day"], "start_time": slot["start"], "end_time": slot["end"],
+                        "subject_code": req.subject_code, "subject_name": req.subject_name,
+                        "teacher": req.teacher, "entry_type": req.entry_type,
+                        "room": room,
+                    },
+                }
+                fallback_note = f"Preferred day ({req.preferred_day}) unavailable — expanded search."
+                if len(new_violations) == 0:
+                    perfect_options2.append(NormalProposal(
+                        day=slot["day"], start=slot["start"], end=slot["end"], room=room,
+                        proposed_action=proposed,
+                        constraint_issue=fallback_note,
+                    ))
+                else:
+                    hard_rules = {"H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy"}
+                    if not any(v.get("rule") in hard_rules for v in new_violations):
+                        imperfect_options2.append(NormalProposal(
+                            day=slot["day"], start=slot["start"], end=slot["end"], room=room,
+                            proposed_action=proposed,
+                            constraint_issue=fallback_note,
+                        ))
+        final_proposals = perfect_options2 if perfect_options2 else imperfect_options2[:3]
+        is_perfect = False  # Expanded fallback — not a perfect preferred-day match
+
+    if not final_proposals and expanded_to_all_days:
+        # All-days search: teacher fully booked everywhere
+        return SmartScheduleResponse(
+            found=False,
+            message=(
+                f"No slots found for {req.teacher} on {req.preferred_day} or any other day. "
+                f"Teacher may be fully booked or blocked by hard constraints."
+            ),
+        )
 
     if not final_proposals:
         return SmartScheduleResponse(
@@ -270,13 +337,25 @@ def _find_best_slot_for_new_class(
     entry_type: str,
     room: Optional[str],
     busy_days: set,
+    preferred_day: Optional[str] = None,
 ) -> Optional[dict]:
-    """Find the best slot+room for a new class given the current schedule (must have 0 violations)."""
+    """Find the best slot+room for a new class given the current schedule (must have 0 violations).
+    
+    If preferred_day is set, slots on that day are tried first before expanding to all days.
+    """
     need_lab = (entry_type == "Practical")
     duration = 180 if need_lab else 120
     free_slots = suggest_free_slots_for_teacher(schedule, teacher, duration, busy_days=busy_days)
 
-    for slot in free_slots:
+    # Re-order: preferred day first, then everything else
+    if preferred_day:
+        preferred_slots = [s for s in free_slots if s["day"] == preferred_day]
+        other_slots = [s for s in free_slots if s["day"] != preferred_day]
+        ordered_slots = preferred_slots + other_slots
+    else:
+        ordered_slots = free_slots
+
+    for slot in ordered_slots:
         candidate_entry = {
             "day": slot["day"], "start": slot["start"], "end": slot["end"],
             "program": program, "semester": semester,
@@ -339,10 +418,13 @@ def advanced_smart_schedule(
     proposals: List[ProposedModification] = []
 
     # ── Step 1: Normal scheduling (no modifications required) ──────────────
+    # Preferred day: try the preferred day first; if slot found there → great.
+    # If not, the helper will automatically fall through to other days.
     normal_slot = _find_best_slot_for_new_class(
         schedule, req.program, req.semester,
         req.subject_code, req.subject_name,
         req.teacher, req.entry_type, req.room, busy_days,
+        preferred_day=req.preferred_day,
     )
     if normal_slot:
         proposed_action = {
@@ -410,6 +492,7 @@ def advanced_smart_schedule(
                 moved_schedule, req.program, req.semester,
                 req.subject_code, req.subject_name,
                 req.teacher, req.entry_type, req.room, busy_days,
+                preferred_day=req.preferred_day,
             )
             
             # Prevent proposing the exact same end-result as "no modification needed"
@@ -489,6 +572,7 @@ def advanced_smart_schedule(
             cancelled_schedule, req.program, req.semester,
             req.subject_code, req.subject_name,
             req.teacher, req.entry_type, req.room, busy_days,
+            preferred_day=req.preferred_day,
         )
         if not freed_slot:
             continue

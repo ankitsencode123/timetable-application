@@ -209,8 +209,8 @@ export default function ChatPanel() {
   const [loading, setLoading] = useState(false)
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const [collapsed, setCollapsed] = useState(false)
-  // Pending alternative to show as an inline card (not persisted in messages)
-  const [alternative, setAlternative] = useState<{ result: ActionResult; versionId: number | null } | null>(null)
+  // Pending alternatives to show as inline cards (not persisted in messages)
+  const [alternatives, setAlternatives] = useState<{ result: ActionResult; versionId: number | null }[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -238,7 +238,7 @@ export default function ChatPanel() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, alternative])
+  }, [messages, alternatives])
 
   const addMsg = useCallback((msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
     setMessages(prev => [...prev, { ...msg, id: genId(), timestamp: new Date() }])
@@ -248,7 +248,7 @@ export default function ChatPanel() {
     const text = (queryOverride || input).trim()
     if (!text || loading) return
     if (!queryOverride) setInput('')
-    setAlternative(null)
+    setAlternatives([])
     addMsg({ role: 'user', content: text })
     setLoading(true)
     try {
@@ -276,7 +276,7 @@ export default function ChatPanel() {
     const actionsToApply = overrideActions || confirm?.actions
     if (!actionsToApply) return
     if (confirm && !overrideActions) setConfirm(null)
-    setAlternative(null)
+    setAlternatives([])
     setLoading(true)
     addMsg({ role: 'system', content: 'Applying changes…' })
     try {
@@ -285,15 +285,15 @@ export default function ChatPanel() {
         const v = await getVersion(result.new_version_id)
         setCurrentVersion(v.id, v.entries)
       }
-      const failedActionResult = result.results.find(r => !r.success)
-      if (failedActionResult) {
+      const failedActionResults = result.results.filter(r => !r.success)
+      if (failedActionResults.length > 0) {
         const appliedCount = result.results.filter(r => r.success).length
         addMsg({
           role: 'assistant',
-          content: `⚠ ${appliedCount} requested action(s) applied. ${result.results.filter(r => !r.success).length} action(s) could not be applied.`,
+          content: `⚠ ${appliedCount} requested action(s) applied. ${failedActionResults.length} action(s) could not be applied.`,
           execution_result: result,
         })
-        setAlternative({ result: failedActionResult, versionId: result.new_version_id ?? currentVersionId })
+        setAlternatives(failedActionResults.slice(0, 3).map(res => ({ result: res, versionId: result.new_version_id ?? currentVersionId })))
       } else if (result.success) {
         addMsg({ role: 'assistant', content: `✓ Changes applied successfully. New version: #${result.new_version_id}`, execution_result: result })
       } else {
@@ -307,7 +307,7 @@ export default function ChatPanel() {
   }
 
   async function handleAlternativeApplied(res: ActionExecuteResponse) {
-    setAlternative(null)
+    setAlternatives([])
     if (res.success) {
       addMsg({ role: 'assistant', content: `✓ Alternative applied. New version: #${res.new_version_id}`, execution_result: res })
       if (res.new_version_id) {
@@ -315,11 +315,11 @@ export default function ChatPanel() {
         setCurrentVersion(v.id, v.entries)
       }
     } else {
-      const failedResult = res.results.find(r => !r.success)
-      if (failedResult) {
+      const failedResults = res.results.filter(r => !r.success)
+      if (failedResults.length > 0) {
         // The server recalculates alternatives against the current timetable.
         // Keep the card open so the user can choose a valid fresh option.
-        setAlternative({ result: failedResult, versionId: currentVersionId })
+        setAlternatives(failedResults.slice(0, 3).map(r => ({ result: r, versionId: currentVersionId })))
       } else {
         addMsg({ role: 'assistant', content: `⚠ Could not apply alternative.`, execution_result: res })
       }
@@ -347,7 +347,7 @@ export default function ChatPanel() {
           {loading && <Loader2 size={14} style={{ color: 'var(--accent)', animation: 'spin 0.7s linear infinite' }} />}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button className="btn-icon" title="Clear" onClick={() => { setMessages([]); setAlternative(null) }}>
+          <button className="btn-icon" title="Clear" onClick={() => { setMessages([]); setAlternatives([]) }}>
             <Trash2 size={14} />
           </button>
           <button className="btn-icon" title={collapsed ? 'Expand' : 'Collapse'} onClick={() => setCollapsed(c => !c)}>
@@ -393,17 +393,26 @@ export default function ChatPanel() {
             ))}
 
             {/* Confirm panel */}
-            {confirm && !alternative && (
+            {confirm && alternatives.length === 0 && (
               <div style={{ alignSelf: 'flex-start', background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', padding: '12px 14px', maxWidth: '90%' }}>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--amber)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                   <AlertCircle size={11} /> Preview — confirm to apply
                 </div>
                 <div className="confirm-actions-list" style={{ margin: 0, marginBottom: 10 }}>
-                  {confirm.actions.map((a, i) => (
-                    <div key={i} className="confirm-action-item" style={{ color: 'var(--ink)' }}>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent)', fontSize: 'var(--fs-xs)' }}>{a.action}</span>
-                    </div>
-                  ))}
+                  {confirm.actions.map((a, i) => {
+                    const targ = (a as any).target || {};
+                    const spec = (a as any).spec || (a as any).new_spec || {};
+                    const subj = targ.subject_name || targ.subject_code || spec.subject_name || spec.subject_code || '';
+                    const day = (a as any).new_day || targ.day || spec.day || '';
+                    const teacher = (a as any).new_teacher || targ.teacher || spec.teacher || '';
+                    const details = [subj, day, teacher].filter(Boolean).join(', ');
+                    return (
+                      <div key={i} className="confirm-action-item" style={{ color: 'var(--ink)' }}>
+                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent)', fontSize: 'var(--fs-xs)' }}>{a.action}</span>
+                        {details && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', marginLeft: 8 }}>—  {details}</span>}
+                      </div>
+                    )
+                  })}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="btn btn-success btn-sm" onClick={() => applyConfirmed()}>Apply Changes</button>
@@ -412,15 +421,18 @@ export default function ChatPanel() {
               </div>
             )}
 
-            {/* Alternative card — shown after a constraint failure */}
-            {alternative && (
-              <AlternativeCard
-                failedResult={alternative.result}
-                versionId={alternative.versionId}
-                onApplied={handleAlternativeApplied}
-                onDismiss={() => setAlternative(null)}
-              />
-            )}
+            {/* Alternative cards — shown after multiple constraint failures */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {alternatives.map((alt, idx) => (
+                <AlternativeCard
+                  key={idx}
+                  failedResult={alt.result}
+                  versionId={alt.versionId}
+                  onApplied={handleAlternativeApplied}
+                  onDismiss={() => setAlternatives(prev => prev.filter((_, i) => i !== idx))}
+                />
+              ))}
+            </div>
 
             <div ref={bottomRef} />
           </div>

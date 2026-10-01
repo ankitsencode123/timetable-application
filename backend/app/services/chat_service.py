@@ -154,27 +154,74 @@ def handle_teacher_chat(user: User, message: str, db: Session | None = None) -> 
         parsed = parser.parse(message, schedule_context=schedule_ctx)
         actions_out = [a.model_dump() for a in parsed]
 
-        # Build rich interpretation listing action details
+        # Build rich interpretation listing action details with conversational descriptions
         interpretation_lines = []
         for i, a in enumerate(parsed, 1):
             action_name = str(a.action).replace("_", " ").title()
             target = getattr(a, "target", None)
-            detail = ""
+            detail_parts = []
             if target:
                 t = target.model_dump(exclude_none=True)
-                parts = [
-                    t.get("day", ""), t.get("start_time", ""), f"[{t.get('subject_code', '')}]",
-                    t.get("teacher", ""), t.get("program", ""),
-                ]
-                detail = " ".join(p for p in parts if p)
+                subj = t.get("subject_name") or t.get("subject_code", "")
+                if subj:
+                    detail_parts.append(f"**{subj}**")
+                if t.get("day"):
+                    if t.get("start_time"):
+                        detail_parts.append(f"{t['day']} {t['start_time']}\u2013{t.get('end_time', '?')}")
+                    else:
+                        detail_parts.append(t["day"])
+                if t.get("teacher"):
+                    detail_parts.append(f"teacher: {t['teacher']}")
+                if t.get("program"):
+                    detail_parts.append(f"{t['program']} {t.get('semester', '')}".strip())
+
+            new_day = getattr(a, "new_day", None)
+            new_start = getattr(a, "new_start_time", None)
+            new_end = getattr(a, "new_end_time", None)
+            new_teacher = getattr(a, "new_teacher", None)
+            new_room = getattr(a, "new_room", None)
+            dest_parts = []
+            if new_day:
+                dest_parts.append(new_day)
+            if new_start:
+                dest_parts.append(f"{new_start}\u2013{new_end or '?'}")
+            if new_teacher:
+                dest_parts.append(f"teacher \u2192 {new_teacher}")
+            if new_room:
+                dest_parts.append(f"room \u2192 {new_room}")
+
+            spec = getattr(a, "spec", None)
+            if spec:
+                s = spec.model_dump(exclude_none=True)
+                subj = s.get("subject_name") or s.get("subject_code", "")
+                if subj:
+                    detail_parts.append(f"**{subj}**")
+                if s.get("program"):
+                    detail_parts.append(f"{s['program']} {s.get('semester', '')}".strip())
+                if s.get("day"):
+                    ts = f"{s['day']} {s.get('start_time', '')}\u2013{s.get('end_time', '')}".strip()
+                    detail_parts.append(ts)
+                if s.get("teacher"):
+                    detail_parts.append(f"teacher: {s['teacher']}")
+
+            detail = ", ".join(p for p in detail_parts if p)
+            dest = " \u2192 " + ", ".join(p for p in dest_parts if p) if dest_parts else ""
             interpretation_lines.append(
-                f"  {i}. {action_name}: {detail}" if detail else f"  {i}. {action_name}"
+                f"  {i}. **{action_name}**: {detail}{dest}" if detail else f"  {i}. **{action_name}**"
             )
 
-        interpretation = "\n".join(interpretation_lines)
+        count = len(parsed)
+        if count == 0:
+            intro = "I couldn't identify any specific actions. Please try rephrasing."
+        elif count == 1:
+            intro = "I found **1 action** in your request:"
+        else:
+            intro = f"I found **{count} actions** in your request:"
+
+        interpretation = intro + "\n" + "\n".join(interpretation_lines)
         return {
             "message": (
-                f"I understood {len(parsed)} action(s):\n{interpretation}\n\n"
+                f"{interpretation}\n\n"
                 f"Review and confirm to apply these changes."
             ),
             "schedule_updated": False,
