@@ -1,7 +1,7 @@
 """Actions API — unified endpoint for button and NLP-driven timetable mutations."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -15,6 +15,7 @@ from app.schemas.actions import (
 from app.actions.engine import ActionEngine
 from app.actions.parser import ActionParser
 from app.actions.types import parse_action
+from app.services.email_service import notify_teachers_of_changes
 
 router = APIRouter()
 _parser = ActionParser()
@@ -87,6 +88,7 @@ def parse_actions(
 @router.post("/execute", response_model=ActionExecuteResponse)
 def execute_actions(
     req: ActionExecuteRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
 ):
@@ -109,6 +111,10 @@ def execute_actions(
 
     result = engine.execute(parsed)
 
+    # Dispath email notification in the background
+    if result.success or result.partial_applied:
+        background_tasks.add_task(notify_teachers_of_changes, result, db)
+
     return ActionExecuteResponse(
         success=result.success,
         results=[_action_result_to_schema(r) for r in result.results],
@@ -127,6 +133,7 @@ def execute_actions(
 @router.post("/chat", response_model=ActionChatResponse)
 def chat_execute(
     req: ActionChatRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
 ):
@@ -165,6 +172,10 @@ def chat_execute(
         partial_ok=True, # Allow multiple chat intents to proceed independently
     )
     result = engine.execute(parsed)
+
+    # Dispatch email notification in the background
+    if result.success or result.partial_applied:
+        background_tasks.add_task(notify_teachers_of_changes, result, db)
 
     # Build rich execution result
     exec_response = ActionExecuteResponse(

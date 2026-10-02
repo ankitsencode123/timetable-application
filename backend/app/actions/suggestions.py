@@ -43,9 +43,14 @@ def _fast_find_valid_slots(schedule, entry, free_slots, need_lab, orig_target, s
 
 def _fast_universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, duration_minutes, busy_days):
     """Delegate to fast_suggester.universal_move_suggestion when available, else fall back."""
+    
+    # If the user explicitly wants to change the length of the class, DO NOT silently revert the duration.
+    allow_fallback = action_type not in ("EXTEND_CLASS", "SHORTEN_CLASS")
+    
     if USE_FAST_SUGGESTER and _FAST_AVAILABLE:
         return _fast.universal_move_suggestion(
-            schedule, entry, action_type, need_lab, orig_target, teacher, duration_minutes, busy_days=busy_days
+            schedule, entry, action_type, need_lab, orig_target, teacher, duration_minutes, 
+            busy_days=busy_days, allow_duration_fallback=allow_fallback
         )
     return _universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher, duration_minutes, busy_days)
 
@@ -612,7 +617,8 @@ def _universal_move_suggestion(
 
     # Normalize to nearest standard duration so we generate sensible time windows
     norm_dur = _normalize_duration(duration_minutes)
-    durations_to_try = [norm_dur] + [d for d in STANDARD_DURATIONS if d != norm_dur]
+    allow_fallback = action_type not in ("EXTEND_CLASS", "SHORTEN_CLASS")
+    durations_to_try = [norm_dur] + ([d for d in STANDARD_DURATIONS if d != norm_dur] if allow_fallback else [])
 
     for dur in durations_to_try:
         # Tier 1: teacher-aware free slots

@@ -344,6 +344,25 @@ def _find_best_slot_for_new_class(
     If preferred_day is set, slots on that day are tried first before expanding to all days.
     """
     need_lab = (entry_type == "Practical")
+    
+    try:
+        from app.scheduler.fast_suggester import find_valid_slots
+        entry = {
+            "day": preferred_day,
+            "program": program, "semester": semester,
+            "subject_code": subject_code, "subject_name": subject_name,
+            "teacher": teacher, "type": entry_type,
+            "room": room or "",
+        }
+        res = find_valid_slots(schedule, entry, None, need_lab=need_lab, orig_target=None, 
+                               simulate_as_add=True, limit=1, allow_cascade=False)
+        if res:
+            return {"day": res[0]["day"], "start": res[0]["start"], "end": res[0]["end"], "room": res[0].get("room", "")}
+        return None
+    except Exception:
+        pass
+
+    # Fallback to brute force
     duration = 180 if need_lab else 120
     free_slots = suggest_free_slots_for_teacher(schedule, teacher, duration, busy_days=busy_days)
 
@@ -467,6 +486,10 @@ def advanced_smart_schedule(
         cand_day = candidate.get("day", "")
         cand_start = candidate.get("start", "")
         cand_end = candidate.get("end", "")
+
+        # Prevent "Cancel Class X" to "Add Class X" (circular self-replacements)
+        if cand_subj.lower() == req.subject_code.lower() or cand_subj.lower() == req.subject_name.lower():
+            continue
 
         # ── Strategy A: Move the candidate class to another free slot ────
         cand_duration = to_minutes(cand_end) - to_minutes(cand_start) if cand_start and cand_end else 120

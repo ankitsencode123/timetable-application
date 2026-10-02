@@ -18,3 +18,5 @@ gunicorn>=21.0.0
 email-validator>=2.0.0
 ortools>=9.6.0
 
+aiosmtplib>=3.0.0
+aiosmtplib>=3.0.0
