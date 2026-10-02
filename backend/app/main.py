@@ -21,6 +21,10 @@ async def lifespan(app: FastAPI):
     # Create all tables on startup
     Base.metadata.create_all(bind=engine)
 
+    # Create calendar system tables (idempotent)
+    from app.calendar_system import init_calendar_tables
+    init_calendar_tables(engine)
+
     # Seed admin and demo teachers on first boot
     db = next(get_db())
     try:
