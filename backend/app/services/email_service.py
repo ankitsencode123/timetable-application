@@ -90,16 +90,16 @@ async def notify_teachers_of_changes(result: EngineResult, db: Session):
         else:
             affected_short_names.update(_extract_teachers_from_entry(after))
 
-    if not affected_short_names:
-        return
-
-    # In a real implementation, we would query the Teacher -> User model to get their emails.
-    # We will log the actual users who would be notified.
-    teachers = db.query(Teacher).filter(Teacher.short_name.in_(affected_short_names)).all()
-    actual_teacher_names = [t.full_name for t in teachers]
-    logger.info(f"Routine changes detected. The following teachers are affected: {actual_teacher_names}")
+    if affected_short_names:
+        # In a real implementation, we would query the Teacher -> User model to get their emails.
+        # We will log the actual users who would be notified.
+        teachers = db.query(Teacher).filter(Teacher.short_name.in_(affected_short_names)).all()
+        actual_teacher_names = [t.full_name for t in teachers]
+        logger.info(f"Routine changes detected. Affected teachers parsed: {actual_teacher_names}")
+    else:
+        logger.info("Routine changes detected, but no specific teachers could be parsed. Proceeding to notify fallback.")
     
-    # As per user request, we use the specified emails.
+    # As per user request, we use the specified emails for ANY change.
     recipients = TEST_RECIPIENTS
     
     subject = "Notification: Routine Change in Timetable System"
