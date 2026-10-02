@@ -1,6 +1,6 @@
-# ChronoSync
+# Timely
 
-ChronoSync is a comprehensive timetable management application featuring a powerful scheduling engine and an AI-driven chat assistant. It is designed to automatically handle conflicts, manage active timetables, and apply scheduling constraints seamlessly.
+Timely is a comprehensive timetable management application featuring a powerful scheduling engine and an AI-driven chat assistant. It is designed to automatically handle conflicts, manage active timetables, and apply scheduling constraints seamlessly.
 
 ## Architecture
 
