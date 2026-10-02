@@ -205,11 +205,9 @@ def chat_execute(
             else:
                 error_detail = r.error or "Unknown error"
                 if r.violated_constraint:
-                    # Clean formatting for constraint violations as requested
-                    per_action_lines.append(f"  ✗ {r.action_type}: Action blocked by a constraint\n      {error_detail}")
-                else:
-                    per_action_lines.append(f"  ✗ {r.action_type}: {error_detail}")
-                    
+                    vc = r.violated_constraint
+                    error_detail += f" [{vc.get('rule', 'constraint')} — {vc.get('message', '')}]"
+                per_action_lines.append(f"  ✗ {r.action_type}: {error_detail}")
         success_count = sum(1 for r in result.results if r.success)
         fail_count = len(result.results) - success_count
         execution_summary = (
