@@ -296,11 +296,47 @@ def smart_schedule(
         message="Found options" if is_perfect else "Found closest feasible options (with constraint warnings)."
     )
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 2) ADVANCED SMART SCHEDULE  (rewritten for speed)
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# WHY THE OLD /advanced WAS SLOW (5-6 minutes):
+#   * copy.deepcopy(whole schedule) per candidate
+#   * validate_schedule() + validate_schema() on EVERY candidate — O(n^2)
+#   * a fresh DB session to Supabase (fetch_global_busy_days) per validate call
+#   * one extra TeacherBusySlot query per candidate class
+#
+# WHAT THIS NEW VERSION DOES:
+#   * 2 DB queries per request (latest version + ALL permanent busy slots)
+#   * One in-memory "_Board" with per-resource occupancy lists that supports
+#     O(1)-ish attach/detach — "what if X moves?" = a few dict lookups
+#   * Same rules: H1/H2/H3/H5/H5b/H6/H12, skipping H11/schema (can't change)
+#   * Goal-driven pruning: only classes that actually free a window for the
+#     NEW class are even considered → most classes skipped instantly
+#   * Hard 10-second time budget — request can never hang
+#   * TTL cache keyed on (version_id, busy_sig, request fields)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Advanced Smart Schedule
-# ─────────────────────────────────────────────────────────────────────────────
+import threading as _threading
+import time as _time
+from collections import OrderedDict as _OrderedDict, defaultdict as _defaultdict
+from typing import Dict as _Dict, Set as _Set, Tuple as _Tuple
 
+from app.scheduler.validator import teacher_set as _teacher_set
+
+
+# ── Tunables ──────────────────────────────────────────────────────────────────
+_DAY_START      = 9 * 60                     # 09:00
+_DAY_END        = 17 * 60 + 30              # 17:30
+_STEP           = 30                          # search granularity (minutes)
+_GRID_STARTS    = frozenset({10*60, 12*60, 14*60+30, 16*60+30})
+_MAX_PROPOSALS  = 5
+_MAX_FREED_TRIES = 12
+_TIME_BUDGET_S  = 10.0
+_CACHE_TTL_S    = 90.0
+_CACHE_MAX      = 128
+
+
+# ── Models ────────────────────────────────────────────────────────────────────
 class AdvancedSmartScheduleRequest(BaseModel):
     program: str
     semester: str
@@ -314,7 +350,7 @@ class AdvancedSmartScheduleRequest(BaseModel):
 
 class ProposedModification(BaseModel):
     description: str
-    modification_type: str            # "none" | "move" | "cancel"
+    modification_type: str           # "none" | "move" | "cancel"
     affected_class: dict
     new_slot: Optional[dict] = None
     priority_slot: dict
@@ -325,73 +361,500 @@ class AdvancedSmartScheduleResponse(BaseModel):
     found: bool
     proposals: List[ProposedModification] = []
     message: str = ""
+    # diagnostic fields (new — safe for existing clients to ignore)
+    elapsed_ms: Optional[float] = None
+    candidates_evaluated: int = 0
 
 
-def _find_best_slot_for_new_class(
-    schedule: List[dict],
-    program: str,
-    semester: str,
-    subject_code: str,
-    subject_name: str,
-    teacher: str,
-    entry_type: str,
-    room: Optional[str],
-    busy_days: set,
-    preferred_day: Optional[str] = None,
-) -> Optional[dict]:
-    """Find the best slot+room for a new class given the current schedule (must have 0 violations).
-    
-    If preferred_day is set, slots on that day are tried first before expanding to all days.
-    """
-    need_lab = (entry_type == "Practical")
-    
+# ── Small helpers ─────────────────────────────────────────────────────────────
+def _hhmm(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _adv_sem_key(e: dict) -> tuple:
+    return (str(e.get("program", "")).strip().rstrip(".").lower(),
+            str(e.get("semester", "")).strip().lower())
+
+
+class _Row:
+    """One class on the board with its resources pre-computed."""
+    __slots__ = ("entry", "day", "s", "e", "sem", "teachers", "room", "typ", "res")
+
+    def __init__(self, entry: dict, day: str, s: int, e: int, room: str):
+        self.entry    = entry
+        self.day      = day
+        self.s        = s
+        self.e        = e
+        self.room     = room or ""
+        self.sem      = _adv_sem_key(entry)
+        self.teachers = tuple(sorted(_teacher_set(entry)))
+        self.typ      = str(entry.get("type", "")).strip()
+        res = [(0, self.sem)]
+        res.extend((1, t) for t in self.teachers)
+        if self.room:
+            res.append((2, self.room))
+        self.res = tuple(res)
+
+
+def _row_from_entry(entry: dict) -> _Row:
     try:
-        from app.scheduler.fast_suggester import find_valid_slots
-        entry = {
-            "day": preferred_day,
-            "program": program, "semester": semester,
-            "subject_code": subject_code, "subject_name": subject_name,
-            "teacher": teacher, "type": entry_type,
-            "room": room or "",
-        }
-        res = find_valid_slots(schedule, entry, None, need_lab=need_lab, orig_target=None, 
-                               simulate_as_add=True, limit=1, allow_cascade=False)
-        if res:
-            return {"day": res[0]["day"], "start": res[0]["start"], "end": res[0]["end"], "room": res[0].get("room", "")}
-        return None
+        s = to_minutes(entry["start"])
+        e = to_minutes(entry["end"])
     except Exception:
-        pass
+        s = e = 0
+    return _Row(entry, entry.get("day"), s, e, entry.get("room") or "")
 
-    # Fallback to brute force
-    duration = 180 if need_lab else 120
-    free_slots = suggest_free_slots_for_teacher(schedule, teacher, duration, busy_days=busy_days)
 
-    # Re-order: preferred day first, then everything else
-    if preferred_day:
-        preferred_slots = [s for s in free_slots if s["day"] == preferred_day]
-        other_slots = [s for s in free_slots if s["day"] != preferred_day]
-        ordered_slots = preferred_slots + other_slots
-    else:
-        ordered_slots = free_slots
+class _Spec:
+    __slots__ = ("sem", "teachers", "typ", "dur", "need_lab", "prefer_room")
 
-    for slot in ordered_slots:
-        candidate_entry = {
-            "day": slot["day"], "start": slot["start"], "end": slot["end"],
-            "program": program, "semester": semester,
-            "subject_code": subject_code, "subject_name": subject_name,
-            "teacher": teacher, "type": entry_type,
-            "room": room or "",
-        }
-        rooms_to_try = ([room] if room else []) + suggest_free_rooms(
-            schedule, slot["day"], slot["start"], slot["end"], need_lab=need_lab
+    def __init__(self, sem, teachers, typ, dur, need_lab, prefer_room):
+        self.sem, self.teachers, self.typ = sem, teachers, typ
+        self.dur, self.need_lab, self.prefer_room = dur, need_lab, prefer_room
+
+
+class _Board:
+    """In-memory timetable with O(1) attach/detach and cheap conflict queries."""
+
+    def __init__(self, schedule: List[dict], busy: "_Dict[str, _Set[str]]"):
+        self.busy     = busy
+        self.internal = set(C.INTERNAL_TEACHERS)
+        self.wd       = list(C.WORKING_DAYS)
+        self.wd_set   = set(self.wd)
+        self.by_res:  "_Dict[tuple, list]" = _defaultdict(list)
+        self.tt:      "_Dict[tuple, int]"  = _defaultdict(int)   # (t,day,type)->n
+        self.tdays:   "_Dict[str, _Dict[str, int]]" = _defaultdict(lambda: _defaultdict(int))
+        fac           = C.ROOM_FACILITIES
+        self.all_rooms = sorted(fac)
+        self.lab_rooms = [r for r in self.all_rooms if fac[r].get("lab")]
+        self.rows: List[_Row] = [_row_from_entry(e) for e in schedule]
+        for r in self.rows:
+            self.attach(r)
+        # H6 already broken in base schedule → must not be flagged as "new"
+        self.base_full: "_Set[str]" = set()
+        for t in self.internal:
+            days = self.tdays.get(t)
+            if days and sum(1 for c in days.values() if c > 0) == len(self.wd_set):
+                self.base_full.add(t)
+
+    def attach(self, r: _Row) -> None:
+        for k in r.res:
+            self.by_res[(k[0], k[1], r.day)].append(r)
+        for t in r.teachers:
+            self.tt[(t, r.day, r.typ)] += 1
+            if r.day in self.wd_set:
+                self.tdays[t][r.day] += 1
+
+    def detach(self, r: _Row) -> None:
+        for k in r.res:
+            self.by_res[(k[0], k[1], r.day)].remove(r)
+        for t in r.teachers:
+            self.tt[(t, r.day, r.typ)] -= 1
+            if r.day in self.wd_set:
+                self.tdays[t][r.day] -= 1
+
+    def day_ok(self, teachers: tuple, typ: str, day: str) -> bool:
+        check_type = typ in ("Theory", "Practical")
+        for t in teachers:
+            bd = self.busy.get(t)
+            if bd and day in bd:
+                return False                              # H12
+            if check_type and self.tt.get((t, day, typ), 0) >= 1:
+                return False                              # H5 / H5b
+        if day in self.wd_set:                           # H6 (only if newly broken)
+            need = len(self.wd_set)
+            for t in teachers:
+                if t in self.internal and t not in self.base_full:
+                    days = self.tdays.get(t)
+                    if days:
+                        other = sum(1 for d, c in days.items() if c > 0 and d != day)
+                        if other + 1 >= need:
+                            return False
+        return True
+
+    def window_ok(self, day: str, s: int, e: int, sem: tuple, teachers: tuple) -> bool:
+        get = self.by_res.get
+        for r in get((0, sem, day), ()):
+            if r.s < e and s < r.e:
+                return False      # H1
+        for t in teachers:
+            for r in get((1, t, day), ()):
+                if r.s < e and s < r.e:
+                    return False  # H2
+        return True
+
+    def room_free(self, room: str, day: str, s: int, e: int) -> bool:
+        for r in self.by_res.get((2, room, day), ()):
+            if r.s < e and s < r.e:
+                return False      # H3
+        return True
+
+    def pick_room(self, day: str, s: int, e: int, need_lab: bool, prefer: str) -> Optional[str]:
+        if prefer and self.room_free(prefer, day, s, e):
+            return prefer
+        pool = self.lab_rooms if need_lab else self.all_rooms
+        for room in pool:
+            if room != prefer and self.room_free(room, day, s, e):
+                return room
+        return "" if (not pool and not prefer) else None
+
+
+def _adv_windows(board: _Board, dur: int):
+    if dur <= 0:
+        return
+    for day in board.wd:
+        for s in range(_DAY_START, _DAY_END - dur + 1, _STEP):
+            yield day, s
+
+
+def _valid_windows(board: _Board, sp: _Spec) -> List["_Tuple[str, int, str]"]:
+    out: List["_Tuple[str, int, str]"] = []
+    day_cache: "_Dict[str, bool]" = {}
+    for day, s in _adv_windows(board, sp.dur):
+        ok = day_cache.get(day)
+        if ok is None:
+            ok = day_cache[day] = board.day_ok(sp.teachers, sp.typ, day)
+        if not ok:
+            continue
+        e = s + sp.dur
+        if not board.window_ok(day, s, e, sp.sem, sp.teachers):
+            continue
+        room = board.pick_room(day, s, e, sp.need_lab, sp.prefer_room)
+        if room is None:
+            continue
+        out.append((day, s, room))
+    return out
+
+
+def _best_move(board: _Board, a: _Row) -> Optional["_Tuple[int, str, int, str]"]:
+    dur = a.e - a.s
+    if dur <= 0:
+        return None
+    need_lab  = a.typ == "Practical"
+    day_idx   = {d: i for i, d in enumerate(board.wd)}
+    day_cache: "_Dict[str, bool]" = {}
+    best: Optional[tuple] = None
+    for day, s in _adv_windows(board, dur):
+        if day == a.day and s == a.s:
+            continue
+        ok = day_cache.get(day)
+        if ok is None:
+            ok = day_cache[day] = board.day_ok(a.teachers, a.typ, day)
+        if not ok:
+            continue
+        e = s + dur
+        if not board.window_ok(day, s, e, a.sem, a.teachers):
+            continue
+        room = board.pick_room(day, s, e, need_lab, a.room)
+        if room is None:
+            continue
+        cost = ((0 if day == a.day else 600)
+                + abs(s - a.s)
+                + (0 if (not a.room or room == a.room) else 30)
+                + (0 if s in _GRID_STARTS else 90))
+        key = (cost, day_idx.get(day, 99), s)
+        if best is None or key < best[0]:
+            best = (key, day, room)
+    if best is None:
+        return None
+    (cost, _di, s), day, room = best
+    return cost, day, s, room
+
+
+def _adv_same_subject(entry: dict, req: "AdvancedSmartScheduleRequest") -> bool:
+    want = {req.subject_code.strip().lower(), req.subject_name.strip().lower()} - {""}
+    have = {str(entry.get("subject_code") or "").strip().lower(),
+            str(entry.get("subject_name") or "").strip().lower()} - {""}
+    return bool(want & have)
+
+
+def _subject_known(req: "AdvancedSmartScheduleRequest") -> bool:
+    prog_raw  = req.program.strip().rstrip(".")
+    sem_raw   = req.semester.strip()
+    subj_code = req.subject_code.strip().lower()
+    allowed   = C.PROGRAMME_SUBJECT_MAP.get((prog_raw, sem_raw), set())
+    if not allowed:
+        return False
+    if subj_code in allowed or subj_code[:-2] in allowed:
+        return True
+    return subj_code in ("m", "mm") and ("m" in allowed or "mm" in allowed)
+
+
+def _load_busy_map(db: Session) -> "_Dict[str, _Set[str]]":
+    busy: "_Dict[str, _Set[str]]" = {}
+    for b in db.query(TeacherBusySlot).filter(TeacherBusySlot.scope == "permanent").all():
+        if b.day_of_week:
+            busy.setdefault(b.teacher_short_name, set()).add(b.day_of_week)
+    return busy
+
+
+# ── Proposal payload helpers ──────────────────────────────────────────────────
+def _target_of(entry: dict) -> dict:
+    return {
+        "day": entry.get("day"), "start_time": entry.get("start"), "end_time": entry.get("end"),
+        "program": entry.get("program"), "semester": entry.get("semester"),
+        "subject_code": entry.get("subject_code") or entry.get("subject"),
+    }
+
+
+def _affected_of(entry: dict) -> dict:
+    return {
+        "subject":   entry.get("subject_name") or entry.get("subject_code", ""),
+        "day":       entry.get("day", ""),
+        "start":     entry.get("start", ""),
+        "end":       entry.get("end", ""),
+        "teacher":   entry.get("teacher", ""),
+        "program":   entry.get("program"),
+        "semester":  entry.get("semester"),
+    }
+
+
+def _add_action(req: "AdvancedSmartScheduleRequest", slot: dict) -> dict:
+    return {
+        "action": "ADD_CLASS",
+        "spec": {
+            "program": req.program, "semester": req.semester,
+            "day": slot["day"], "start_time": slot["start"], "end_time": slot["end"],
+            "subject_code": req.subject_code, "subject_name": req.subject_name,
+            "teacher": req.teacher, "entry_type": req.entry_type,
+            "room": slot["room"],
+        },
+    }
+
+
+def _adv_slot(day: str, s: int, dur: int, room: str) -> dict:
+    return {"day": day, "start": _hhmm(s), "end": _hhmm(s + dur), "room": room}
+
+
+def _room_note(req: "AdvancedSmartScheduleRequest", room: str) -> str:
+    want = (req.room or "").strip()
+    return f" (requested room {want} is unavailable)" if want and room != want else ""
+
+
+# ── Core search (pure function — no DB) ──────────────────────────────────────
+def _advanced_core(
+    req: "AdvancedSmartScheduleRequest",
+    schedule: List[dict],
+    busy_map: "_Dict[str, _Set[str]]",
+) -> AdvancedSmartScheduleResponse:
+    t0       = _time.perf_counter()
+    deadline = t0 + _TIME_BUDGET_S
+    board    = _Board(schedule, busy_map)
+    day_idx  = {d: i for i, d in enumerate(board.wd)}
+    pref     = req.preferred_day or None
+
+    practical = req.entry_type == "Practical"
+    dur = 180 if practical else 120
+    n_entry = {
+        "day": "", "start": "", "end": "",
+        "program": req.program, "semester": req.semester,
+        "subject_code": req.subject_code, "subject_name": req.subject_name,
+        "teacher": req.teacher, "type": req.entry_type, "room": "",
+    }
+    spec = _Spec(
+        sem          = _adv_sem_key(n_entry),
+        teachers     = tuple(sorted(_teacher_set({"teacher": req.teacher}))),
+        typ          = req.entry_type,
+        dur          = dur,
+        need_lab     = practical,
+        prefer_room  = (req.room or "").strip(),
+    )
+
+    def n_rank(day: str, s: int) -> tuple:
+        return (0 if (not pref or day == pref) else 1, day_idx.get(day, 99), s)
+
+    proposals: List[ProposedModification] = []
+
+    # Step 1 — free slot without touching anything
+    orig_windows = _valid_windows(board, spec)
+    orig_keys    = {(d, s) for d, s, _ in orig_windows}
+    if orig_windows:
+        d, s, room = min(orig_windows, key=lambda w: n_rank(w[0], w[1]))
+        slot = _adv_slot(d, s, dur, room)
+        proposals.append(ProposedModification(
+            description=(
+                f"No modifications needed. Best free slot available: "
+                f"{slot['day']} {slot['start']}–{slot['end']} in {slot['room']}."
+                f"{_room_note(req, room)}"
+            ),
+            modification_type="none",
+            affected_class={},
+            new_slot=slot,
+            priority_slot=slot,
+            actions_to_apply=[_add_action(req, slot)],
+        ))
+
+    # Step 2 — same program+semester classes that could make room
+    prog_norm = C.normalize_program(req.program)
+    sem_raw   = req.semester.strip()
+    group = [
+        r for r in board.rows
+        if C.normalize_program(r.entry.get("program", "")) == prog_norm
+        and str(r.entry.get("semester", "")).strip() == sem_raw
+    ]
+
+    moves:    List[tuple] = []   # (sort_key, row, dest, n_window)
+    cancels:  List[tuple] = []   # (sort_key, row, n_window)
+    evaluated = 0
+    truncated = False
+
+    for a in group:
+        if _time.perf_counter() > deadline:
+            truncated = True
+            break
+        if a.e - a.s <= 0 or _adv_same_subject(a.entry, req):
+            continue
+        evaluated += 1
+
+        board.detach(a)
+        try:
+            freed = [w for w in _valid_windows(board, spec) if (w[0], w[1]) not in orig_keys]
+            if not freed:
+                continue
+            freed.sort(key=lambda w: n_rank(w[0], w[1]))
+
+            # Strategy A — move `a` somewhere else
+            found = False
+            for nd, ns, nroom in freed[:_MAX_FREED_TRIES]:
+                n_row = _Row(n_entry, nd, ns, ns + dur, nroom)
+                board.attach(n_row)
+                try:
+                    dest = _best_move(board, a)
+                finally:
+                    board.detach(n_row)
+                if dest is not None:
+                    key = (n_rank(nd, ns)[0], dest[0], n_rank(nd, ns))
+                    moves.append((key, a, dest, (nd, ns, nroom)))
+                    found = True
+                    break
+
+            # Strategy B — cancel `a` (last resort)
+            if not found:
+                nd, ns, nroom = freed[0]
+                cancels.append(((n_rank(nd, ns),), a, (nd, ns, nroom)))
+        finally:
+            board.attach(a)
+
+    moves.sort(key=lambda x: x[0])
+    cancels.sort(key=lambda x: x[0])
+    room_left     = max(0, _MAX_PROPOSALS - len(proposals))
+    chosen_moves  = moves[:room_left]
+    chosen_cancels = cancels[: max(0, room_left - len(chosen_moves))]
+
+    for _key, a, dest, (nd, ns, nroom) in chosen_moves:
+        ent    = a.entry
+        a_dur  = a.e - a.s
+        _cost, mday, ms, mroom = dest
+        priority  = _adv_slot(nd, ns, dur, nroom)
+        new_slot  = _adv_slot(mday, ms, a_dur, mroom)
+        affected  = _affected_of(ent)
+        subj      = affected["subject"]
+        proposals.append(ProposedModification(
+            description=(
+                f"Move '{subj}' ({ent.get('day','')} {ent.get('start','')}–{ent.get('end','')}) → "
+                f"{new_slot['day']} {new_slot['start']}–{new_slot['end']}, "
+                f"then place '{req.subject_name}' on "
+                f"{priority['day']} {priority['start']}–{priority['end']} in {priority['room']}."
+                f"{_room_note(req, nroom)}"
+            ),
+            modification_type="move",
+            affected_class=affected,
+            new_slot=new_slot,
+            priority_slot=priority,
+            actions_to_apply=[
+                {
+                    "action": "MOVE_CLASS",
+                    "target": _target_of(ent),
+                    "new_day": new_slot["day"],
+                    "new_start_time": new_slot["start"],
+                    "new_end_time": new_slot["end"],
+                    **({("new_room"): mroom} if mroom else {}),
+                },
+                _add_action(req, priority),
+            ],
+        ))
+
+    for _key, a, (nd, ns, nroom) in chosen_cancels:
+        ent      = a.entry
+        priority = _adv_slot(nd, ns, dur, nroom)
+        affected = _affected_of(ent)
+        proposals.append(ProposedModification(
+            description=(
+                f"Cancel '{affected['subject']}' "
+                f"({ent.get('day','')} {ent.get('start','')}–{ent.get('end','')}), "
+                f"then place '{req.subject_name}' on "
+                f"{priority['day']} {priority['start']}–{priority['end']} in {priority['room']}."
+                f"{_room_note(req, nroom)}"
+            ),
+            modification_type="cancel",
+            affected_class=affected,
+            new_slot=None,
+            priority_slot=priority,
+            actions_to_apply=[
+                {"action": "REMOVE_CLASS", "target": _target_of(ent)},
+                _add_action(req, priority),
+            ],
+        ))
+
+    elapsed = round((_time.perf_counter() - t0) * 1000, 2)
+
+    if not proposals:
+        reason = ""
+        if spec.teachers and all(
+            any(d in busy_map.get(t, ()) for t in spec.teachers) for d in board.wd
+        ):
+            reason = f" {req.teacher} is marked busy on every working day."
+        elif not group:
+            reason = f" No classes exist for {req.program} {req.semester} to rearrange."
+        return AdvancedSmartScheduleResponse(
+            found=False,
+            message=(
+                f"Could not find any valid modifications within "
+                f"{req.program} {req.semester} to accommodate '{req.subject_name}'.{reason}"
+                + (" (search stopped at the time limit)" if truncated else "")
+            ),
+            elapsed_ms=elapsed,
+            candidates_evaluated=evaluated,
         )
-        for r in rooms_to_try:
-            trial = {**candidate_entry, "room": r}
-            if _count_new_violations(schedule, schedule + [trial]) == 0:
-                return {"day": slot["day"], "start": slot["start"], "end": slot["end"], "room": r}
-    return None
+
+    return AdvancedSmartScheduleResponse(
+        found=True,
+        proposals=proposals,
+        message=(
+            f"Found {len(proposals)} proposal(s)."
+            + (" (search stopped at the time limit; more options may exist)" if truncated else "")
+        ),
+        elapsed_ms=elapsed,
+        candidates_evaluated=evaluated,
+    )
 
 
+# ── TTL cache (per-process) ───────────────────────────────────────────────────
+_adv_cache: "_OrderedDict[tuple, tuple]" = _OrderedDict()
+_adv_cache_lock = _threading.Lock()
+
+
+def _cache_get(key: tuple) -> Optional[AdvancedSmartScheduleResponse]:
+    with _adv_cache_lock:
+        hit = _adv_cache.get(key)
+        if not hit:
+            return None
+        if _time.monotonic() - hit[0] > _CACHE_TTL_S:
+            _adv_cache.pop(key, None)
+            return None
+        _adv_cache.move_to_end(key)
+        return hit[1]
+
+
+def _cache_put(key: tuple, value: AdvancedSmartScheduleResponse) -> None:
+    with _adv_cache_lock:
+        _adv_cache[key] = (_time.monotonic(), value)
+        _adv_cache.move_to_end(key)
+        while len(_adv_cache) > _CACHE_MAX:
+            _adv_cache.popitem(last=False)
+
+
+# ── Endpoint ──────────────────────────────────────────────────────────────────
 @router.post("/advanced", response_model=AdvancedSmartScheduleResponse)
 def advanced_smart_schedule(
     req: AdvancedSmartScheduleRequest,
@@ -405,259 +868,39 @@ def advanced_smart_schedule(
 
     Returns proposals without applying any changes.
     The caller must explicitly execute the actions_to_apply after user confirmation.
+
+    This version uses an in-memory _Board for O(1) attach/detach,
+    exactly 2 DB round-trips, a TTL cache, and a hard 10-second time budget.
     """
-    # ── Load schedule ────────────────────────────────────────────────────
-    v = db.query(TimetableVersion).order_by(TimetableVersion.id.desc()).first()
-    schedule: List[dict] = [e.to_dict() for e in v.entries] if v else []
+    t0 = _time.perf_counter()
 
-    # ── Validate subject is in catalog ───────────────────────────────────
-    prog_raw = req.program.strip().rstrip('.')
-    sem_raw = req.semester.strip()
-    subj_code = req.subject_code.strip().lower()
-    allowed = C.PROGRAMME_SUBJECT_MAP.get((prog_raw, sem_raw), set())
-    if allowed and subj_code not in allowed and subj_code[:-2] not in allowed:
-        if not (subj_code in ("m", "mm") and ("m" in allowed or "mm" in allowed)):
-            return AdvancedSmartScheduleResponse(
-                found=False,
-                message=(
-                    f"Subject '{req.subject_code}' is not recognized for "
-                    f"{req.program} {req.semester}. Add it to the Catalog first."
-                )
-            )
-
-    # ── Collect teacher busy days ────────────────────────────────────────
-    busy_records = db.query(TeacherBusySlot).filter(
-        TeacherBusySlot.teacher_short_name == req.teacher,
-    ).all()
-    busy_days: set = set()
-    for b in busy_records:
-        if b.scope == "permanent" and b.day_of_week:
-            busy_days.add(b.day_of_week)
-
-    proposals: List[ProposedModification] = []
-
-    # ── Step 1: Normal scheduling (no modifications required) ──────────────
-    # Preferred day: try the preferred day first; if slot found there → great.
-    # If not, the helper will automatically fall through to other days.
-    normal_slot = _find_best_slot_for_new_class(
-        schedule, req.program, req.semester,
-        req.subject_code, req.subject_name,
-        req.teacher, req.entry_type, req.room, busy_days,
-        preferred_day=req.preferred_day,
-    )
-    if normal_slot:
-        proposed_action = {
-            "action": "ADD_CLASS",
-            "spec": {
-                "program": req.program, "semester": req.semester,
-                "day": normal_slot["day"],
-                "start_time": normal_slot["start"], "end_time": normal_slot["end"],
-                "subject_code": req.subject_code, "subject_name": req.subject_name,
-                "teacher": req.teacher, "entry_type": req.entry_type,
-                "room": normal_slot["room"],
-            },
-        }
-        proposals.append(ProposedModification(
-            description=(
-                f"No modifications needed. Best free slot available: "
-                f"{normal_slot['day']} {normal_slot['start']}–{normal_slot['end']} "
-                f"in {normal_slot['room']}."
-            ),
-            modification_type="none",
-            affected_class={},
-            new_slot=normal_slot,
-            priority_slot=normal_slot,
-            actions_to_apply=[proposed_action],
-        ))
-
-    # ── Step 2: Find same-program/semester classes to modify ─────────────
-    same_group = [
-        e for e in schedule
-        if (C.normalize_program(e.get("program", "")) == C.normalize_program(req.program))
-        and (e.get("semester", "").strip() == sem_raw)
-    ]
-
-    for candidate in same_group:
-        if len(proposals) >= 5:
-            break
-
-        cand_teacher = candidate.get("teacher", "")
-        cand_subj = candidate.get("subject_name") or candidate.get("subject_code", "")
-        cand_day = candidate.get("day", "")
-        cand_start = candidate.get("start", "")
-        cand_end = candidate.get("end", "")
-
-        # Prevent "Cancel Class X" to "Add Class X" (circular self-replacements)
-        if cand_subj.lower() == req.subject_code.lower() or cand_subj.lower() == req.subject_name.lower():
-            continue
-
-        # ── Strategy A: Move the candidate class to another free slot ────
-        cand_duration = to_minutes(cand_end) - to_minutes(cand_start) if cand_start and cand_end else 120
-        # Check their busy days quickly
-        c_busy_records = db.query(TeacherBusySlot).filter(TeacherBusySlot.teacher_short_name == cand_teacher).all()
-        c_busy_days = {b.day_of_week for b in c_busy_records if b.scope == "permanent" and b.day_of_week}
-        
-        cand_free_slots = suggest_free_slots_for_teacher(schedule, cand_teacher, cand_duration, busy_days=c_busy_days)
-
-        moved = False
-        for move_slot in cand_free_slots:
-            if move_slot["day"] == cand_day and move_slot["start"] == cand_start:
-                continue
-
-            moved_schedule = _simulate_move(
-                schedule, candidate,
-                move_slot["day"], move_slot["start"], move_slot["end"],
-            )
-            if _count_new_violations(schedule, moved_schedule) > 0:
-                continue
-
-            freed_slot = _find_best_slot_for_new_class(
-                moved_schedule, req.program, req.semester,
-                req.subject_code, req.subject_name,
-                req.teacher, req.entry_type, req.room, busy_days,
-                preferred_day=req.preferred_day,
-            )
-            
-            # Prevent proposing the exact same end-result as "no modification needed"
-            if freed_slot and normal_slot and freed_slot["day"] == normal_slot["day"] and freed_slot["start"] == normal_slot["start"]:
-                continue
-                
-            if not freed_slot:
-                continue
-                
-            # Prevent proposing a move if the freed_slot was ALREADY perfectly valid in the original schedule.
-            trial = {
-                "day": freed_slot["day"], "start": freed_slot["start"], "end": freed_slot["end"],
-                "program": req.program, "semester": req.semester,
-                "subject_code": req.subject_code, "subject_name": req.subject_name,
-                "teacher": req.teacher, "type": req.entry_type, "room": freed_slot["room"],
-            }
-            if _count_new_violations(schedule, schedule + [trial]) == 0:
-                continue
-
-            move_rooms = suggest_free_rooms(moved_schedule, move_slot["day"], move_slot["start"], move_slot["end"])
-            move_room = candidate.get("room", "") or (move_rooms[0] if move_rooms else "")
-
-            proposals.append(ProposedModification(
-                description=(
-                    f"Move '{cand_subj}' ({cand_day} {cand_start}–{cand_end}) → "
-                    f"{move_slot['day']} {move_slot['start']}–{move_slot['end']}, "
-                    f"then place '{req.subject_name}' on "
-                    f"{freed_slot['day']} {freed_slot['start']}–{freed_slot['end']} in {freed_slot['room']}."
-                ),
-                modification_type="move",
-                affected_class={
-                    "subject": cand_subj,
-                    "day": cand_day, "start": cand_start, "end": cand_end,
-                    "teacher": cand_teacher,
-                    "program": candidate.get("program"), "semester": candidate.get("semester"),
-                },
-                new_slot={"day": move_slot["day"], "start": move_slot["start"], "end": move_slot["end"], "room": move_room},
-                priority_slot=freed_slot,
-                actions_to_apply=[
-                    {
-                        "action": "MOVE_CLASS",
-                        "target": {
-                            "day": cand_day, "start_time": cand_start, "end_time": cand_end,
-                            "program": candidate.get("program"), "semester": candidate.get("semester"),
-                            "subject_code": candidate.get("subject_code") or candidate.get("subject"),
-                        },
-                        "new_day": move_slot["day"],
-                        "new_start_time": move_slot["start"],
-                        "new_end_time": move_slot["end"],
-                        **({"new_room": move_room} if move_room else {}),
-                    },
-                    {
-                        "action": "ADD_CLASS",
-                        "spec": {
-                            "program": req.program, "semester": req.semester,
-                            "day": freed_slot["day"],
-                            "start_time": freed_slot["start"], "end_time": freed_slot["end"],
-                            "subject_code": req.subject_code, "subject_name": req.subject_name,
-                            "teacher": req.teacher, "entry_type": req.entry_type,
-                            "room": freed_slot["room"],
-                        },
-                    },
-                ],
-            ))
-            moved = True
-            break
-
-        if moved or len(proposals) >= 5:
-            continue
-
-        # ── Strategy B: Cancel the candidate class (last resort) ─────────
-        cancelled_schedule = _simulate_remove(schedule, candidate)
-        if _count_new_violations(schedule, cancelled_schedule) > 0:
-            continue
-
-        freed_slot = _find_best_slot_for_new_class(
-            cancelled_schedule, req.program, req.semester,
-            req.subject_code, req.subject_name,
-            req.teacher, req.entry_type, req.room, busy_days,
-            preferred_day=req.preferred_day,
-        )
-        if not freed_slot:
-            continue
-            
-        trial_cancel = {
-            "day": freed_slot["day"], "start": freed_slot["start"], "end": freed_slot["end"],
-            "program": req.program, "semester": req.semester,
-            "subject_code": req.subject_code, "subject_name": req.subject_name,
-            "teacher": req.teacher, "type": req.entry_type, "room": freed_slot["room"],
-        }
-        if _count_new_violations(schedule, schedule + [trial_cancel]) == 0:
-            continue
-
-        proposals.append(ProposedModification(
-            description=(
-                f"Cancel '{cand_subj}' ({cand_day} {cand_start}–{cand_end}), "
-                f"then place '{req.subject_name}' on "
-                f"{freed_slot['day']} {freed_slot['start']}–{freed_slot['end']} in {freed_slot['room']}."
-            ),
-            modification_type="cancel",
-            affected_class={
-                "subject": cand_subj,
-                "day": cand_day, "start": cand_start, "end": cand_end,
-                "teacher": cand_teacher,
-                "program": candidate.get("program"), "semester": candidate.get("semester"),
-            },
-            new_slot=None,
-            priority_slot=freed_slot,
-            actions_to_apply=[
-                {
-                    "action": "REMOVE_CLASS",
-                    "target": {
-                        "day": cand_day, "start_time": cand_start, "end_time": cand_end,
-                        "program": candidate.get("program"), "semester": candidate.get("semester"),
-                        "subject_code": candidate.get("subject_code") or candidate.get("subject"),
-                    },
-                },
-                {
-                    "action": "ADD_CLASS",
-                    "spec": {
-                        "program": req.program, "semester": req.semester,
-                        "day": freed_slot["day"],
-                        "start_time": freed_slot["start"], "end_time": freed_slot["end"],
-                        "subject_code": req.subject_code, "subject_name": req.subject_name,
-                        "teacher": req.teacher, "entry_type": req.entry_type,
-                        "room": freed_slot["room"],
-                    },
-                },
-            ],
-        ))
-
-    if not proposals:
+    # Subject catalog check (no DB needed)
+    if not _subject_known(req):
         return AdvancedSmartScheduleResponse(
             found=False,
             message=(
-                f"Could not find any valid modifications within "
-                f"{req.program} {req.semester} to accommodate '{req.subject_name}'. "
+                f"Subject '{req.subject_code}' is not recognized for "
+                f"{req.program} {req.semester}. Add it to the Catalog first."
             ),
         )
 
-    return AdvancedSmartScheduleResponse(
-        found=True,
-        proposals=proposals,
-        message=f"Found {len(proposals)} proposal(s).",
+    # Exactly two DB round-trips
+    v        = db.query(TimetableVersion).order_by(TimetableVersion.id.desc()).first()
+    schedule: List[dict] = [e.to_dict() for e in v.entries] if v else []
+    busy_map = _load_busy_map(db)
+
+    busy_sig  = hash(frozenset((t, frozenset(d)) for t, d in busy_map.items()))
+    cache_key = (
+        getattr(v, "id", 0), len(schedule), busy_sig,
+        req.program, req.semester, req.subject_code, req.subject_name,
+        req.teacher, req.entry_type, req.room, req.preferred_day,
     )
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    resp = _advanced_core(req, schedule, busy_map)
+    resp.elapsed_ms = round((_time.perf_counter() - t0) * 1000, 2)
+    if "time limit" not in resp.message:
+        _cache_put(cache_key, resp)
+    return resp

@@ -14,8 +14,10 @@ from app.actions.engine import EngineResult
 # ============================================================
 # GMAIL CONFIGURATION
 # ============================================================
-SENDER_EMAIL = "timetableadmin71@gmail.com"
-APP_PASSWORD = "lbfg qdqw uhfo wybk"
+import os
+
+SENDER_EMAIL = os.environ.get("SMTP_EMAIL", "timetableadmin71@gmail.com")
+APP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "lbfg qdqw uhfo wybk")
 
 # Hardcoded test recipients as requested by the user
 TEST_RECIPIENTS = ["ankitsen53806626@gmail.com", "ankitcursor478@gmail.com"]
@@ -101,13 +103,15 @@ async def notify_teachers_of_changes(result: EngineResult, db: Session):
     recipients = TEST_RECIPIENTS
     
     subject = "Notification: Routine Change in Timetable System"
+    change_log_str = result.change_log if result.change_log is not None else "Unknown details"
+    
     body = f"""Hello,
 
 This is an automated notification from the Timetable Management System.
 
 Your scheduled routine has been modified.
 Changes summary:
-{result.change_log}
+{change_log_str}
 
 Please log in to the Timetable Application portal to view your updated schedule.
 
