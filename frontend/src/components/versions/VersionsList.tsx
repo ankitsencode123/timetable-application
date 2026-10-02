@@ -144,7 +144,7 @@ export default function VersionsList() {
                 <Eye size={12} /> View
               </button>
               {!isPublished && (
-                <button className="btn btn-success btn-sm" onClick={() => setPublishTarget(v)} disabled={v.status === 'ARCHIVED'}>
+                <button className="btn btn-success btn-sm" onClick={() => setPublishTarget(v)}>
                   <Rocket size={12} /> Publish
                 </button>
               )}

@@ -697,4 +697,5 @@ def _violation_message(v: Dict[str, Any]) -> str:
         "H11_wrong_semester_subject": f"**{v.get('subject_code','?')} invalid:** Subject does not belong to **{entry.get('program','?')} {entry.get('semester','?')}**.",
         "start_not_before_end":    "**Invalid duration:** Start time must be before end time.",
     }
-    return msgs.get(rule, v.get("note", rule))
+    msg_body = msgs.get(rule, v.get("note", rule))
+    return f"Action blocked by a constraint\n\n{msg_body}"

@@ -59,7 +59,6 @@ H4: a class may only be assigned a room that satisfies its blackboard, projector
 H5: each teacher may have at most one THEORY class per day. Theory plus one practical/lab on the same day is allowed. Two practicals for the same teacher on the same day should only happen if it does not break any other constraint.
 H6: every INTERNAL teacher should get at least one fully free day per week, meaning no theory, practical, lab or duty that day, if this is feasible at all. If it is not possible for a specific teacher, state this explicitly with the exact reason.
 H7: never assign a teacher to a subject outside the allocation you were given.
-H8: every subject must receive exactly its required weekly hours, never fewer, never more.
 H9: practical/lab durations must be preserved exactly as required.
 H10: two classes conflict if their time intervals overlap even by one minute; use start_A < end_B and start_B < end_A as the overlap test, consistently for teachers, rooms and semesters.
 

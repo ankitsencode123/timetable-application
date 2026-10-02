@@ -1,7 +1,6 @@
 """Email service for notifying teachers of routine changes."""
 import asyncio
-import aiosmtplib
-from email.message import EmailMessage
+import resend
 from typing import List, Dict, Any
 
 from loguru import logger
@@ -11,37 +10,33 @@ from app.models.teacher import Teacher
 from app.actions.engine import EngineResult
 
 
-# ============================================================
-# GMAIL CONFIGURATION
-# ============================================================
 import os
 
-SENDER_EMAIL = os.environ.get("SMTP_EMAIL", "timetableadmin71@gmail.com")
-APP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "lbfg qdqw uhfo wybk")
+# ============================================================
+# RESEND CONFIGURATION
+# Set RESEND_API_KEY in your .env file or environment.
+# ============================================================
+resend.api_key = os.environ.get("RESEND_API_KEY", "")
+SENDER_EMAIL = os.environ.get("RESEND_SENDER_EMAIL", "onboarding@resend.dev")
 
 # Hardcoded test recipients as requested by the user
-TEST_RECIPIENTS = ["ankitsen53806626@gmail.com", "ankitcursor478@gmail.com"]
+TEST_RECIPIENTS = ["ankitproject556@gmail.com", "ankitsen53806626@gmail.com", "ankitcursor478@gmail.com"]
 
 
 async def send_email(subject: str, body: str, to_emails: List[str]):
-    """Send an email to a list of recipients asynchronously using Gmail SMTP."""
+    """Send an email to a list of recipients asynchronously using Resend."""
     if not to_emails:
         return
 
-    email = EmailMessage()
-    email["From"] = SENDER_EMAIL
-    email["To"] = ", ".join(to_emails)
-    email["Subject"] = subject
-    email.set_content(body)
-
     try:
-        await aiosmtplib.send(
-            email,
-            hostname="smtp.gmail.com",
-            port=587,
-            start_tls=True,
-            username=SENDER_EMAIL,
-            password=APP_PASSWORD,
+        await asyncio.to_thread(
+            resend.Emails.send,
+            {
+                "from": SENDER_EMAIL,
+                "to": to_emails,
+                "subject": subject,
+                "text": body,
+            }
         )
         logger.info(f"Notification email sent successfully to {to_emails}.")
     except Exception as e:
