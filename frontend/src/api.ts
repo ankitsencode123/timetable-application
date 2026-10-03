@@ -250,4 +250,123 @@ export async function createCatalogBundle(payload: unknown): Promise<{ status: s
   return request('/catalog/bundle', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+// ── Calendar System (public) ──────────────────────────────────────────────────
+
+export interface CalendarDayEntry {
+  day: string; program: string; semester: string;
+  start: string; end: string;
+  subject_code: string; subject_name: string;
+  teacher: string; type: string; room: string;
+  cal_key?: string; cal_source?: string; cal_version_id?: number | null;
+  cal_override_id?: number; cal_note?: string; cal_original?: Record<string, any>;
+}
+
+export interface CalendarDayResult {
+  date: string; weekday: string; version_id: number | null;
+  validity_id: number | null; validity_label: string | null;
+  is_holiday: boolean; has_overrides: boolean;
+  entries: CalendarDayEntry[]; cancelled: CalendarDayEntry[];
+  notices: string[]; warnings?: string[];
+  day_offs: { override_id: number; program: string | null; semester: string | null; reason: string }[];
+}
+
+export interface CalendarMonthDay {
+  date: string; weekday: string; classes: number; cancelled: number;
+  is_holiday: boolean; has_changes: boolean;
+  validity_id: number | null; validity_label: string | null; version_id: number | null;
+}
+
+export interface CalendarOverrideRecord {
+  id: number; date: string; weekday: string; action: string; target_key: string;
+  entry?: Record<string, any> | null; changes?: Record<string, any> | null;
+  program?: string | null; semester?: string | null;
+  target?: Record<string, any> | null; reason: string; forced: boolean;
+  forced_violations?: any[] | null;
+  created_by: number; created_at: string;
+}
+
+export interface CalendarValidityRecord {
+  id: number; version_id: number; scope: string;
+  start_date: string; end_date: string;
+  label: string; priority: number;
+  created_by: number; created_at: string;
+}
+
+export async function getCalendarMonth(year: number, month: number, filters?: { program?: string; semester?: string; teacher?: string }): Promise<{ year: number; month: number; days: CalendarMonthDay[] }> {
+  const params = new URLSearchParams()
+  if (filters?.program) params.set('program', filters.program)
+  if (filters?.semester) params.set('semester', filters.semester)
+  if (filters?.teacher) params.set('teacher', filters.teacher)
+  const qs = params.toString()
+  return request(`/calendar/month/${year}/${month}${qs ? `?${qs}` : ''}`)
+}
+
+export async function getCalendarDay(date: string, filters?: { program?: string; semester?: string; teacher?: string }): Promise<CalendarDayResult> {
+  const params = new URLSearchParams()
+  if (filters?.program) params.set('program', filters.program)
+  if (filters?.semester) params.set('semester', filters.semester)
+  if (filters?.teacher) params.set('teacher', filters.teacher)
+  const qs = params.toString()
+  return request(`/calendar/day/${date}${qs ? `?${qs}` : ''}`)
+}
+
+export async function getCalendarRange(start: string, end: string, filters?: { program?: string; semester?: string; teacher?: string }): Promise<{ start: string; end: string; days: CalendarDayResult[] }> {
+  const params = new URLSearchParams({ start, end })
+  if (filters?.program) params.set('program', filters.program)
+  if (filters?.semester) params.set('semester', filters.semester)
+  if (filters?.teacher) params.set('teacher', filters.teacher)
+  return request(`/calendar/range?${params.toString()}`)
+}
+
+// ── Calendar System (admin) ────────────────────────────────────────────────────
+
+export async function adminGetCalendarDay(date: string): Promise<CalendarDayResult & { violations: any[]; overrides: CalendarOverrideRecord[] }> {
+  return request(`/admin/calendar/day/${date}`)
+}
+
+export async function adminListOverrides(start?: string, end?: string): Promise<CalendarOverrideRecord[]> {
+  const params = new URLSearchParams()
+  if (start) params.set('start', start)
+  if (end) params.set('end', end)
+  const qs = params.toString()
+  return request(`/admin/calendar/overrides${qs ? `?${qs}` : ''}`)
+}
+
+export async function adminCreateOverride(payload: {
+  date: string; action: 'ADD' | 'CANCEL' | 'MODIFY' | 'DAY_OFF';
+  target_key?: string; entry?: Record<string, any>; changes?: Record<string, any>;
+  program?: string; semester?: string; reason?: string; force?: boolean;
+}): Promise<{ override: CalendarOverrideRecord; forced_violations: any[]; day: CalendarDayResult }> {
+  return request('/admin/calendar/overrides', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function adminDeleteOverride(id: number, force = false): Promise<{ deleted: number; day: CalendarDayResult }> {
+  return request(`/admin/calendar/overrides/${id}?force=${force}`, { method: 'DELETE' })
+}
+
+export async function adminListValidity(start?: string, end?: string): Promise<CalendarValidityRecord[]> {
+  const params = new URLSearchParams()
+  if (start) params.set('start', start)
+  if (end) params.set('end', end)
+  const qs = params.toString()
+  return request(`/admin/calendar/validity${qs ? `?${qs}` : ''}`)
+}
+
+export async function adminCreateValidity(payload: {
+  version_id: number; scope: 'WEEK' | 'MONTH' | 'RANGE';
+  anchor_date?: string; start_date?: string; end_date?: string;
+  label?: string; priority?: number; force?: boolean;
+}): Promise<{ window: CalendarValidityRecord; overlapping_windows: any[]; warnings: string[]; note: string }> {
+  return request('/admin/calendar/validity', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function adminDeleteValidity(id: number, force = false): Promise<{ deleted: number; warnings: string[] }> {
+  return request(`/admin/calendar/validity/${id}?force=${force}`, { method: 'DELETE' })
+}
+
+export async function adminCalendarAudit(limit = 100): Promise<{ id: number; actor_id: number | null; action: string; entity: string; entity_id: number | null; payload: any; created_at: string }[]> {
+  return request(`/admin/calendar/audit?limit=${limit}`)
+}
+
 export { request as req };
+

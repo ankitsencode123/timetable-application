@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Send, Loader2, X } from 'lucide-react'
+import { Send, Loader2, X, CalendarDays, ChevronDown } from 'lucide-react'
 import { getPublicTimetable, getPublicMeta, publicChat } from '../api'
 import type { TimetableEntry, TimetableFilters } from '../types'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import FilterBar from '../components/filters/FilterBar'
 import TimetableGrid from '../components/timetable/TimetableGrid'
+import PublicCalendar from '../components/calendar/PublicCalendar'
 
 function fmtDate(s?: string | null) {
   if (!s) return 'Recently'
@@ -144,6 +145,9 @@ export default function PublicPage() {
             <p>Check back later for the latest schedule.</p>
           </div>
         )}
+
+        {/* Calendar section */}
+        <CalendarSection />
       </div>
 
       {/* AI Chat Drawer */}
@@ -208,6 +212,39 @@ export default function PublicPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CalendarSection() {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ borderTop: '1px solid var(--line)', flexShrink: 0 }}>
+      <button
+        id="pub-cal-toggle"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', padding: 'var(--sp-3) var(--sp-5)',
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: open ? 'var(--accent-soft)' : 'var(--paper)',
+          border: 'none', cursor: 'pointer',
+          borderBottom: open ? '1px solid var(--line)' : 'none',
+          transition: 'var(--transition)',
+          color: open ? 'var(--accent)' : 'var(--ink-soft)',
+        }}
+      >
+        <CalendarDays size={14} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+          Date-Aware Calendar View
+        </span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-soft)', marginLeft: 4 }}>click to {open ? 'hide' : 'show'}</span>
+        <ChevronDown size={13} style={{ marginLeft: 'auto', transform: open ? 'rotate(180deg)' : 'none', transition: 'var(--transition)' }} />
+      </button>
+      {open && (
+        <div style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-5)' }}>
+          <PublicCalendar />
         </div>
       )}
     </div>

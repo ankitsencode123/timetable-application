@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Shield, UserCheck, UserX, RefreshCw,
-  Activity, Search, AlertCircle, BookOpen, CalendarOff,
+  Activity, Search, AlertCircle, BookOpen, CalendarOff, Calendar,
 } from 'lucide-react'
 import { useAuthStore } from '../store'
 import {
@@ -11,8 +11,9 @@ import {
 } from '../api'
 import CatalogManager from '../components/catalog/CatalogManager'
 import BusySlotsManager from '../components/busyslots/BusySlotsManager'
+import CalendarManager from '../components/calendar/CalendarManager'
 
-type Tab = 'users' | 'activity' | 'catalog' | 'availability'
+type Tab = 'users' | 'activity' | 'catalog' | 'availability' | 'calendar'
 
 export default function AdminPanel() {
   const { user } = useAuthStore()
@@ -83,6 +84,7 @@ export default function AdminPanel() {
           <TabBtn active={tab === 'users'}        onClick={() => setTab('users')}        label="Teachers"    icon={<UserCheck size={13} />} />
           <TabBtn active={tab === 'catalog'}      onClick={() => setTab('catalog')}      label="Catalog"     icon={<BookOpen size={13} />} />
           <TabBtn active={tab === 'availability'} onClick={() => setTab('availability')} label="Busy Slots"  icon={<CalendarOff size={13} />} />
+          <TabBtn active={tab === 'calendar'}     onClick={() => setTab('calendar')}     label="Calendar"    icon={<Calendar size={13} />} />
           <TabBtn active={tab === 'activity'}     onClick={() => {}}                     label="Activity Log" icon={<Activity size={13} />} disabled={activityUserId === null} />
         </div>
 
@@ -147,6 +149,14 @@ export default function AdminPanel() {
           <div className="card">
             <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 'var(--sp-4)', color: 'var(--ink)' }}>Faculty Availability — Busy Slots</h3>
             <BusySlotsManager />
+          </div>
+        )}
+
+        {tab === 'calendar' && (
+          <div className="card">
+            <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-md)', fontWeight: 600, marginBottom: 'var(--sp-4)', color: 'var(--ink)' }}>Calendar Management</h3>
+            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', marginBottom: 'var(--sp-4)', lineHeight: 1.6 }}>Manage date-specific overrides (ADD / CANCEL / MODIFY / DAY_OFF) and validity windows that assign a specific timetable version to a date range.</p>
+            <CalendarManager />
           </div>
         )}
       </div>
