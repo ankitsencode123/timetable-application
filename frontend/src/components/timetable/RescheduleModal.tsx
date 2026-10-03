@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Clock, Calendar, ArrowRight, X, AlertTriangle, Lightbulb } from 'lucide-react'
+import { Clock, Calendar, ArrowRight, X, AlertTriangle, Lightbulb, Home } from 'lucide-react'
 import type { TimetableEntry } from '../../types'
 import { executeActions } from '../../api'
 
@@ -11,11 +11,28 @@ interface Props {
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+// Minimum: 10:00 AM, Maximum: 5:30 PM
 const TIME_SLOTS = [
-  '08:00', '09:00', '10:00', '11:00', '12:00',
+  '10:00', '11:00', '12:00',
   '13:00', '14:00', '14:30', '15:00', '15:30',
-  '16:00', '16:30', '17:00', '17:30', '18:00',
+  '16:00', '16:30', '17:00', '17:30',
 ]
+
+function isRoomSuggestion(rs: any): boolean {
+  // A suggestion is a "room change" if the action involves keeping same time but different room
+  const action = rs.action
+  if (!action) return false
+  const specRoom = action.spec?.room ?? action.new_room ?? action.room
+  const specDay = action.new_day ?? action.spec?.day
+  const specStart = action.new_start_time ?? action.spec?.start_time
+  // If room is explicitly set and the time/day seem like the same slot, it's a room suggestion
+  if (specRoom && specRoom.trim()) {
+    // Priority: room changes that don't change the time
+    if (!specDay && !specStart) return true
+    if (specDay === (action.target?.day ?? '') && specStart === (action.target?.start_time ?? '')) return true
+  }
+  return false
+}
 
 export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
   const [newDay, setNewDay] = useState(entry.day)
@@ -65,7 +82,18 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
       } else {
         const firstResult = result.results?.[0]
         setError(firstResult?.error ?? 'Could not reschedule. Check for conflicts.')
-        setSuggestions(firstResult?.suggestions?.rich_suggestions ?? null)
+        const raw = firstResult?.suggestions?.rich_suggestions ?? null
+        if (raw) {
+          // Sort: room suggestions first, then others
+          const sorted = [...raw].sort((a, b) => {
+            const aRoom = isRoomSuggestion(a) ? 0 : 1
+            const bRoom = isRoomSuggestion(b) ? 0 : 1
+            return aRoom - bRoom
+          })
+          setSuggestions(sorted)
+        } else {
+          setSuggestions(null)
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred.')
@@ -84,7 +112,11 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
       } else {
         const firstResult = result.results?.[0]
         setError(firstResult?.error ?? 'Could not reschedule with suggestion.')
-        setSuggestions(firstResult?.suggestions?.rich_suggestions ?? null)
+        const raw = firstResult?.suggestions?.rich_suggestions ?? null
+        if (raw) {
+          const sorted = [...raw].sort((a, b) => (isRoomSuggestion(a) ? 0 : 1) - (isRoomSuggestion(b) ? 0 : 1))
+          setSuggestions(sorted)
+        }
       }
     } catch(err: any) {
        setError(err.message)
@@ -107,7 +139,7 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-lg)', fontWeight: 600, color: 'var(--ink)' }}>
               {entry.subject_name}
             </h2>
-            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', display: 'flex', gap: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <span>Currently: <strong style={{ color: 'var(--ink)' }}>{entry.day}</strong></span>
               <span>·</span>
               <span><strong style={{ color: 'var(--ink)' }}>{entry.start}–{entry.end}</strong></span>
@@ -159,6 +191,7 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
           <div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 8, color: 'var(--ink)' }}>
               <Clock size={14} style={{ color: 'var(--accent)' }} /> New Start Time
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', fontWeight: 400 }}>(10:00 – 17:30)</span>
             </label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {TIME_SLOTS.map(t => (
@@ -179,6 +212,8 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
             {/* Custom input */}
             <input
               type="time"
+              min="10:00"
+              max="17:30"
               value={newStart}
               onChange={e => setNewStart(e.target.value)}
               className="input"
@@ -190,6 +225,7 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
           <div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 8, color: 'var(--ink)' }}>
               <Clock size={14} style={{ color: 'var(--accent)' }} /> New End Time
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', fontWeight: 400 }}>(max 17:30)</span>
             </label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {TIME_SLOTS.map(t => (
@@ -209,6 +245,8 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
             </div>
             <input
               type="time"
+              min="10:00"
+              max="17:30"
               value={newEnd}
               onChange={e => setNewEnd(e.target.value)}
               className="input"
@@ -229,29 +267,38 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
           </div>
         )}
 
-        {/* Suggestion Engine logic */}
+        {/* Suggestion Engine logic — rooms first, then others */}
         {suggestions && suggestions.length > 0 && (
           <div style={{ marginTop: 'var(--sp-3)', padding: '12px 14px', background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 8 }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--accent)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
               <Lightbulb size={12} /> Conflict-Free Alternatives
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {suggestions.map((rs: any, i: number) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 12px', background: 'var(--paper)', border: '1px solid color-mix(in oklab, var(--line) 40%, transparent)', borderRadius: 6 }}>
-                  <div>
-                    <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--ink)' }}>{rs.title}</div>
-                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>{rs.description}</div>
+              {suggestions.map((rs: any, i: number) => {
+                const isRoom = isRoomSuggestion(rs)
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 12px', background: 'var(--paper)', border: `1px solid color-mix(in oklab, ${isRoom ? 'var(--accent)' : 'var(--line)'} 40%, transparent)`, borderRadius: 6 }}>
+                    <div>
+                      {isRoom && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                          <Home size={10} style={{ color: 'var(--accent)' }} />
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Room change</span>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--ink)' }}>{rs.title}</div>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>{rs.description}</div>
+                    </div>
+                    <button 
+                      onClick={() => applySuggestion(rs.action)}
+                      className="btn btn-primary btn-sm"
+                      disabled={loading}
+                      style={{ flexShrink: 0 }}
+                    >
+                      Apply
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => applySuggestion(rs.action)}
-                    className="btn btn-primary btn-sm"
-                    disabled={loading}
-                    style={{ flexShrink: 0 }}
-                  >
-                    Apply
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}

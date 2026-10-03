@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, AlertCircle,
-  Calendar, Shield, ClipboardList, X, RefreshCw, Info,
+  Calendar, Shield, ClipboardList, X, RefreshCw, Info, Lightbulb, Home,
 } from 'lucide-react'
 import {
   getCalendarMonth, adminGetCalendarDay, adminListOverrides,
   adminCreateOverride, adminDeleteOverride, adminListValidity,
   adminCreateValidity, adminDeleteValidity, adminCalendarAudit,
-  listVersions,
+  listVersions, executeActions,
   type CalendarMonthDay, type CalendarDayResult,
   type CalendarOverrideRecord, type CalendarValidityRecord,
 } from '../../api'
@@ -123,9 +123,11 @@ function MonthGridPanel() {
   const todayStr = today()
 
   return (
-    <div style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+    <div style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap', alignItems: 'flex-start', flexDirection: 'column' }}>
+      {/* Calendar Grid + Detail side-by-side on wide, stacked on mobile */}
+      <div style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap', alignItems: 'flex-start', width: '100%' }}>
       {/* Calendar Grid Column */}
-      <div style={{ flex: '1 1 420px', minWidth: 340 }}>
+      <div style={{ flex: '1 1 300px', minWidth: 0 }}>
         {/* Month navigation */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-3)' }}>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { if (month === 1) { setYear(y => y-1); setMonth(12) } else { setMonth(m => m-1) } }}>
@@ -156,7 +158,7 @@ function MonthGridPanel() {
             {/* Day cells */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
               {cells.map((day, idx) => {
-                if (!day) return <div key={idx} style={{ minHeight: 64, background: 'var(--paper)', borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }} />
+                if (!day) return <div key={idx} style={{ minHeight: 48, background: 'var(--paper)', borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)' }} />
                 const dateStr = toISO(year, month, day)
                 const info = dayMap[dateStr]
                 const isToday = dateStr === todayStr
@@ -165,7 +167,7 @@ function MonthGridPanel() {
                 const hasChanges = info?.has_changes
                 return (
                   <button key={idx} onClick={() => selectDay(dateStr)} style={{
-                    minHeight: 64, padding: '6px 6px 4px',
+                    minHeight: 48, padding: '4px 4px 2px',
                     background: isSelected ? 'var(--accent-soft)' : isHoliday ? 'var(--violation-soft)' : isToday ? 'var(--amber-soft)' : 'var(--card-bg)',
                     border: 'none',
                     borderRight: '1px solid var(--line)', borderBottom: '1px solid var(--line)',
@@ -174,19 +176,18 @@ function MonthGridPanel() {
                     outline: isSelected ? `2px solid var(--accent)` : isToday ? `2px solid var(--amber)` : 'none',
                     outlineOffset: -2,
                   }}>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: isToday ? 700 : 500, color: isSelected ? 'var(--accent)' : isHoliday ? 'var(--violation)' : isToday ? 'var(--amber)' : 'var(--ink)', marginBottom: 4 }}>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: isToday ? 700 : 500, color: isSelected ? 'var(--accent)' : isHoliday ? 'var(--violation)' : isToday ? 'var(--amber)' : 'var(--ink)', marginBottom: 2 }}>
                       {day}
                     </div>
                     {info && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                         {info.classes > 0 && (
-                          <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--accent)', background: 'color-mix(in oklab, var(--accent) 10%, transparent)', borderRadius: 3, padding: '1px 4px' }}>
-                            {info.classes} cls
+                          <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--accent)', background: 'color-mix(in oklab, var(--accent) 10%, transparent)', borderRadius: 3, padding: '1px 3px' }}>
+                            {info.classes}c
                           </span>
                         )}
-                        {isHoliday && <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--violation)', background: 'var(--violation-soft)', borderRadius: 3, padding: '1px 4px' }}>holiday</span>}
-                        {hasChanges && !isHoliday && <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--amber)', background: 'var(--amber-soft)', borderRadius: 3, padding: '1px 4px' }}>edited</span>}
-                        {info.validity_label && <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--clr-purple)', background: 'color-mix(in oklab, var(--clr-purple) 10%, transparent)', borderRadius: 3, padding: '1px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{info.validity_label.slice(0,12)}</span>}
+                        {isHoliday && <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--violation)', background: 'var(--violation-soft)', borderRadius: 3, padding: '1px 3px' }}>off</span>}
+                        {hasChanges && !isHoliday && <span style={{ fontSize: 8, fontFamily: 'var(--font-mono)', color: 'var(--amber)', background: 'var(--amber-soft)', borderRadius: 3, padding: '1px 3px' }}>✎</span>}
                       </div>
                     )}
                   </button>
@@ -214,7 +215,7 @@ function MonthGridPanel() {
 
       {/* Day Detail Panel */}
       {selectedDate && (
-        <div style={{ flex: '1 1 320px', minWidth: 280 }}>
+        <div style={{ flex: '1 1 300px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-3)' }}>
             <div>
               <div className="mono-label">{dayData?.weekday ?? ''}</div>
@@ -344,6 +345,7 @@ function MonthGridPanel() {
           ) : null}
         </div>
       )}
+      </div>{/* end side-by-side row */}
 
       {/* Override Modal */}
       {showOverrideModal && selectedDate && (
@@ -382,6 +384,60 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
   const [modChanges, setModChanges] = useState({ start: '', end: '', subject_code: '', subject_name: '', teacher: '', room: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [modSuggestions, setModSuggestions] = useState<any[] | null>(null)
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+
+  async function fetchModifySuggestions(key: string) {
+    if (!key || action !== 'MODIFY') return
+    setLoadingSuggestions(true)
+    setModSuggestions(null)
+    try {
+      // Find the entry matching the key to build a move action for suggestions
+      const entry = (dayData?.entries ?? []).find(e => e.cal_key === key)
+      if (!entry) { setLoadingSuggestions(false); return }
+      const moveAction = {
+        action: 'MOVE_CLASS',
+        target: {
+          day: entry.start ? date : date,
+          program: entry.program,
+          semester: entry.semester,
+          start_time: entry.start,
+          end_time: entry.end,
+          subject_code: entry.subject_code,
+          teacher: entry.teacher,
+        },
+        new_day: date,
+        new_start_time: entry.start,
+        new_end_time: entry.end,
+      }
+      const result = await executeActions([moveAction])
+      const raw = result?.results?.[0]?.suggestions?.rich_suggestions ?? null
+      if (raw) {
+        // Room suggestions first
+        const sorted = [...raw].sort((a: any, b: any) => {
+          const aRoom = (a.action?.spec?.room || a.action?.new_room) ? 0 : 1
+          const bRoom = (b.action?.spec?.room || b.action?.new_room) ? 0 : 1
+          return aRoom - bRoom
+        })
+        setModSuggestions(sorted)
+      }
+    } catch { /* suggestions are optional */ }
+    finally { setLoadingSuggestions(false) }
+  }
+
+  function applyModSuggestion(rs: any) {
+    const a = rs.action
+    if (!a) return
+    const changes: Record<string, string> = {}
+    if (a.new_day)        changes.day         = a.new_day
+    if (a.new_start_time) changes.start       = a.new_start_time
+    if (a.new_end_time)   changes.end         = a.new_end_time
+    if (a.spec?.room)     changes.room        = a.spec.room
+    if (a.new_room)       changes.room        = a.new_room
+    if (a.spec?.teacher)  changes.teacher     = a.spec.teacher
+    setModChanges(c => ({ ...c, ...changes }))
+    setModSuggestions(null)
+  }
 
   async function submit() {
     setLoading(true); setError(null)
@@ -483,7 +539,13 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
               {entries.length === 0 ? (
                 <div style={{ color: 'var(--ink-soft)', fontSize: 'var(--fs-xs)', fontStyle: 'italic' }}>No classes available on this date.</div>
               ) : (
-                <select className="input" value={targetKey} onChange={e => setTargetKey(e.target.value)} id="override-target-select">
+                <select className="input" value={targetKey} onChange={e => {
+                  setTargetKey(e.target.value)
+                  setModSuggestions(null)
+                  if (action === 'MODIFY' && e.target.value) {
+                    setTimeout(() => fetchModifySuggestions(e.target.value), 0)
+                  }
+                }} id="override-target-select">
                   <option value="">— pick a class —</option>
                   {entries.filter(e => e.cal_source === 'base').map(e => (
                     <option key={e.cal_key} value={e.cal_key ?? ''}>
@@ -495,20 +557,60 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
             </div>
           )}
 
+          {/* MODIFY — suggestions */}
+          {action === 'MODIFY' && targetKey && (
+            <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  <Lightbulb size={12} /> Conflict-Free Suggestions
+                </div>
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }} disabled={loadingSuggestions} onClick={() => fetchModifySuggestions(targetKey)}>
+                  {loadingSuggestions ? 'Loading…' : '↻ Refresh'}
+                </button>
+              </div>
+              {loadingSuggestions && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>Analyzing schedule…</div>}
+              {modSuggestions && modSuggestions.length === 0 && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>No conflict-free alternatives found.</div>}
+              {modSuggestions && modSuggestions.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {modSuggestions.slice(0, 6).map((rs: any, i: number) => {
+                    const isRoom = !!(rs.action?.spec?.room || rs.action?.new_room)
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: 'var(--card-bg)', border: `1px solid color-mix(in oklab, ${isRoom ? 'var(--accent)' : 'var(--line)'} 40%, transparent)`, borderRadius: 6 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {isRoom && <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 1 }}><Home size={9} style={{ color: 'var(--accent)' }} /><span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: 'var(--accent)', textTransform: 'uppercase' }}>Room change</span></div>}
+                          <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rs.title}</div>
+                          <div style={{ fontSize: 10, color: 'var(--ink-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rs.description}</div>
+                        </div>
+                        <button className="btn btn-primary btn-sm" style={{ flexShrink: 0, fontSize: 10 }} onClick={() => applyModSuggestion(rs)}>Use</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* MODIFY — changes */}
           {action === 'MODIFY' && targetKey && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--sp-3)' }}>
               {[
-                { field: 'start', label: 'New Start (HH:MM)' },
-                { field: 'end', label: 'New End (HH:MM)' },
-                { field: 'teacher', label: 'New Teacher' },
-                { field: 'room', label: 'New Room' },
-                { field: 'subject_code', label: 'New Subject Code' },
-                { field: 'subject_name', label: 'New Subject Name' },
-              ].map(({ field, label }) => (
+                { field: 'start', label: 'New Start (HH:MM)', type: 'time' },
+                { field: 'end', label: 'New End (HH:MM)', type: 'time' },
+                { field: 'teacher', label: 'New Teacher', type: 'text' },
+                { field: 'room', label: 'New Room', type: 'text' },
+                { field: 'subject_code', label: 'New Subject Code', type: 'text' },
+                { field: 'subject_name', label: 'New Subject Name', type: 'text' },
+              ].map(({ field, label, type }) => (
                 <div key={field} className="form-group">
                   <label className="form-label">{label} (optional)</label>
-                  <input className="input" placeholder="leave blank to keep" value={(modChanges as any)[field]} onChange={e => setModChanges(c => ({ ...c, [field]: e.target.value }))} />
+                  <input
+                    className="input" type={type}
+                    min={type === 'time' ? '10:00' : undefined}
+                    max={type === 'time' ? '17:30' : undefined}
+                    placeholder={type === 'time' ? '' : 'leave blank to keep'}
+                    value={(modChanges as any)[field]}
+                    onChange={e => setModChanges(c => ({ ...c, [field]: e.target.value }))}
+                  />
                 </div>
               ))}
             </div>
@@ -516,20 +618,27 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
 
           {/* ADD — entry form */}
           {action === 'ADD' && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--sp-3)' }}>
               {[
-                { field: 'program', label: 'Program', placeholder: 'B.Tech' },
-                { field: 'semester', label: 'Semester', placeholder: '3rd' },
-                { field: 'start', label: 'Start (HH:MM)', placeholder: '09:00' },
-                { field: 'end', label: 'End (HH:MM)', placeholder: '10:00' },
-                { field: 'subject_code', label: 'Subject Code', placeholder: 'CS301' },
-                { field: 'subject_name', label: 'Subject Name', placeholder: 'Algorithms' },
-                { field: 'teacher', label: 'Teacher', placeholder: 'SK' },
-                { field: 'room', label: 'Room', placeholder: 'LH-1' },
-              ].map(({ field, label, placeholder }) => (
+                { field: 'program', label: 'Program', placeholder: 'B.Tech', type: 'text' },
+                { field: 'semester', label: 'Semester', placeholder: '3rd', type: 'text' },
+                { field: 'start', label: 'Start (HH:MM)', placeholder: '10:00', type: 'time' },
+                { field: 'end', label: 'End (HH:MM)', placeholder: '12:00', type: 'time' },
+                { field: 'subject_code', label: 'Subject Code', placeholder: 'CS301', type: 'text' },
+                { field: 'subject_name', label: 'Subject Name', placeholder: 'Algorithms', type: 'text' },
+                { field: 'teacher', label: 'Teacher', placeholder: 'SK', type: 'text' },
+                { field: 'room', label: 'Room', placeholder: 'LH-1', type: 'text' },
+              ].map(({ field, label, placeholder, type }) => (
                 <div key={field} className="form-group">
                   <label className="form-label">{label}</label>
-                  <input className="input" placeholder={placeholder} value={(addEntry as any)[field]} onChange={e => setAddEntry(c => ({ ...c, [field]: e.target.value }))} />
+                  <input
+                    className="input" type={type}
+                    min={type === 'time' ? '10:00' : undefined}
+                    max={type === 'time' ? '17:30' : undefined}
+                    placeholder={placeholder}
+                    value={(addEntry as any)[field]}
+                    onChange={e => setAddEntry(c => ({ ...c, [field]: e.target.value }))}
+                  />
                 </div>
               ))}
               <div className="form-group">
@@ -603,12 +712,12 @@ function OverridesPanel() {
         overrides.length === 0 ? (
           <div className="empty-state"><Calendar size={32} /><h3>No overrides</h3><p>Use the Month View to select a date and add overrides.</p></div>
         ) : (
-          <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
               <thead>
                 <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
                   {['Date', 'Day', 'Action', 'Target / Scope', 'Reason', 'Forced', ''].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 500, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>{h}</th>
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 500, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.15em', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -686,12 +795,12 @@ function ValidityPanel() {
         windows.length === 0 ? (
           <div className="empty-state"><Shield size={32} /><h3>No validity windows</h3><p>Assign a timetable version to a date range (week, month, or custom) so it takes effect for those days instead of the published version.</p></div>
         ) : (
-          <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
               <thead>
                 <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
                   {['Version', 'Scope', 'From', 'To', 'Label', 'Priority', ''].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 500, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>{h}</th>
+                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 500, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.15em', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>

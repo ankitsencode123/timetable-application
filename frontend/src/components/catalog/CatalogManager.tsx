@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Loader2, Pencil, Check, X } from 'lucide-react'
+import { Plus, Trash2, Loader2, Pencil, Check, X, AlertCircle } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
 import { req } from '../../api'
 
@@ -15,17 +15,41 @@ interface Program { id: number; name: string; semesters_count: number; descripti
 // ── Teacher Tab ────────────────────────────────────
 function TeachersTab() {
   const [list, setList] = useState<Teacher[]>([])
+  const [subjects, setSubjects] = useState<Subject[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [created, setCreated] = useState<{ email: string; password?: string } | null>(null)
   const [editId, setEditId] = useState<number | null>(null)
   const [editSubjects, setEditSubjects] = useState('')
+  const [editError, setEditError] = useState<string | null>(null)
   const [form, setForm] = useState({ short_name: '', full_name: '', subjects_csv: '', is_internal: true, email: '' })
+  const [formError, setFormError] = useState<string | null>(null)
   const setF = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }))
 
-  useEffect(() => { req<Teacher[]>('/catalog/teachers').then(setList).catch(() => {}).finally(() => setLoading(false)) }, [])
+  useEffect(() => {
+    Promise.all([
+      req<Teacher[]>('/catalog/teachers'),
+      req<Subject[]>('/catalog/subjects'),
+    ]).then(([ts, ss]) => { setList(ts); setSubjects(ss) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  function validateSubjectCodes(csv: string): string | null {
+    if (!csv.trim()) return null
+    const knownCodes = new Set(subjects.map(s => s.code.toLowerCase().trim()))
+    const entered = csv.split(',').map(c => c.trim().toLowerCase()).filter(Boolean)
+    const unknown = entered.filter(c => !knownCodes.has(c))
+    if (unknown.length > 0) {
+      return `Unknown subject code(s): ${unknown.join(', ')}. Only existing subject codes may be assigned.`
+    }
+    return null
+  }
 
   async function add() {
+    setFormError(null)
+    const err = validateSubjectCodes(form.subjects_csv)
+    if (err) { setFormError(err); return }
     setSaving(true)
     try {
       const r = await req<Teacher>('/catalog/teachers', { method: 'POST', body: JSON.stringify(form) })
@@ -37,12 +61,17 @@ function TeachersTab() {
   }
 
   async function saveEdit(id: number) {
+    setEditError(null)
+    const err = validateSubjectCodes(editSubjects)
+    if (err) { setEditError(err); return }
     try {
       const r = await req<Teacher>(`/catalog/teachers/${id}`, { method: 'PATCH', body: JSON.stringify({ subjects_csv: editSubjects }) })
       setList(l => l.map(t => t.id === id ? r : t))
       setEditId(null)
     } catch (e: unknown) { alert((e as Error).message) }
   }
+
+  const subjectCodes = subjects.map(s => s.code)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
@@ -54,19 +83,27 @@ function TeachersTab() {
       )}
       <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
         <div style={{ fontWeight: 700, marginBottom: 12 }}>+ New Teacher</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
-          {[['short_name', 'Short Name', 'e.g. AK'], ['full_name', 'Full Name', 'e.g. Dr. Ankit Kumar'], ['subjects_csv', 'Subjects (CSV codes)', 'e.g. cn,dbms'], ['email', 'Email (auto if blank)', '']].map(([k, label, ph]) => (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-3)' }}>
+          {[['short_name', 'Short Name', 'e.g. AK'], ['full_name', 'Full Name', 'e.g. Dr. Ankit Kumar'], ['email', 'Email (auto if blank)', '']].map(([k, label, ph]) => (
             <div className="form-group" key={k}>
               <label className="form-label">{label}</label>
-              <input className="form-control" list={`tt-${k}`} placeholder={ph} value={(form as Record<string, unknown>)[k] as string} onChange={e => setF(k, e.target.value)} />
+              <input className="form-control" placeholder={ph} value={(form as Record<string, unknown>)[k] as string} onChange={e => setF(k, e.target.value)} />
             </div>
           ))}
-          <datalist id="tt-short_name">
-            {list.map(t => <option key={t.id} value={t.short_name}>{t.full_name}</option>)}
-          </datalist>
-          <datalist id="tt-full_name">
-            {Array.from(new Set(list.map(t => t.full_name))).map((n, i) => <option key={i} value={n} />)}
-          </datalist>
+          {/* Subject CSV with validation */}
+          <div className="form-group">
+            <label className="form-label">Subjects (CSV codes)</label>
+            <input
+              className="form-control"
+              list="tt-subjects-csv"
+              placeholder="e.g. cn,dbms"
+              value={form.subjects_csv}
+              onChange={e => { setF('subjects_csv', e.target.value); setFormError(null) }}
+            />
+            <datalist id="tt-subjects-csv">
+              {subjectCodes.map(code => <option key={code} value={code} />)}
+            </datalist>
+          </div>
           <div className="form-group">
             <label className="form-label">Type</label>
             <select className="form-control" value={form.is_internal ? 'internal' : 'external'} onChange={e => setF('is_internal', e.target.value === 'internal')}>
@@ -75,36 +112,58 @@ function TeachersTab() {
             </select>
           </div>
         </div>
-        <button className="btn btn-primary" disabled={!form.short_name || !form.full_name || saving} onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+        {formError && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, color: 'var(--clr-error)', fontSize: 'var(--fs-xs)', marginTop: 8, padding: '8px 10px', background: 'var(--clr-error-bg)', borderRadius: 'var(--radius)', border: '1px solid color-mix(in oklab, var(--clr-error) 25%, transparent)' }}>
+            <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> {formError}
+          </div>
+        )}
+        <button className="btn btn-primary" disabled={!form.short_name || !form.full_name || saving} onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
           {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Plus size={14} />} Add Teacher
         </button>
       </div>
 
       {loading ? <div style={{ textAlign: 'center', padding: 24 }}><Loader2 size={20} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--clr-text-3)' }} /></div> : (
-        <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+        <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)', minWidth: 480 }}>
             <thead><tr style={{ background: 'var(--clr-bg-3)' }}>
               {['Short Name', 'Full Name', 'Type', 'Subjects', ''].map(h => (
-                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--clr-text-2)', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
+                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--clr-text-2)', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>{list.map(t => (
               <tr key={t.id} style={{ borderTop: '1px solid var(--clr-border-soft)' }}>
-                <td style={{ padding: '8px 12px', fontWeight: 700 }}>{t.short_name}</td>
-                <td style={{ padding: '8px 12px' }}>{t.full_name}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.short_name}</td>
+                <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{t.full_name}</td>
                 <td style={{ padding: '8px 12px' }}>
-                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: '11px', fontWeight: 700, background: t.is_internal ? 'var(--clr-primary-10)' : 'var(--clr-bg-3)', color: t.is_internal ? 'var(--clr-primary)' : 'var(--clr-text-3)' }}>{t.is_internal ? 'Internal' : 'External'}</span>
+                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: '11px', fontWeight: 700, background: t.is_internal ? 'var(--clr-primary-10)' : 'var(--clr-bg-3)', color: t.is_internal ? 'var(--clr-primary)' : 'var(--clr-text-3)', whiteSpace: 'nowrap' }}>{t.is_internal ? 'Internal' : 'External'}</span>
                 </td>
-                <td style={{ padding: '8px 12px', color: 'var(--clr-text-2)', fontFamily: 'monospace', fontSize: '11px' }}>
-                  {editId === t.id
-                    ? <input style={{ background: 'var(--clr-bg)', border: '1px solid var(--clr-border)', borderRadius: 4, padding: '2px 6px', fontSize: '11px', width: '100%' }} value={editSubjects} onChange={e => setEditSubjects(e.target.value)} />
-                    : t.subjects_csv || '—'}
+                <td style={{ padding: '8px 12px', color: 'var(--clr-text-2)', fontFamily: 'monospace', fontSize: '11px', minWidth: 140 }}>
+                  {editId === t.id ? (
+                    <div>
+                      <input
+                        list="edit-subjects-datalist"
+                        style={{ background: 'var(--clr-bg)', border: '1px solid var(--clr-border)', borderRadius: 4, padding: '2px 6px', fontSize: '11px', width: '100%' }}
+                        value={editSubjects}
+                        onChange={e => { setEditSubjects(e.target.value); setEditError(null) }}
+                      />
+                      <datalist id="edit-subjects-datalist">
+                        {subjectCodes.map(code => <option key={code} value={code} />)}
+                      </datalist>
+                      {editError && (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, color: 'var(--clr-error)', fontSize: '10px', marginTop: 4 }}>
+                          <AlertCircle size={10} style={{ flexShrink: 0, marginTop: 1 }} /> {editError}
+                        </div>
+                      )}
+                    </div>
+                  ) : (t.subjects_csv || '—')}
                 </td>
-                <td style={{ padding: '8px 12px', display: 'flex', gap: 6 }}>
-                  {editId === t.id
-                    ? <><button className="btn-icon" onClick={() => saveEdit(t.id)}><Check size={13} style={{ color: 'var(--clr-success)' }} /></button>
-                        <button className="btn-icon" onClick={() => setEditId(null)}><X size={13} /></button></>
-                    : <button className="btn-icon" onClick={() => { setEditId(t.id); setEditSubjects(t.subjects_csv) }}><Pencil size={13} /></button>}
+                <td style={{ padding: '8px 12px' }}>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {editId === t.id
+                      ? <><button className="btn-icon" onClick={() => saveEdit(t.id)}><Check size={13} style={{ color: 'var(--clr-success)' }} /></button>
+                          <button className="btn-icon" onClick={() => { setEditId(null); setEditError(null) }}><X size={13} /></button></>
+                      : <button className="btn-icon" onClick={() => { setEditId(t.id); setEditSubjects(t.subjects_csv); setEditError(null) }}><Pencil size={13} /></button>}
+                  </div>
                 </td>
               </tr>
             ))}</tbody>
@@ -161,7 +220,7 @@ function SubjectsTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
       <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
         <div style={{ fontWeight: 700, marginBottom: 12 }}>+ New Subject</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--sp-3)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 'var(--sp-3)' }}>
           <div className="form-group">
             <label className="form-label">Code</label>
             <input className="form-control" list="st-code" placeholder="e.g. qc" value={form.code} onChange={e => {
@@ -208,7 +267,7 @@ function SubjectsTab() {
             <input className="form-control" type="number" min={1} max={10} value={form.weekly_hours} onChange={e => setF('weekly_hours', e.target.value)} />
           </div>
         </div>
-        <button className="btn btn-primary" disabled={!form.code || !form.name || saving} onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+        <button className="btn btn-primary" disabled={!form.code || !form.name || saving} onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
           {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Plus size={14} />} Add Subject
         </button>
       </div>
@@ -217,13 +276,13 @@ function SubjectsTab() {
         : Object.entries(grouped).map(([group, subjects]) => (
           <div key={group}>
             <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--clr-text-3)', textTransform: 'uppercase', marginBottom: 6 }}>{group}</div>
-            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)', minWidth: 400 }}>
                 <tbody>{subjects.map(s => (
                   <tr key={s.id} style={{ borderTop: '1px solid var(--clr-border-soft)' }}>
-                    <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 700, width: 80, color: 'var(--clr-primary)' }}>{s.code}</td>
+                    <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 700, width: 80, color: 'var(--clr-primary)', whiteSpace: 'nowrap' }}>{s.code}</td>
                     <td style={{ padding: '7px 12px' }}>{s.name}</td>
-                    <td style={{ padding: '7px 12px', color: 'var(--clr-text-3)' }}>{s.entry_type} · {s.weekly_hours}h/wk</td>
+                    <td style={{ padding: '7px 12px', color: 'var(--clr-text-3)', whiteSpace: 'nowrap' }}>{s.entry_type} · {s.weekly_hours}h/wk</td>
                     <td style={{ padding: '7px 12px', textAlign: 'right' }}>
                       <button className="btn-icon" onClick={() => remove(s.id)}><Trash2 size={13} style={{ color: 'var(--clr-error)' }} /></button>
                     </td>
@@ -262,8 +321,8 @@ function ProgramsTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
       <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
         <div style={{ fontWeight: 700, marginBottom: 12 }}>+ New Program</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--sp-3)' }}>
-          <div className="form-group">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-3)' }}>
+          <div className="form-group" style={{ gridColumn: 'span 2' }}>
             <label className="form-label">Program Name</label>
             <input className="form-control" list="pt-name" placeholder="e.g. M.Tech Data Science" value={form.name} onChange={e => setF('name', e.target.value)} />
           </div>
@@ -280,7 +339,7 @@ function ProgramsTab() {
             <input className="form-control" placeholder="Short description…" value={form.description} onChange={e => setF('description', e.target.value)} />
           </div>
         </div>
-        <button className="btn btn-primary" disabled={!form.name || saving} onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+        <button className="btn btn-primary" disabled={!form.name || saving} onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
           {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Plus size={14} />} Add Program
         </button>
       </div>
@@ -297,8 +356,8 @@ function ProgramsTab() {
               </div>
             )}
             {list.map(p => (
-              <div key={p.id} style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1 }}>
+              <div key={p.id} style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 120 }}>
                   <div style={{ fontWeight: 700 }}>{p.name}</div>
                   {p.description && <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-3)', marginTop: 2 }}>{p.description}</div>}
                 </div>
@@ -362,7 +421,7 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
   const [scheduleLog, setScheduleLog] = useState<{ name: string; status: 'ok' | 'fail'; detail: string }[]>([])
   const [initialVersion, setInitialVersion] = useState<{id: number, entries: any[]} | null>(null)
 
-  // Slot candidates tried in order (theory = 2h, practical = 3h)
+  // Slot candidates: 10:00 AM – 5:30 PM only
   const SLOT_CANDIDATES = [
     { day: 'Monday',    start: '10:00', end: '12:00' },
     { day: 'Tuesday',   start: '10:00', end: '12:00' },
@@ -374,20 +433,25 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
     { day: 'Wednesday', start: '12:00', end: '14:00' },
     { day: 'Thursday',  start: '12:00', end: '14:00' },
     { day: 'Friday',    start: '12:00', end: '14:00' },
-    { day: 'Monday',    start: '14:30', end: '16:30' },
-    { day: 'Tuesday',   start: '14:30', end: '16:30' },
-    { day: 'Wednesday', start: '14:30', end: '16:30' },
-    { day: 'Thursday',  start: '14:30', end: '16:30' },
-    { day: 'Friday',    start: '14:30', end: '16:30' },
+    { day: 'Monday',    start: '14:00', end: '16:00' },
+    { day: 'Tuesday',   start: '14:00', end: '16:00' },
+    { day: 'Wednesday', start: '14:00', end: '16:00' },
+    { day: 'Thursday',  start: '14:00', end: '16:00' },
+    { day: 'Friday',    start: '14:00', end: '16:00' },
+    { day: 'Monday',    start: '15:30', end: '17:30' },
+    { day: 'Tuesday',   start: '15:30', end: '17:30' },
+    { day: 'Wednesday', start: '15:30', end: '17:30' },
+    { day: 'Thursday',  start: '15:30', end: '17:30' },
+    { day: 'Friday',    start: '15:30', end: '17:30' },
     { day: 'Saturday',  start: '10:00', end: '12:00' },
   ]
 
   const PRAC_SLOT_CANDIDATES = [
-    { day: 'Monday',    start: '14:30', end: '17:30' },
-    { day: 'Tuesday',   start: '14:30', end: '17:30' },
-    { day: 'Wednesday', start: '14:30', end: '17:30' },
-    { day: 'Thursday',  start: '14:30', end: '17:30' },
-    { day: 'Friday',    start: '14:30', end: '17:30' },
+    { day: 'Monday',    start: '14:00', end: '17:00' },
+    { day: 'Tuesday',   start: '14:00', end: '17:00' },
+    { day: 'Wednesday', start: '14:00', end: '17:00' },
+    { day: 'Thursday',  start: '14:00', end: '17:00' },
+    { day: 'Friday',    start: '14:00', end: '17:00' },
     { day: 'Monday',    start: '10:00', end: '13:00' },
     { day: 'Tuesday',   start: '10:00', end: '13:00' },
   ]
@@ -476,8 +540,8 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
 
       <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
         <div style={{ fontWeight: 700, marginBottom: 12 }}>1. Program Info</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--sp-3)' }}>
-          <div className="form-group">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-3)' }}>
+          <div className="form-group" style={{ gridColumn: 'span 2' }}>
             <label className="form-label">Program Name</label>
             <input className="form-control" list="existing-programs" placeholder="e.g. M.Tech AI" value={programName} onChange={e => {
                 const val = e.target.value;
@@ -506,7 +570,7 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
         {subjects.map((sub, i) => (
           <div key={sub.id as number} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)', padding: 'var(--sp-3)', border: '1px solid var(--clr-border-soft)', borderRadius: 'var(--radius)', marginBottom: 'var(--sp-3)', position: 'relative' }}>
             <button className="btn-icon" onClick={() => removeSub(i)} style={{ position: 'absolute', top: 8, right: 8, color: 'var(--clr-error)' }}><Trash2 size={13} /></button>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr 1fr 1fr', gap: 'var(--sp-2)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 'var(--sp-2)' }}>
               <div className="form-group">
                 <label className="form-label">Code</label>
                 <input className="form-control" list="existing-subjects-code" placeholder="Code" value={sub.code as string} onChange={e => {
@@ -521,7 +585,7 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
                   }
                 }} />
               </div>
-              <div className="form-group">
+              <div className="form-group" style={{ gridColumn: 'span 2' }}>
                 <label className="form-label">Subject Name</label>
                 <input className="form-control" list="existing-subjects-name" placeholder="Name" value={sub.name as string} onChange={e => updateSub(i, 'name', e.target.value)} />
               </div>
@@ -534,7 +598,7 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
               </div>
               <div className="form-group"><label className="form-label">Hours</label><input type="number" min={1} className="form-control" value={sub.weekly_hours as string} onChange={e => updateSub(i, 'weekly_hours', e.target.value)} /></div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--sp-2)', marginTop: 4 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--sp-2)', marginTop: 4 }}>
                <div className="form-group">
                  <label className="form-label">Teacher Short Name</label>
                  <input className="form-control" list="existing-teachers-short" placeholder="e.g. JD" value={sub.teacher_short_name as string} onChange={e => {
@@ -612,7 +676,7 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
         </div>
         
         {!scheduling && (
-          <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+          <div style={{ marginTop: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <button
               className="btn btn-primary"
               style={{ fontSize: 'var(--fs-sm)' }}
@@ -656,12 +720,13 @@ export default function CatalogManager({ initialTab = 'Bundle Setup', onClose }:
   const [tab, setTab] = useState<Tab>(initialTab as Tab)
   return (
     <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 'var(--sp-4)', borderBottom: '1px solid var(--clr-border)', paddingBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 'var(--sp-4)', borderBottom: '1px solid var(--clr-border)', paddingBottom: 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch', flexWrap: 'nowrap' }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
-            padding: '6px 16px', borderRadius: 'var(--radius)', border: 'none', cursor: 'pointer', fontWeight: tab === t ? 700 : 400, fontSize: 'var(--fs-sm)',
+            padding: '6px 14px', borderRadius: 'var(--radius)', border: 'none', cursor: 'pointer', fontWeight: tab === t ? 700 : 400, fontSize: 'var(--fs-sm)',
             background: tab === t ? 'var(--clr-primary)' : 'transparent',
             color: tab === t ? '#fff' : 'var(--clr-text-2)',
+            whiteSpace: 'nowrap', flexShrink: 0,
           }}>{t}</button>
         ))}
       </div>

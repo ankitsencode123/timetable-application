@@ -387,7 +387,7 @@ select.form-control, select.input { cursor: pointer; }
 .class-cell .cell-meta    { font-size: 10px; color: var(--ink-soft); margin-top: 2px; display: flex; gap: 5px; align-items: center; font-family: var(--font-mono); }
 
 /* ── Timetable Grid ─────────────────────────────────── */
-.tt-grid-wrapper { overflow: auto; flex: 1; position: relative; }
+.tt-grid-wrapper { overflow-x: auto; overflow-y: auto; flex: 1; position: relative; -webkit-overflow-scrolling: touch; }
 .tt-grid {
   display: grid;
   min-width: 850px;
@@ -725,13 +725,17 @@ select.form-control, select.input { cursor: pointer; }
 @media (max-width: 768px) {
   :root { --sidebar-w: 0px; --chat-h: 340px; }
   .sidebar { display: none; }
-  .tt-grid { min-width: auto; }
+  .tt-grid-wrapper { -webkit-overflow-scrolling: touch; overflow-x: auto; overflow-y: auto; }
+  .tt-grid { min-width: 600px; }
+  .tt-cell { min-height: 56px; }
+  .tt-day-header, .tt-time-col { font-size: 9px; padding: 6px 8px; }
   .app-header, .public-header { padding: 0 var(--sp-3); }
-  .modal { padding: var(--sp-4); }
+  .modal { padding: var(--sp-4); max-width: calc(100vw - 24px); }
+  .modal-lg { max-width: calc(100vw - 12px); }
   .public-hero { padding: var(--sp-5) var(--sp-4) var(--sp-4); }
   .public-hero h1 { font-size: var(--fs-2xl); }
   .class-detail { grid-template-columns: 1fr; }
-  .filter-bar { padding: var(--sp-2) var(--sp-3); }
+  .filter-bar { padding: var(--sp-2) var(--sp-3); gap: 4px; flex-wrap: wrap; }
   .action-panel {
     display: flex;
     flex-wrap: wrap;
@@ -739,6 +743,15 @@ select.form-control, select.input { cursor: pointer; }
     padding-bottom: 8px;
   }
   .header-search { display: none; }
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    width: 100%;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; flex-shrink: 0; }
 }
 
 .mobile-nav { display: none; }

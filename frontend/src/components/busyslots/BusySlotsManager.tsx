@@ -124,7 +124,7 @@ export default function BusySlotsManager() {
       {/* Add form */}
       <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
         <div style={{ fontWeight: 700, fontSize: 'var(--fs-md)', marginBottom: 12 }}>Add Busy Slot</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--sp-3)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-3)' }}>
           <div className="form-group">
             <label className="form-label">Teacher</label>
             <select className="form-control" value={form.teacher_short_name} onChange={e => setF('teacher_short_name', e.target.value)}>
@@ -236,8 +236,8 @@ export default function BusySlotsManager() {
         : slots.length === 0
           ? <div style={{ textAlign: 'center', padding: 24, color: 'var(--clr-text-3)', fontSize: 'var(--fs-sm)' }}>No busy slots configured.</div>
           : (
-            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+            <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)', minWidth: 420 }}>
                 <thead>
                   <tr style={{ background: 'var(--clr-bg-3)' }}>
                     {['Teacher', 'Type', 'When', 'Reason', ''].map(h => (

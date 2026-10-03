@@ -80,7 +80,7 @@ export default function AdminPanel() {
         </div>
 
         {/* Tabs */}
-        <div className="tabs" style={{ marginBottom: 'var(--sp-4)', width: 'fit-content' }}>
+        <div className="tabs" style={{ marginBottom: 'var(--sp-4)' }}>
           <TabBtn active={tab === 'users'}        onClick={() => setTab('users')}        label="Teachers"    icon={<UserCheck size={13} />} />
           <TabBtn active={tab === 'catalog'}      onClick={() => setTab('catalog')}      label="Catalog"     icon={<BookOpen size={13} />} />
           <TabBtn active={tab === 'availability'} onClick={() => setTab('availability')} label="Busy Slots"  icon={<CalendarOff size={13} />} />
@@ -113,8 +113,8 @@ export default function AdminPanel() {
                 <span className="spinner-lg spinner" style={{ margin: '0 auto' }} />
               </div>
             ) : (
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div className="card" style={{ padding: 0, overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--line)' }}>
                       {['Name / Email', 'Role', 'Status', 'Last Login', 'Actions'].map(h => (
