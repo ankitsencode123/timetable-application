@@ -68,6 +68,8 @@ def login(body: dict, response: Response, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
 
+    from app.core.config import get_settings
+    settings = get_settings()
     access = create_access_token(str(user.id), user.role.value)
     refresh = create_refresh_token(str(user.id))
     store_refresh_token(db, user.id, refresh)
@@ -77,6 +79,12 @@ def login(body: dict, response: Response, db: Session = Depends(get_db)):
         key=_COOKIE, value=refresh,
         httponly=True, samesite="none", secure=True,
         max_age=7 * 24 * 3600, path="/api/auth"
+    )
+    # Set access token in HttpOnly cookie for automatic auth
+    response.set_cookie(
+        key="access_token", value=access,
+        httponly=True, samesite="none", secure=True,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/"
     )
 
     return {
@@ -110,10 +118,19 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
         access, refresh = refresh_access_token(db, raw)
     except ValueError as e:
         raise HTTPException(status_code=401, detail=str(e))
+        
+    from app.core.config import get_settings
+    settings = get_settings()
+
     response.set_cookie(
         key=_COOKIE, value=refresh,
         httponly=True, samesite="none", secure=True,
         max_age=7 * 24 * 3600, path="/api/auth"
+    )
+    response.set_cookie(
+        key="access_token", value=access,
+        httponly=True, samesite="none", secure=True,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/"
     )
     return {
         "access_token": access,
@@ -126,6 +143,7 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
 @router.post("/logout")
 def logout(response: Response, db: Session = Depends(get_db)):
     response.delete_cookie(key=_COOKIE, path="/api/auth")
+    response.delete_cookie(key="access_token", path="/")
     return {"message": "Logged out"}
 
 
