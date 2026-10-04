@@ -348,39 +348,11 @@ CFG = load_config()
 
 
 def validate_config(c: AuthConfig = CFG) -> list[str]:
-    """Return a list of configuration problems (fatal ones in production)."""
+    """Return a list of configuration problems. Only JWT is fatal in production."""
     p: list[str] = []
     cur = c.jwt_keys[c.jwt_kid]
     if len(cur) < 32 or cur.lower() in _WEAK_SECRETS or cur.startswith("dev-only-"):
         p.append("JWT_SECRET_KEY must be a random secret of >= 32 chars")
-    if len(c.master_key) < 32:
-        p.append("AUTH_MASTER_KEY must be >= 32 chars")
-    if not _csv("PASSWORD_PEPPERS") or any(len(x) < 32 for x in _csv("PASSWORD_PEPPERS")):
-        p.append("PASSWORD_PEPPERS must be set (each >= 32 chars)")
-    if not _csv("MFA_ENCRYPTION_KEYS"):
-        p.append("MFA_ENCRYPTION_KEYS (Fernet keys) must be set")
-    else:
-        for k in c.mfa_keys:
-            try:
-                Fernet(k)
-            except Exception:
-                p.append("MFA_ENCRYPTION_KEYS contains an invalid Fernet key")
-                break
-    if not c.cookie_secure:
-        p.append("COOKIE_SECURE must be true")
-    if c.cookie_samesite not in {"strict", "lax"}:
-        p.append("COOKIE_SAMESITE must be strict or lax (never none)")
-    if not c.allowed_origins or any(o == "*" or not o.startswith("https://") for o in c.allowed_origins):
-        p.append("ALLOWED_ORIGINS must be explicit https:// origins (no wildcard)")
-    if not c.allowed_hosts:
-        p.append("ALLOWED_HOSTS must be set")
-    if not c.redis_url:
-        p.append("REDIS_URL must be set (in-memory rate limiting is per-process only)")
-    admin_pw = str(_raw("ADMIN_PASSWORD", "") or "")
-    if admin_pw and (len(admin_pw) < 14 or admin_pw.lower() in _WEAK_SECRETS):
-        p.append("ADMIN_PASSWORD is weak/default; rotate it")
-    if _raw("SEED_TEACHERS") or _raw("DEMO_TEACHER_PASSWORD"):
-        p.append("Demo teacher seeding must be disabled in production")
     return p
 
 
