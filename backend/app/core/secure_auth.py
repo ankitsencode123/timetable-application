@@ -970,12 +970,25 @@ def check_csrf(request: Request, session_id: str) -> None:
 
 
 def enforce_same_origin(request: Request, *, require_header: bool = True) -> None:
-    """Origin / Referer / Sec-Fetch-Site validation for unsafe methods."""
+    """Origin / Referer / Sec-Fetch-Site validation for unsafe methods.
+    Only enforced when ALLOWED_ORIGINS is explicitly configured."""
     if request.method in SAFE_METHODS:
+        return
+    # If no allowed origins are configured, skip enforcement entirely
+    if not CFG.allowed_origins:
         return
     bad = AuthError(403, "origin_not_allowed", "Cross-origin request blocked")
     if request.headers.get("sec-fetch-site", "") == "cross-site":
-        raise bad
+        # Only block if we have an explicit allowlist
+        origin = request.headers.get("origin")
+        if not origin:
+            ref = request.headers.get("referer")
+            if ref:
+                u = urlsplit(ref)
+                origin = f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else None
+        if origin and origin.rstrip("/").lower() not in CFG.allowed_origins:
+            raise bad
+        return
     origin = request.headers.get("origin")
     if not origin:
         ref = request.headers.get("referer")
