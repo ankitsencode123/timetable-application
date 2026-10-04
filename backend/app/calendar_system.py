@@ -87,7 +87,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.database import get_db                                              ###
-from app.core.secure_auth import get_current_user                               ###
+from app.api.auth import get_current_user                               ###
 from app.models.base import Base                                                  ###
 from app.models.timetable import TimetableVersion, VersionStatus                  ###
 from app.scheduler.constraints import (

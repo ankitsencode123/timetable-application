@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.secure_auth import require_admin
+from app.api.auth import require_admin
 from app.models.user import User, RoleEnum
 from app.models.audit import AuditLog
 from app.schemas.user import UserOut, UserCreate, UserUpdateAdmin
