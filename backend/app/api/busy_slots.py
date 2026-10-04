@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.secure_auth import get_current_user, require_admin
+from app.api.auth import get_current_user, require_admin
 from app.models.user import User
 from app.models.busy_slot import TeacherBusySlot
 
