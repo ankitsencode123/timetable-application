@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "openai/gpt-oss-120b"
 
     # ── CORS ─────────────────────────────────────────────────────────────────
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    # Set to specific origin(s) in production, e.g. https://your-app.vercel.app
+    CORS_ORIGINS: str = "*"
 
     # ── Admin seed (first-boot only) ─────────────────────────────────────────
     ADMIN_EMAIL: str = "admin@example.com"

@@ -60,10 +60,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+_cors_origins = settings.cors_origin_list
+_allow_all = _cors_origins == ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=not _allow_all,  # credentials not allowed with wildcard origin
     allow_methods=["*"],
     allow_headers=["*"],
 )
