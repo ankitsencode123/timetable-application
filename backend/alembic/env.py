@@ -18,6 +18,8 @@ import app.models.timetable        # noqa: F401
 import app.models.timetable_entry  # noqa: F401
 import app.models.audit            # noqa: F401
 import app.models.refresh_token    # noqa: F401
+import app.core.secure_auth        # noqa: F401
+import app.main                    # Loads all routers and models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

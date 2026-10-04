@@ -80,7 +80,7 @@ except Exception:  # pragma: no cover - only used outside the app
 # Constants / small helpers
 # --------------------------------------------------------------------------------------
 CELL_MIN = 30                                   # bitmask resolution (minutes)
-SEARCH_START_CELL = (9 * 60) // CELL_MIN        # 09:00
+SEARCH_START_CELL = (10 * 60) // CELL_MIN       # 10:00
 SEARCH_END_CELL = (17 * 60 + 30) // CELL_MIN    # 17:30 (exclusive end of last class)
 STANDARD_DURATIONS = [120, 180, 90, 60, 150]
 MAX_RANKED_SUGGESTIONS = 3

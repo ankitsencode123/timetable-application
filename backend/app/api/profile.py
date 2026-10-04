@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, verify_csrf
+from app.core.secure_auth import get_current_user
 from app.models.user import User
 from app.schemas.user import UserOut, UserUpdateSelf
 from app.schemas.auth import ChangePasswordRequest
@@ -28,7 +28,7 @@ def update_my_profile(
     req: UserUpdateSelf,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _csrf: None = Depends(verify_csrf),
+    
 ):
     """Update own display name."""
     if req.full_name is not None:
@@ -45,7 +45,7 @@ def change_my_password(
     req: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    _csrf: None = Depends(verify_csrf),
+    
 ):
     """Change own password — requires current password. Invalidates all sessions."""
     try:

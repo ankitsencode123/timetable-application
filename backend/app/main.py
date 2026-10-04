@@ -11,7 +11,8 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.database import engine, get_db
 from app.models.base import Base
-from app.services.auth_service import seed_admin_if_needed, seed_demo_teachers_if_needed
+from app.services.auth_service import seed_admin_if_needed
+from app.core import secure_auth
 from app.services.seed_timetable import seed_default_timetable_if_needed, seed_catalog_if_needed
 settings = get_settings()
 
@@ -32,7 +33,7 @@ async def lifespan(app: FastAPI):
         C.reload_catalog(db)
 
         seed_admin_if_needed(db)
-        seed_demo_teachers_if_needed(db)
+        secure_auth.harden_seeding(db)
         seed_catalog_if_needed(db)
         # Seed default timetable from EXISTING_TIMETABLE_MD
         from app.models.user import User, RoleEnum
@@ -67,6 +68,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+secure_auth.install(app, prefix="/api/auth")
 app.include_router(api_router, prefix="/api")
 
 

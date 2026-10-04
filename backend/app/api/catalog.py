@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_admin
+from app.core.secure_auth import get_current_user, require_admin
 from app.models.user import User, RoleEnum
 from app.models.teacher import Teacher
 from app.models.subject import Subject

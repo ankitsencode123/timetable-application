@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import require_teacher_or_admin
+from app.core.secure_auth import require_teacher_or_admin
 from app.models.user import User
 from app.models.timetable import TimetableVersion
 from app.models.busy_slot import TeacherBusySlot
@@ -325,7 +325,7 @@ from app.scheduler.validator import teacher_set as _teacher_set
 
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
-_DAY_START      = 9 * 60                     # 09:00
+_DAY_START      = 10 * 60                    # 10:00
 _DAY_END        = 17 * 60 + 30              # 17:30
 _STEP           = 30                          # search granularity (minutes)
 _GRID_STARTS    = frozenset({10*60, 12*60, 14*60+30, 16*60+30})

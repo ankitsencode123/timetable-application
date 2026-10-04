@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { login } from '../api'
@@ -13,6 +13,19 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const loginStore = useAuthStore((s) => s.login)
   const navigate = useNavigate()
+
+  // refs for shake animation
+  const emailWrapRef = useRef<HTMLDivElement>(null)
+  const pwWrapRef = useRef<HTMLDivElement>(null)
+
+  const shakeInput = useCallback((ref: React.RefObject<HTMLDivElement | null>) => {
+    const el = ref.current?.querySelector('.t-input') as HTMLElement | null
+    if (!el) return
+    el.classList.remove('is-shaking')
+    void el.offsetWidth // force reflow
+    el.classList.add('is-shaking')
+    el.addEventListener('animationend', () => el.classList.remove('is-shaking'), { once: true })
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -30,6 +43,9 @@ export default function LoginPage() {
       navigate('/teacher')
     } catch (err: unknown) {
       setError((err as Error).message || 'Invalid credentials')
+      // Shake both fields on login failure
+      shakeInput(emailWrapRef)
+      shakeInput(pwWrapRef)
     } finally {
       setLoading(false)
     }
@@ -79,40 +95,51 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
-            <div className="form-group">
+
+            {/* Email field with shake */}
+            <div className={`form-group t-input-wrap${error ? ' is-error' : ''}`} ref={emailWrapRef}>
               <label className="form-label">Email</label>
-              <input
-                type="email"
-                className="form-control"
-                placeholder="you@university.edu"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                autoComplete="email"
-              />
+              <div className={`t-input${error ? ' is-error' : ''}`} style={{ background: 'none', padding: 0, border: 'none', transition: 'none' }}>
+                <input
+                  type="email"
+                  className="form-control"
+                  placeholder="you@university.edu"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </div>
             </div>
 
-            <div className="form-group">
+            {/* Password field with icon swap + shake */}
+            <div className={`form-group t-input-wrap${error ? ' is-error' : ''}`} ref={pwWrapRef}>
               <label className="form-label">Password</label>
-              <div className="input-group">
-                <input
-                  type={showPw ? 'text' : 'password'}
-                  className="form-control"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  style={{ paddingRight: 36 }}
-                />
-                <button
-                  type="button"
-                  className="input-icon-right btn-icon"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-soft)' }}
-                  onClick={() => setShowPw(s => !s)}
-                >
-                  {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
+              <div className={`t-input${error ? ' is-error' : ''}`} style={{ background: 'none', padding: 0, border: 'none', transition: 'none' }}>
+                <div className="input-group">
+                  <input
+                    type={showPw ? 'text' : 'password'}
+                    className="form-control"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    style={{ paddingRight: 36 }}
+                  />
+                  {/* Icon swap: eye ↔ eye-off */}
+                  <button
+                    type="button"
+                    className="input-icon-right btn-icon t-icon-swap"
+                    data-state={showPw ? 'b' : 'a'}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-soft)' }}
+                    onClick={() => setShowPw(s => !s)}
+                    aria-label={showPw ? 'Hide password' : 'Show password'}
+                  >
+                    <span className="t-icon" data-icon="a"><Eye size={14} /></span>
+                    <span className="t-icon" data-icon="b"><EyeOff size={14} /></span>
+                  </button>
+                </div>
               </div>
             </div>
 

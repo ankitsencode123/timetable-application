@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { RefreshCw, Search, LayoutDashboard, History, ShieldCheck, Rocket, Calendar } from 'lucide-react'
+import { useEffect, useState, useRef } from 'react'
+import { RefreshCw, Search, LayoutDashboard, History, ShieldCheck, Rocket, Calendar, X } from 'lucide-react'
 import { useWorkspaceStore, useAuthStore } from '../store'
 import { getCurrentDraft, listVersions, getVersion } from '../api'
 import Sidebar from '../components/sidebar/Sidebar'
@@ -10,6 +10,84 @@ import ChatPanel from '../components/chat/ChatPanel'
 import ValidationPanel from '../components/validation/ValidationPanel'
 import VersionsList from '../components/versions/VersionsList'
 import UserMenu from '../components/layout/UserMenu'
+
+function ReelSpin({ value }: { value: string | number }) {
+  const str = String(value)
+  return (
+    <div className="t-reel">
+      {str.split('').map((char, i) => {
+        if (!/\d/.test(char)) return <span key={i} style={{ padding: '0 2px' }}>{char}</span>
+        const targetDigit = parseInt(char, 10)
+        return (
+          <div key={i} className="t-reel-col" style={{ width: '0.6em' }}>
+            <div 
+              className="t-reel-strip" 
+              ref={el => {
+                if (!el) return
+                // reset state
+                el.style.transition = 'none'
+                el.style.transform = `translateY(-${targetDigit} * var(--reel-cell))`
+                el.style.filter = 'blur(0)'
+                
+                // If it's the first time landing or recovering from spin, 
+                // just doing a quick jump to 0 and spinning to digit handles the visual
+                const yTarget = targetDigit > 0 ? targetDigit : 10
+                el.style.transform = `translateY(0)`
+                void el.offsetWidth // reflow
+                
+                el.style.transition = `transform var(--reel-dur) var(--reel-ease) ${i * 90}ms`
+                el.style.transform = `translateY(calc(-${yTarget} * var(--reel-cell)))`
+              }}
+            >
+              {[0,1,2,3,4,5,6,7,8,9,0].map((n, idx) => (
+                <div key={idx} className="t-reel-digit">{n}</div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ClearableSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [clearing, setClearing] = useState(false)
+  
+  function handleClear() {
+    if (!value) return
+    setClearing(true)
+    onChange('')
+    // Add fake glow by directly doing radial gradient on glow div
+    const glow = document.getElementById('search-glow')
+    if (glow && value) {
+      const words = value.split(' ').length
+      const layers = Array.from({length: words}, () => `radial-gradient(circle 20px at ${Math.random()*100}% 50%, rgba(0,0,0,0.5), transparent)`).join(', ')
+      glow.style.background = layers
+      glow.animate([{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 0 }], { duration: 1000 })
+    }
+    setTimeout(() => setClearing(false), 1000)
+  }
+
+  return (
+    <div className={`t-clear ${value ? 'has-value' : ''} ${clearing ? 'is-clearing' : ''}`} style={{ flex: 1, display: 'flex', alignItems: 'center', height: '100%', position: 'relative' }}>
+      <input
+        type="text"
+        placeholder="Search timetable…"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink)' }}
+      />
+      <div className="t-clear-mirror" aria-hidden="true" style={{ left: 0, right: 30, justifyContent: 'flex-start' }}>{value}</div>
+      <div className="t-clear-placeholder" aria-hidden="true" style={{ left: 0, right: 30, justifyContent: 'flex-start', color: 'var(--ink-soft)' }}>Search timetable…</div>
+      <div id="search-glow" className="t-clear-glow" aria-hidden="true"></div>
+      {value && !clearing && (
+        <button className="btn-icon" onClick={handleClear} style={{ position: 'absolute', right: 0, width: 24, height: 24, zIndex: 10 }}>
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  )
+}
 
 export default function TeacherWorkspace() {
   const {
@@ -69,13 +147,9 @@ export default function TeacherWorkspace() {
             <button className="btn btn-ghost btn-sm" onClick={refresh} title="Refresh">
               <RefreshCw size={13} />
             </button>
-            <div className="header-search">
+            <div className="header-search" style={{ position: 'relative', overflow: 'hidden' }}>
               <Search size={13} style={{ color: 'var(--ink-soft)', flexShrink: 0 }} />
-              <input
-                placeholder="Search timetable…"
-                value={filters.search}
-                onChange={e => setFilters({ search: e.target.value })}
-              />
+              <ClearableSearch value={filters.search} onChange={val => setFilters({ search: val })} />
             </div>
             <UserMenu />
           </div>
@@ -100,9 +174,17 @@ export default function TeacherWorkspace() {
               {currentVersionId ? (
                 <div style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span className="badge badge-yellow">Draft</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>Version #{currentVersionId}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>
+                    Version #<span className="t-digit-group is-animating">
+                      {String(currentVersionId).split('').map((d, i) => (
+                        <span key={i} className="t-digit" data-stagger={i > 0 ? String(i) : undefined}>{d}</span>
+                      ))}
+                    </span>
+                  </span>
                   <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--line)' }}>·</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>{entries.length} entries</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>
+                    <ReelSpin value={entries.length} /> entries
+                  </span>
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ marginLeft: 'auto' }}

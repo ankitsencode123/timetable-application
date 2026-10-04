@@ -104,7 +104,11 @@ export default function PublicPage() {
           <span className="spinner" />
         ) : meta ? (
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-soft)', background: 'color-mix(in oklab, var(--ink) 5%, transparent)', borderRadius: 'var(--radius)', padding: '5px 10px' }}>
-            v{meta.version_id} · {fmtDate(meta.published_at)}
+            v<span className="t-digit-group is-animating">
+              {String(meta.version_id).split('').map((d, i) => (
+                <span key={i} className="t-digit" data-stagger={i > 0 ? String(i) : undefined}>{d}</span>
+              ))}
+            </span> · {fmtDate(meta.published_at)}
           </span>
         ) : (
           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--violation)' }}>No published timetable.</span>
@@ -150,9 +154,12 @@ export default function PublicPage() {
         <CalendarSection />
       </div>
 
-      {/* AI Chat Drawer */}
+      {/* AI Chat Drawer — panel reveal */}
       {chatOpen && (
-        <div style={{
+        <div
+          className="t-panel-slide"
+          data-open="true"
+          style={{
           position: 'fixed', bottom: 0, right: 0,
           width: isMobile ? '100%' : 520,
           height: isMobile ? '80vh' : '600px',
@@ -221,9 +228,11 @@ export default function PublicPage() {
 function CalendarSection() {
   const [open, setOpen] = useState(false)
   return (
-    <div style={{ borderTop: '1px solid var(--line)', flexShrink: 0 }}>
+    <div className="t-acc" data-open={open ? 'true' : 'false'} style={{ borderTop: '1px solid var(--line)', flexShrink: 0 }}>
       <button
         id="pub-cal-toggle"
+        className="t-acc-head"
+        aria-expanded={open}
         onClick={() => setOpen(o => !o)}
         style={{
           width: '100%', padding: 'var(--sp-3) var(--sp-5)',
@@ -231,7 +240,7 @@ function CalendarSection() {
           background: open ? 'var(--accent-soft)' : 'var(--paper)',
           border: 'none', cursor: 'pointer',
           borderBottom: open ? '1px solid var(--line)' : 'none',
-          transition: 'var(--transition)',
+          transition: 'background var(--acc-expand) var(--acc-ease), color var(--acc-expand) var(--acc-ease)',
           color: open ? 'var(--accent)' : 'var(--ink-soft)',
         }}
       >
@@ -240,13 +249,19 @@ function CalendarSection() {
           Date-Aware Calendar View
         </span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-soft)', marginLeft: 4 }}>click to {open ? 'hide' : 'show'}</span>
-        <ChevronDown size={13} style={{ marginLeft: 'auto', transform: open ? 'rotate(180deg)' : 'none', transition: 'var(--transition)' }} />
+        {/* Animated chevron via t-acc-chevron */}
+        <span className="t-acc-chevron" style={{ marginLeft: 'auto' }}>
+          <ChevronDown size={13} />
+        </span>
       </button>
-      {open && (
-        <div style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-5)' }}>
-          <PublicCalendar />
+      {/* Accordion panel — animates height + opacity + blur */}
+      <div className="t-acc-panel">
+        <div className="t-acc-panel-inner">
+          <div style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-5)' }}>
+            <PublicCalendar />
+          </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

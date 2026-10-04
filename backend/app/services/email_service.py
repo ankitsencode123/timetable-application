@@ -1,46 +1,62 @@
-"""Email service for notifying teachers of routine changes."""
-import asyncio
-import resend
+"""Email service for notifying teachers of routine changes via Brevo."""
+import os
+import httpx
 from typing import List, Dict, Any
 
 from loguru import logger
 from sqlalchemy.orm import Session
-
-from app.models.teacher import Teacher
 from app.actions.engine import EngineResult
 
-
-import os
-
 # ============================================================
-# RESEND CONFIGURATION
-# Set RESEND_API_KEY in your .env file or environment.
+# BREVO CONFIGURATION
+# Set BREVO_API_KEY in your .env or Render dashboard.
 # ============================================================
-resend.api_key = os.environ.get("RESEND_API_KEY", "")
-SENDER_EMAIL = os.environ.get("RESEND_SENDER_EMAIL", "onboarding@resend.dev")
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", "ankitcursor478@gmail.com")
+SENDER_NAME = os.getenv("SENDER_NAME", "Timetable Administrator")
 
 # Hardcoded test recipients as requested by the user
-TEST_RECIPIENTS = ["ankitproject556@gmail.com", "ankitsen53806626@gmail.com", "ankitcursor478@gmail.com"]
+TEST_RECIPIENTS = [
+    {"email": "ankitsen53806626@gmail.com", "name": "Ankit"},
+    {"email": "timetableadmin71@gmail.com", "name": "Timetable Admin"}
+]
 
 
-async def send_email(subject: str, body: str, to_emails: List[str]):
-    """Send an email to a list of recipients asynchronously using Resend."""
-    if not to_emails:
+async def send_email(subject: str, html_body: str, recipients: List[Dict[str, str]]):
+    """Send an email to a list of recipients asynchronously using Brevo HTTP API."""
+    if not recipients:
+        return
+    if not BREVO_API_KEY:
+        logger.warning("BREVO_API_KEY is not set. Email not sent.")
         return
 
+    headers = {
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json",
+    }
+    
+    payload = {
+        "sender": {
+            "name": SENDER_NAME,
+            "email": SENDER_EMAIL,
+        },
+        "to": recipients,
+        "subject": subject,
+        "htmlContent": html_body,
+        "tags": ["timetable-change"]
+    }
+
     try:
-        await asyncio.to_thread(
-            resend.Emails.send,
-            {
-                "from": SENDER_EMAIL,
-                "to": to_emails,
-                "subject": subject,
-                "text": body,
-            }
-        )
-        logger.info(f"Notification email sent successfully to {to_emails}.")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(BREVO_API_URL, headers=headers, json=payload)
+            if response.is_success:
+                logger.info(f"Notification email sent successfully. MsgID: {response.json().get('messageId')}")
+            else:
+                logger.error(f"Failed to send email. HTTP {response.status_code}: {response.text}")
     except Exception as e:
-        logger.error(f"Failed to send email to {to_emails}: {e}")
+        logger.error(f"Network error while sending email: {e}")
 
 
 def _extract_teachers_from_entry(entry: Dict[str, Any]) -> List[str]:
@@ -57,61 +73,42 @@ def _extract_teachers_from_entry(entry: Dict[str, Any]) -> List[str]:
 async def notify_teachers_of_changes(result: EngineResult, db: Session):
     """
     Look through the EngineResult for applied actions, determine affected teachers,
-    and send them an email notification.
+    and send them an email notification via Brevo.
     """
     if not result.success and not result.partial_applied:
         return  # No changes applied
 
-    # Collect all affected teacher short names
-    affected_short_names = set()
-    
-    for r in result.results:
-        if not r.success:
-            continue
-            
-        before = r.before
-        after = r.after
-        
-        # Handle dict wrapping from SWAP/INTERCHANGE actions
-        if isinstance(before, dict) and "a" in before and "b" in before:
-            affected_short_names.update(_extract_teachers_from_entry(before["a"]))
-            affected_short_names.update(_extract_teachers_from_entry(before["b"]))
-        else:
-            affected_short_names.update(_extract_teachers_from_entry(before))
-            
-        if isinstance(after, dict) and "a" in after and "b" in after:
-            affected_short_names.update(_extract_teachers_from_entry(after["a"]))
-            affected_short_names.update(_extract_teachers_from_entry(after["b"]))
-        else:
-            affected_short_names.update(_extract_teachers_from_entry(after))
-
-    if not affected_short_names:
-        return
-
-    # In a real implementation, we would query the Teacher -> User model to get their emails.
-    # We will log the actual users who would be notified.
-    teachers = db.query(Teacher).filter(Teacher.short_name.in_(affected_short_names)).all()
-    actual_teacher_names = [t.full_name for t in teachers]
-    logger.info(f"Routine changes detected. The following teachers are affected: {actual_teacher_names}")
-    
-    # As per user request, we use the specified emails.
-    recipients = TEST_RECIPIENTS
+    # Usually, we'd find the affected_short_names, resolve them to user emails via db, 
+    # and send directly. For this requested integration, we send to exactly two emails.
     
     subject = "Notification: Routine Change in Timetable System"
     change_log_str = result.change_log if result.change_log is not None else "Unknown details"
     
-    body = f"""Hello,
+    # Format the change log to HTML replacing newlines with <br>
+    html_change_log = change_log_str.replace("\n", "<br>")
+    
+    body = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+    </head>
+    <body>
+        <h2>Timetable System Alert</h2>
+        <p>Hello,</p>
+        <p>This is an automated notification from the Timetable Management System.</p>
+        <p><strong>Recent modifications have been applied to the timetable:</strong></p>
+        
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 15px 0;">
+            <code style="font-family: monospace; font-size: 14px;">{html_change_log}</code>
+        </div>
+        
+        <p>Please log in to the Timetable Application portal to view the newly published schedule.</p>
+        <br>
+        <p>Regards,<br><strong>Timetable Administrator</strong></p>
+    </body>
+    </html>
+    """
 
-This is an automated notification from the Timetable Management System.
-
-Your scheduled routine has been modified.
-Changes summary:
-{change_log_str}
-
-Please log in to the Timetable Application portal to view your updated schedule.
-
-Regards,
-Timetable Management System
-"""
-
-    await send_email(subject, body, recipients)
+    # Dispatch via Brevo
+    await send_email(subject, body, TEST_RECIPIENTS)

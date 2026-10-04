@@ -7,7 +7,7 @@ import {
   getCalendarMonth, adminGetCalendarDay, adminListOverrides,
   adminCreateOverride, adminDeleteOverride, adminListValidity,
   adminCreateValidity, adminDeleteValidity, adminCalendarAudit,
-  listVersions, executeActions,
+  listVersions, executeActions, adminCalendarSuggest, formatViolation,
   type CalendarMonthDay, type CalendarDayResult,
   type CalendarOverrideRecord, type CalendarValidityRecord,
 } from '../../api'
@@ -337,7 +337,7 @@ function MonthGridPanel() {
                     <AlertCircle size={13} /> {dayData.violations.length} constraint violation{dayData.violations.length > 1 ? 's' : ''} on this day
                   </div>
                   {dayData.violations.map((v, i) => (
-                    <div key={i} style={{ fontSize: 'var(--fs-xs)', color: 'var(--violation)', marginBottom: 3, fontFamily: 'var(--font-mono)' }}>{v.message || v.rule}</div>
+                    <div key={i} style={{ fontSize: 'var(--fs-xs)', color: 'var(--violation)', marginBottom: 3, fontFamily: 'var(--font-mono)' }}>{formatViolation(v)}</div>
                   ))}
                 </div>
               )}
@@ -392,26 +392,8 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
     setLoadingSuggestions(true)
     setModSuggestions(null)
     try {
-      // Find the entry matching the key to build a move action for suggestions
-      const entry = (dayData?.entries ?? []).find(e => e.cal_key === key)
-      if (!entry) { setLoadingSuggestions(false); return }
-      const moveAction = {
-        action: 'MOVE_CLASS',
-        target: {
-          day: entry.start ? date : date,
-          program: entry.program,
-          semester: entry.semester,
-          start_time: entry.start,
-          end_time: entry.end,
-          subject_code: entry.subject_code,
-          teacher: entry.teacher,
-        },
-        new_day: date,
-        new_start_time: entry.start,
-        new_end_time: entry.end,
-      }
-      const result = await executeActions([moveAction])
-      const raw = result?.results?.[0]?.suggestions?.rich_suggestions ?? null
+      const result = await adminCalendarSuggest(date, key)
+      const raw = result?.rich_suggestions ?? null
       if (raw) {
         // Room suggestions first
         const sorted = [...raw].sort((a: any, b: any) => {
@@ -429,7 +411,6 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
     const a = rs.action
     if (!a) return
     const changes: Record<string, string> = {}
-    if (a.new_day)        changes.day         = a.new_day
     if (a.new_start_time) changes.start       = a.new_start_time
     if (a.new_end_time)   changes.end         = a.new_end_time
     if (a.spec?.room)     changes.room        = a.spec.room
@@ -840,16 +821,24 @@ function ValidityCreateModal({ versions, onClose, onDone }: { versions: Timetabl
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function submit() {
+  async function submit(autoForce = form.force) {
     if (!form.version_id) { setError('Select a version.'); return }
     setLoading(true); setError(null)
     try {
-      const payload: any = { version_id: parseInt(form.version_id), scope: form.scope, label: form.label, priority: parseInt(form.priority) || 0, force: form.force }
+      const payload: any = { version_id: parseInt(form.version_id), scope: form.scope, label: form.label, priority: parseInt(form.priority) || 0, force: autoForce }
       if (form.scope === 'RANGE') { payload.start_date = form.start_date; payload.end_date = form.end_date }
       else { payload.anchor_date = form.anchor_date }
       await adminCreateValidity(payload)
       onDone()
-    } catch (e: any) { setError(e.message) }
+    } catch (e: any) {
+      if (e.status === 409 && e.can_force && !autoForce) {
+        if (confirm("This version violated constraints. Do you still want to add it to the window?")) {
+           submit(true);
+           return;
+        }
+      }
+      setError(e.message)
+    }
     finally { setLoading(false) }
   }
 
@@ -915,7 +904,7 @@ function ValidityCreateModal({ versions, onClose, onDone }: { versions: Timetabl
         {error && <ErrBanner msg={error} style={{ marginTop: 'var(--sp-3)' }} />}
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={submit} disabled={loading} id="validity-submit-btn">
+          <button className="btn btn-primary" onClick={() => submit()} disabled={loading} id="validity-submit-btn">
             {loading ? 'Creating…' : 'Create Window'}
           </button>
         </div>
@@ -927,6 +916,41 @@ function ValidityCreateModal({ versions, onClose, onDone }: { versions: Timetabl
 // ═══════════════════════════════════════════════════════════════════════════════
 // Audit Panel
 // ═══════════════════════════════════════════════════════════════════════════════
+function formatAuditPayload(log: any) {
+  if (!log.payload) return ''
+  const p = log.payload
+  if (log.entity === 'validity') {
+    if (log.action === 'CREATE') return `Created validity window for v${p.version_id} (${p.start} to ${p.end})`
+    if (log.action === 'DELETE') return `Deleted validity window`
+  }
+  if (log.entity === 'override') {
+    if (log.action === 'CREATE') {
+      const act = p.action
+      if (act === 'DAY_OFF') {
+        const pr = p.payload?.program ? ` for ${p.payload.program} ${p.payload.semester}` : ''
+        return `Set Day Off on ${p.date}${pr}`
+      }
+      const t = p.target
+      const targetStr = t ? `${t.subject_code || t.subject} (${t.program} ${t.semester})` : ''
+      if (act === 'CANCEL') return `Cancelled class ${targetStr} on ${p.date}`
+      if (act === 'MODIFY') {
+        const changes = p.payload?.changes || {}
+        const moves = []
+        if (changes.start || changes.end) moves.push(`time to ${changes.start || t?.start}-${changes.end || t?.end}`)
+        if (changes.room) moves.push(`room to ${changes.room}`)
+        if (changes.teacher) moves.push(`teacher to ${changes.teacher}`)
+        return `Modified class ${targetStr} on ${p.date}: changed ${moves.join(', ')}`
+      }
+      if (act === 'ADD') {
+        const t2 = p.payload?.entry
+        return t2 ? `Added extra class ${t2.subject_code} for ${t2.program} ${t2.semester} on ${p.date} (${t2.start}-${t2.end})` : `Added extra class on ${p.date}`
+      }
+    }
+    if (log.action === 'DELETE') return `Removed override on ${p.date}`
+  }
+  return JSON.stringify(p).slice(0, 100)
+}
+
 function AuditPanel() {
   const [logs, setLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -960,7 +984,7 @@ function AuditPanel() {
                 <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--ink-soft)', whiteSpace: 'nowrap', flexShrink: 0 }}>{log.created_at ? new Date(log.created_at).toLocaleString() : '—'}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--accent)', minWidth: 60, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 10, flexShrink: 0 }}>{log.action}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--clr-purple)', fontSize: 10, minWidth: 70, flexShrink: 0 }}>{log.entity}#{log.entity_id ?? '—'}</span>
-                <span style={{ color: 'var(--ink-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.payload ? JSON.stringify(log.payload).slice(0, 120) : ''}</span>
+                <span style={{ color: 'var(--ink)', flex: 1 }}>{formatAuditPayload(log)}</span>
               </div>
             ))}
           </div>
@@ -973,8 +997,9 @@ function AuditPanel() {
 // ── Shared error banner ────────────────────────────────────────────────────────
 function ErrBanner({ msg, style: extraStyle }: { msg: string; style?: React.CSSProperties }) {
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', color: 'var(--violation)', fontSize: 'var(--fs-xs)', background: 'var(--violation-soft)', border: '1px solid color-mix(in oklab, var(--violation) 20%, transparent)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', marginBottom: 'var(--sp-3)', ...extraStyle }}>
-      <AlertCircle size={13} />{msg}
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: 'var(--violation)', fontSize: 'var(--fs-xs)', background: 'var(--violation-soft)', border: '1px solid color-mix(in oklab, var(--violation) 20%, transparent)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', marginBottom: 'var(--sp-3)', whiteSpace: 'pre-wrap', ...extraStyle }}>
+      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+      <div>{msg}</div>
     </div>
   )
 }

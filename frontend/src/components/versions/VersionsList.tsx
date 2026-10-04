@@ -16,6 +16,46 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+function TiltCard({ children, className = '' }: { children: React.ReactNode, className?: string }) {
+  const [tilting, setTilting] = useState(false)
+  const [hover, setHover] = useState(false)
+  
+  function handleMove(e: React.PointerEvent<HTMLDivElement>) {
+    const el = e.currentTarget
+    const rect = el.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const rx = ((y / rect.height) - 0.5) * -15 // -7.5 to 7.5 deg
+    const ry = ((x / rect.width) - 0.5) * 15  // -7.5 to 7.5 deg
+    const gx = (x / rect.width) * 100
+    const gy = (y / rect.height) * 100
+    
+    el.style.setProperty('--tilt-rx', `${rx}deg`)
+    el.style.setProperty('--tilt-ry', `${ry}deg`)
+    el.style.setProperty('--tilt-gx', `${gx}%`)
+    el.style.setProperty('--tilt-gy', `${gy}%`)
+  }
+
+  return (
+    <div 
+      className={`t-tilt ${hover ? 'is-hover' : ''}`}
+      onPointerEnter={() => { setHover(true); setTilting(false) }}
+      onPointerLeave={(e) => { 
+        setHover(false); 
+        setTilting(false);
+        e.currentTarget.style.setProperty('--tilt-rx', '0deg')
+        e.currentTarget.style.setProperty('--tilt-ry', '0deg')
+      }}
+      onPointerMove={(e) => { setTilting(true); handleMove(e) }}
+    >
+      <div className={`t-tilt-card ${tilting ? 'is-tilting' : ''} ${className}`}>
+        {children}
+        <div className="t-tilt-glare"></div>
+      </div>
+    </div>
+  )
+}
+
 function PublishDialog({ version, onClose, onPublished }: {
   version: TimetableVersion; onClose: () => void; onPublished: () => void
 }) {
@@ -34,7 +74,7 @@ function PublishDialog({ version, onClose, onPublished }: {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-sm">
+      <div className="modal modal-sm t-modal is-open">
         <div className="modal-header">
           <h2 className="modal-title">Publish Version #{version.id}?</h2>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -46,7 +86,14 @@ function PublishDialog({ version, onClose, onPublished }: {
           <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {isValidated && !hasViolations
-                ? <CheckCircle2 size={14} style={{ color: 'var(--accent)' }} />
+                ? (
+                  <span className="t-success-check" data-state="in" aria-hidden="true" style={{ width: 14, height: 14, color: 'var(--accent)' }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                      <path d="M22 4L12 14.01l-3-3" />
+                    </svg>
+                  </span>
+                )
                 : <span style={{ fontSize: 12 }}>⚠</span>
               }
               <span style={{ color: isValidated && !hasViolations ? 'var(--accent)' : 'var(--amber)' }}>
@@ -125,11 +172,17 @@ export default function VersionsList() {
         const isCurrent = v.id === currentVersionId
         const isPublished = v.status === 'PUBLISHED'
         return (
-          <div key={v.id} className={`version-card ${isPublished ? 'published' : isCurrent ? 'current' : ''}`}>
+          <TiltCard key={v.id} className={`version-card ${isPublished ? 'published' : isCurrent ? 'current' : ''}`}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--ink)' }}>Version #{v.id}</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--ink)' }}>
+                    Version #<span className="t-digit-group is-animating">
+                      {String(v.id).split('').map((d, i) => (
+                        <span key={i} className="t-digit" data-stagger={i > 0 ? String(i) : undefined}>{d}</span>
+                      ))}
+                    </span>
+                  </span>
                   {statusBadge(v.status)}
                   {isCurrent && <span className="badge badge-blue">Current</span>}
                 </div>
@@ -139,7 +192,7 @@ export default function VersionsList() {
                 {v.change_summary && <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', marginTop: 2 }}>{v.change_summary}</div>}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap', position: 'relative', zIndex: 10 }}>
               <button className="btn btn-ghost btn-sm" onClick={() => loadVersion(v.id)}>
                 <Eye size={12} /> View
               </button>
@@ -152,7 +205,7 @@ export default function VersionsList() {
                 <RotateCcw size={12} /> Restore
               </button>
             </div>
-          </div>
+          </TiltCard>
         )
       })}
 

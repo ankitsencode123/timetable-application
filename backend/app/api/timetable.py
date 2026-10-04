@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import require_teacher_or_admin
+from app.core.secure_auth import require_teacher_or_admin
 from app.models.user import User
 from app.schemas.timetable import GenerateRequest, GenerateResponse, ValidateResponse, VersionOut
 from app.services import scheduler_service, validation_service, timetable_service

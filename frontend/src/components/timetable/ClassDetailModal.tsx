@@ -51,7 +51,7 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-sm" style={{ background: 'var(--clr-bg-2)' }}>
+      <div className="modal modal-sm t-modal is-open" style={{ background: 'var(--clr-bg-2)' }}>
         <div className="modal-header">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -87,7 +87,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.database import get_db                                              ###
-from app.core.dependencies import get_current_user                               ###
+from app.core.secure_auth import get_current_user                               ###
 from app.models.base import Base                                                  ###
 from app.models.timetable import TimetableVersion, VersionStatus                  ###
 from app.scheduler.constraints import (
@@ -117,7 +117,16 @@ ENTRY_KEYS = set(SCHEDULE_REQUIRED_KEYS) | set(EDITABLE_FIELDS) | {"program", "s
 ACTION_ORDER = {"MODIFY": 0, "CANCEL": 1, "DAY_OFF": 2, "ADD": 3}
 META = "cal_"                   # prefix of every metadata key we attach to an entry
 TEXT_MAX = 120
-UNFORCEABLE_RULES = {"start_not_before_end", "bad_time_format"}   # + anything "schema_*"
+UNFORCEABLE_RULES = {
+    "start_not_before_end", "bad_time_format",
+    "H1_semester_clash",
+    "H2_teacher_clash",
+    "H3_room_clash",
+    "H5_multiple_theory_same_day",
+    "H5_multiple_practical_same_day",
+    "H11_wrong_semester_subject",
+    "H12_teacher_busy",
+}   # + anything "schema_*"
 
 
 def _today() -> dt.date:
@@ -638,6 +647,11 @@ class OverrideCreate(_Strict):
         return self
 
 
+class SuggestRequest(_Strict):
+    date: dt.date
+    target_key: str = Field(..., min_length=1, max_length=64)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Payload normalisation
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1060,6 +1074,47 @@ def admin_audit(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get
     return [{"id": r.id, "actor_id": r.actor_id, "action": r.action, "entity": r.entity,
              "entity_id": r.entity_id, "payload": _loads(r.payload_json),
              "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows]
+
+
+@admin_router.post("/suggest")
+def admin_suggest(payload: SuggestRequest, db: Session = Depends(get_db), user: Any = Depends(require_admin)):
+    """Generate conflict-free suggestions for an entry on a specific date in the calendar."""
+    from app.actions.suggestions import suggest_alternatives
+
+    _assert_sane_date(payload.date)
+    ctx = _load_ctx(db, payload.date, payload.date)
+    # resolve the day WITHOUT applying overrides, so we see what the schedule looks like
+    # (actually we should include overrides so we don't conflict with them, but we must find the base class)
+    day = _resolve_day(ctx, payload.date)
+    
+    entries = day.get("entries", [])
+    target = next((e for e in entries if e.get(META + "key") == payload.target_key), None)
+    if not target:
+        raise _err(404, "TARGET_NOT_FOUND", "No such class in the timetable currently in force on this date.")
+
+    # Strip metadata from all entries to allow the suggestion engine to work with standard flat dicts
+    clean_entries = [_strip_meta(e) for e in entries]
+    clean_target = _strip_meta(target)
+
+    # Use a dummy violation triggering a MOVE_CLASS suggestion
+    dummy_violation = {
+        "rule": "user_request",
+        "entry": clean_target
+    }
+
+    try:
+        sugg = suggest_alternatives(
+            schedule=clean_entries,
+            action_type="MOVE_CLASS",
+            violation=dummy_violation,
+            orig_target=clean_target,
+            mutated_entry=clean_target,
+            need_lab=clean_target.get("type", "Theory") == "Practical"
+        )
+        return sugg
+    except Exception as e:
+        log.exception("Suggestion engine failed")
+        raise _err(500, "ENGINE_ERROR", f"Failed to generate suggestions: {e}")
 
 
 router = APIRouter()

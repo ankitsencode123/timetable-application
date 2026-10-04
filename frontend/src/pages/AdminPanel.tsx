@@ -296,7 +296,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
-      <div className="card" style={{ width: 400, padding: 'var(--sp-5)' }} onClick={e => e.stopPropagation()}>
+      <div className="card t-modal is-open" style={{ width: 400, padding: 'var(--sp-5)' }} onClick={e => e.stopPropagation()}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-lg)', fontWeight: 600, marginBottom: 'var(--sp-4)', color: 'var(--ink)', letterSpacing: '-0.015em' }}>
           Create teacher account
         </h2>

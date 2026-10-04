@@ -28,6 +28,21 @@ function csrfHeaders(): HeadersInit {
   return csrf ? { 'X-CSRF-Token': csrf } : {};
 }
 
+export function formatViolation(v: any): string {
+  if (!v) return 'Unknown error'
+  if (v.note) return `[${v.rule}] ${v.note}`
+  if (v.rule === 'H3_room_clash') return `Room clash in ${v.room} between ${v.a?.subject || 'Class 1'} and ${v.b?.subject || 'Class 2'}`
+  if (v.rule === 'H2_teacher_clash') return `Teacher clash for ${Array.isArray(v.teachers) ? v.teachers.join(', ') : 'a teacher'} between ${v.a?.subject || 'Class 1'} and ${v.b?.subject || 'Class 2'}`
+  if (v.rule === 'H1_semester_clash') return `Semester clash for ${v.a?.program || ''} ${v.a?.semester || ''} between ${v.a?.subject || 'Class 1'} and ${v.b?.subject || 'Class 2'}`
+  if (v.rule === 'H5_multiple_theory_same_day') return `Too many theory classes for ${v.teacher} on ${v.day}`
+  if (v.rule === 'H5_multiple_practical_same_day') return `Too many practical classes for ${v.teacher} on ${v.day}`
+  if (v.rule === 'H12_teacher_busy') return `Teacher ${v.teacher} is marked busy on ${v.day}`
+  if (v.rule === 'H11_wrong_semester_subject') return `Subject ${v.subject_code} is not recognized for ${v.program} ${v.semester}`
+  if (v.rule === 'H8_max_weekly_hours') return `Max weekly hours exceeded for ${v.teacher}`
+  if (v.rule === 'start_not_before_end') return `Time error: Start time is not before end time`
+  return v.rule || 'Unknown violation'
+}
+
 // ── Base request ─────────────────────────────────────────────────────────────
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -46,8 +61,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const err = new Error(body.detail ?? `HTTP ${res.status}`) as Error & { status: number };
+    let detail = body.detail;
+    let canForce: boolean | undefined = undefined;
+    if (Array.isArray(detail)) {
+      detail = 'Validation error: ' + detail.map((d: any) => d.msg).join(', ');
+    } else if (detail && typeof detail === 'object' && detail.message) {
+      canForce = detail.can_force;
+      if (Array.isArray(detail.violations) && detail.violations.length > 0) {
+        detail = `${detail.message}\n` + detail.violations.map((v: any) => `• ${formatViolation(v)}`).join('\n');
+      } else {
+        detail = detail.message;
+      }
+    } else if (detail && typeof detail !== 'string') {
+      detail = JSON.stringify(detail);
+    }
+    const err = new Error(detail ?? `HTTP ${res.status}`) as Error & { status: number, can_force?: boolean };
     err.status = res.status;
+    err.can_force = canForce;
     throw err;
   }
   // 204 No Content
@@ -75,8 +105,23 @@ export async function login(form: LoginForm): Promise<AuthResponse> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const err = new Error(body.detail ?? 'Login failed') as Error & { status: number };
+    let detail = body.detail;
+    let canForce: boolean | undefined = undefined;
+    if (Array.isArray(detail)) {
+      detail = 'Validation error: ' + detail.map((d: any) => d.msg).join(', ');
+    } else if (detail && typeof detail === 'object' && detail.message) {
+      canForce = detail.can_force;
+      if (Array.isArray(detail.violations) && detail.violations.length > 0) {
+        detail = `${detail.message}\n` + detail.violations.map((v: any) => `• ${formatViolation(v)}`).join('\n');
+      } else {
+        detail = detail.message;
+      }
+    } else if (detail && typeof detail !== 'string') {
+      detail = JSON.stringify(detail);
+    }
+    const err = new Error(detail ?? 'Login failed') as Error & { status: number, can_force?: boolean };
     err.status = res.status;
+    err.can_force = canForce;
     throw err;
   }
   const data = await res.json();
@@ -366,6 +411,13 @@ export async function adminDeleteValidity(id: number, force = false): Promise<{ 
 
 export async function adminCalendarAudit(limit = 100): Promise<{ id: number; actor_id: number | null; action: string; entity: string; entity_id: number | null; payload: any; created_at: string }[]> {
   return request(`/admin/calendar/audit?limit=${limit}`)
+}
+
+export async function adminCalendarSuggest(date: string, targetKey: string): Promise<{ rich_suggestions: any[] }> {
+  return request('/admin/calendar/suggest', {
+    method: 'POST',
+    body: JSON.stringify({ date, target_key: targetKey }),
+  })
 }
 
 export { request as req };

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import require_admin, require_teacher_or_admin
+from app.core.secure_auth import require_admin, require_teacher_or_admin
 from app.models.user import User
 from app.schemas.timetable import VersionOut, VersionDetail
 from app.services import timetable_service, publication_service, audit_service

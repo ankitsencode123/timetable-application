@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import require_admin, verify_csrf
+from app.core.secure_auth import require_admin
 from app.models.user import User, RoleEnum
 from app.models.audit import AuditLog
 from app.schemas.user import UserOut, UserCreate, UserUpdateAdmin
@@ -36,7 +36,7 @@ def create_user(
     req: UserCreate,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
-    _csrf: None = Depends(verify_csrf),
+    
 ):
     """Create a new teacher or admin account."""
     if db.query(User).filter(User.email == req.email).first():
@@ -70,7 +70,7 @@ def update_user(
     req: UserUpdateAdmin,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
-    _csrf: None = Depends(verify_csrf),
+    
 ):
     """Update full_name or role (admin)."""
     user = db.query(User).filter(User.id == user_id).first()
@@ -98,7 +98,7 @@ def enable_user(
     user_id: int,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
-    _csrf: None = Depends(verify_csrf),
+    
 ):
     try:
         return auth_service.enable_user(db, user_id)
@@ -111,7 +111,7 @@ def disable_user(
     user_id: int,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
-    _csrf: None = Depends(verify_csrf),
+    
 ):
     if user_id == admin.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot disable your own account")
@@ -127,7 +127,7 @@ def reset_password(
     req: AdminResetPasswordRequest,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
-    _csrf: None = Depends(verify_csrf),
+    
 ):
     """Admin-initiated password reset — no old password required."""
     user = db.query(User).filter(User.id == user_id).first()

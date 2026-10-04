@@ -129,11 +129,8 @@ def revoke_refresh_token(db: Session, raw_refresh: str) -> None:
 
 def revoke_all_user_tokens(db: Session, user_id: int) -> None:
     """Revoke all active refresh tokens for a user (e.g., on disable)."""
-    db.query(RefreshToken).filter(
-        RefreshToken.user_id == user_id,
-        RefreshToken.revoked == False,
-    ).update({"revoked": True})
-    db.commit()
+    from app.core import secure_auth
+    secure_auth.revoke_all_sessions(db, user_id, "user_disabled")
 
 
 # ── Password management ────────────────────────────────────────────────────────

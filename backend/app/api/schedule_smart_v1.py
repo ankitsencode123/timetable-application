@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import require_teacher_or_admin
+from app.core.secure_auth import require_teacher_or_admin
 from app.models.user import User
 from app.models.timetable import TimetableVersion
 from app.models.busy_slot import TeacherBusySlot

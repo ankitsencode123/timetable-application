@@ -7,6 +7,61 @@ import { getVersion } from '../../api'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+// Utility: stream-reveal words in a freshly-mounted message element
+function streamRevealWords(el: HTMLElement, gapMs = 40) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const textNodes: Text[] = []
+  let node: Node | null
+  while ((node = walker.nextNode())) textNodes.push(node as Text)
+
+  const spans: HTMLElement[] = []
+  textNodes.forEach(tn => {
+    const words = tn.textContent?.split(/(\s+)/) ?? []
+    const frag = document.createDocumentFragment()
+    words.forEach(w => {
+      if (!w) return
+      const sp = document.createElement('span')
+      sp.className = 't-stream-w'
+      sp.textContent = w
+      frag.appendChild(sp)
+      spans.push(sp)
+    })
+    tn.replaceWith(frag)
+  })
+  spans.forEach((sp, i) => setTimeout(() => sp.classList.add('is-in'), i * gapMs))
+}
+
+function ReasoningStream() {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!scrollRef.current) return
+      const el = scrollRef.current
+      const offset = (parseFloat(el.dataset.offset || '0') + 16) % 32 // fake line height
+      el.dataset.offset = String(offset)
+      el.style.transition = 'transform var(--reason-step, 500ms) var(--reason-ease, ease)'
+      el.style.transform = `translateY(-${offset}px)`
+    }, 840) // --reason-hold
+    return () => clearInterval(interval)
+  }, [])
+  
+  return (
+    <div className="t-reason" style={{ height: 40, width: 200, fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>
+      <div className="t-reason-viewport">
+        <div className="t-reason-scroll" ref={scrollRef}>
+          <div className="t-reason-text">
+            <div>Processing timetable constraints...</div>
+            <div>Evaluating overlaps...</div>
+            <div>Finding alternative slots...</div>
+            <div>Processing timetable constraints...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const SUGGESTIONS = [
   'Move DBMS lab to Thursday',
   "Cancel SK's Tuesday CN class",
@@ -351,7 +406,10 @@ export default function ChatPanel() {
             <Trash2 size={14} />
           </button>
           <button className="btn-icon" title={collapsed ? 'Expand' : 'Collapse'} onClick={() => setCollapsed(c => !c)}>
-            {collapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            <span className="t-icon-swap" data-state={collapsed ? 'b' : 'a'}>
+              <span className="t-icon" data-icon="a"><ChevronDown size={14} /></span>
+              <span className="t-icon" data-icon="b"><ChevronUp size={14} /></span>
+            </span>
           </button>
         </div>
       </div>
@@ -360,9 +418,20 @@ export default function ChatPanel() {
         <>
           {/* Messages */}
           <div className="chat-messages">
-            {messages.map(msg => (
+            {messages.map((msg, msgIdx) => (
               <div key={msg.id} className={`chat-msg ${msg.role}`}>
-                <div style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}>
+                <div
+                  style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}
+                  ref={el => {
+                    // Stream-reveal assistant words only on the latest message
+                    if (el && msg.role === 'assistant' && msgIdx === messages.length - 1) {
+                      streamRevealWords(el, 40)
+                    } else if (el && msg.role === 'assistant') {
+                      // older messages: make all words visible immediately
+                      el.querySelectorAll<HTMLElement>('.t-stream-w').forEach(sp => sp.classList.add('is-in'))
+                    }
+                  }}
+                >
                   {msg.role === 'assistant' ? (
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   ) : (
@@ -433,6 +502,13 @@ export default function ChatPanel() {
                 />
               ))}
             </div>
+
+            {/* Loading / Reasoning indicator */}
+            {loading && !confirm && (
+              <div className="chat-msg assistant" style={{ background: 'transparent', padding: '0 12px' }}>
+                <ReasoningStream />
+              </div>
+            )}
 
             <div ref={bottomRef} />
           </div>

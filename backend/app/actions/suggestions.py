@@ -77,7 +77,7 @@ STANDARD_SLOTS = [
 ]
 
 WORKING_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-SEARCH_START_MINUTES = 9 * 60
+SEARCH_START_MINUTES = 10 * 60
 SEARCH_END_MINUTES = 17 * 60 + 30
 MAX_RANKED_SUGGESTIONS = 3
 
