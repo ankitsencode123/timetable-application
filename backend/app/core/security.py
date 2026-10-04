@@ -22,13 +22,38 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # ── Passwords ──────────────────────────────────────────────────────────────────
 
 def hash_password(plain: str) -> str:
-    # bcrypt limits passwords to 72 bytes. Truncate to avoid ValueError
+    # bcrypt limits passwords to 72 bytes.
     safe_plain = plain[:72]
     return _pwd_context.hash(safe_plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Verify against bcrypt (current) or Argon2id (legacy from secure_auth)."""
     safe_plain = plain[:72]
+    # Handle Argon2id hashes from the old secure_auth system
+    if hashed.startswith("$argon2"):
+        try:
+            from argon2 import PasswordHasher
+            from argon2.exceptions import VerifyMismatchError
+            import unicodedata, hmac as _hmac, hashlib, base64
+            # secure_auth used a pepper before hashing — try without pepper first (dev default)
+            ph = PasswordHasher()
+            # Try direct verify (no pepper)
+            try:
+                return ph.verify(hashed, plain)
+            except VerifyMismatchError:
+                pass
+            # Try with dev pepper
+            dev_pepper = "dev-pepper-not-for-production"
+            norm = unicodedata.normalize("NFKC", plain)
+            mac = _hmac.new(dev_pepper.encode(), norm.encode(), hashlib.sha256).digest()
+            prehashed = base64.b64encode(mac).decode("ascii")
+            try:
+                return ph.verify(hashed, prehashed)
+            except VerifyMismatchError:
+                return False
+        except Exception:
+            return False
     return _pwd_context.verify(safe_plain, hashed)
 
 

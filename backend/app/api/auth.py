@@ -144,3 +144,30 @@ def change_password(body: dict, user: User = Depends(get_current_user), db: Sess
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"message": "Password changed successfully"}
+
+
+@router.post("/fix-admin")
+def fix_admin(body: dict, db: Session = Depends(get_db)):
+    """One-time endpoint to unlock admin account and re-hash password with bcrypt.
+    Requires ADMIN_RESET_TOKEN env var to match the 'token' in the request body."""
+    import os
+    from datetime import datetime
+    from app.core.security import hash_password
+    expected_token = os.getenv("ADMIN_RESET_TOKEN", "")
+    provided_token = body.get("token", "")
+    if not expected_token or provided_token != expected_token:
+        raise HTTPException(status_code=403, detail="Invalid or missing reset token")
+    email = body.get("email", "")
+    new_password = body.get("new_password", "")
+    if not email or not new_password:
+        raise HTTPException(status_code=400, detail="email and new_password required")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Re-hash with bcrypt and clear lockout
+    user.hashed_password = hash_password(new_password)
+    user.failed_attempts = 0
+    user.locked_until = None
+    user.is_active = True
+    db.commit()
+    return {"message": f"Admin account {email} unlocked and password reset successfully"}
