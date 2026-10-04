@@ -65,8 +65,10 @@ _allow_all = _cors_origins == ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=not _allow_all,  # credentials not allowed with wildcard origin
+    # When wildcard: use regex to reflect the actual origin back (required for credentials: include)
+    allow_origins=[] if _allow_all else _cors_origins,
+    allow_origin_regex=".*" if _allow_all else None,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
