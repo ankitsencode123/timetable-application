@@ -86,12 +86,24 @@ MAX_RANKED_SUGGESTIONS = 3
 # Full-constraint validation helpers
 # ---------------------------------------------------------------------------
 
-def _fingerprint(err: dict) -> str:
-    """Produce an exact fingerprint for a violation.
+_QUANTITY_RULES = {"H8_wrong_weekly_hours", "H9_wrong_practical_duration"}
 
-    Location is part of a violation's identity. Ignoring it can make a newly
-    created clash look like an unrelated pre-existing clash elsewhere.
+
+def _fingerprint(err: dict) -> str:
+    """Produce a fingerprint for a violation.
+
+    H8/H9 violations are quantity-dependent (actual_minutes changes when classes
+    are added), so we match them by identity only (rule+subject+program+semester)
+    rather than by exact field values.  All other violations include location data.
     """
+    rule = err.get("rule", "")
+    if rule in _QUANTITY_RULES:
+        return json.dumps({
+            "rule": rule,
+            "subject_code": err.get("subject_code") or err.get("subject", ""),
+            "program": err.get("program", ""),
+            "semester": err.get("semester", ""),
+        }, sort_keys=True)
     return json.dumps(err, sort_keys=True)
 
 
@@ -813,15 +825,19 @@ def suggest_alternatives(
             f"Searched every later period through {SEARCH_END_MINUTES // 60:02d}:30."
         )
         for new_end in extension_options[:MAX_RANKED_SUGGESTIONS]:
+            # Always build the target from the authoritative source entry so that
+            # executor._find_entry can reliably match it. We intentionally omit
+            # end_time from the target so that a prior partial extension doesn't
+            # prevent the target from being found.
             proposed = {
                 "action": "EXTEND_CLASS",
-                "target": orig_target or {
+                "target": {
                     "day": source.get("day"),
                     "start_time": source.get("start"),
-                    "end_time": source.get("end"),
                     "program": source.get("program"),
                     "semester": source.get("semester"),
-                    "subject_code": source.get("subject_code"),
+                    "subject_code": source.get("subject_code") or source.get("subject_name"),
+                    "teacher": source.get("teacher"),
                 },
                 "new_end_time": new_end,
             }

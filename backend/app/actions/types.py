@@ -38,6 +38,7 @@ class ActionType(str, enum.Enum):
     ADD_TEACHER         = "ADD_TEACHER"
     ADD_SUBJECT         = "ADD_SUBJECT"
     ADD_PROGRAM         = "ADD_PROGRAM"
+    ADD_TEACHER_BUSY    = "ADD_TEACHER_BUSY"
 
 
 # ---------------------------------------------------------------------------
@@ -232,32 +233,19 @@ class RestoreVersionAction(BaseModel):
     change_summary: str = "Restored from previous version"
 
 
+class AddTeacherBusyAction(BaseModel):
+    action: Literal[ActionType.ADD_TEACHER_BUSY] = ActionType.ADD_TEACHER_BUSY
+    teacher_short_name: str
+    scope: Literal["permanent", "temporary"] = "permanent"
+    day_of_week: Optional[str] = None
+    specific_date: Optional[str] = None
+    reason: Optional[str] = "Marked busy via AI Chat"
+
+
 # ---------------------------------------------------------------------------
 # Discriminated union — single ParsedAction type accepted everywhere
 # ---------------------------------------------------------------------------
 
-ParsedAction = Union[
-    AddClassAction,
-    RemoveClassAction,
-    CancelClassAction,
-    ExtendClassAction,
-    ShortenClassAction,
-    MoveClassAction,
-    SwapClassesAction,
-    InterchangeClassesAction,
-    ChangeTeacherAction,
-    ChangeRoomAction,
-    ChangeTimeAction,
-    ChangeDayAction,
-    ReplaceClassAction,
-    GenerateTimetableAction,
-    OptimizeTimetableAction,
-    ValidateTimetableAction,
-    RestoreVersionAction,
-    "AddTeacherAction",
-    "AddSubjectAction",
-    "AddProgramAction",
-]
 
 
 class AddTeacherAction(BaseModel):
@@ -301,6 +289,7 @@ ParsedAction = Union[
     ChangeTimeAction,
     ChangeDayAction,
     ReplaceClassAction,
+    AddTeacherBusyAction,
     GenerateTimetableAction,
     OptimizeTimetableAction,
     ValidateTimetableAction,
@@ -335,6 +324,7 @@ def parse_action(data: Dict[str, Any]) -> ParsedAction:
         ActionType.ADD_TEACHER:         AddTeacherAction,
         ActionType.ADD_SUBJECT:         AddSubjectAction,
         ActionType.ADD_PROGRAM:         AddProgramAction,
+        ActionType.ADD_TEACHER_BUSY:    AddTeacherBusyAction,
     }
     model_cls = _map.get(action_type)
     if model_cls is None:

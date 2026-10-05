@@ -41,6 +41,7 @@ from app.actions.types import (
     OptimizeTimetableAction,
     ValidateTimetableAction,
     RestoreVersionAction,
+    AddTeacherBusyAction,
 )
 from app.actions import executor as ex
 from app.actions.change_log import format_change_log
@@ -273,6 +274,81 @@ def _simulate_one(
                 change_log=cl, before=before, after=after
             )
 
+        elif isinstance(action, AddTeacherBusyAction):
+            from app.api.busy_slots import _entry_conflicts_busy
+            from app.models.busy_slot import TeacherBusySlot
+            
+            # 1. Add busy slot object to DB session
+            # (Will be committed eventually with the new draft, assuming this execution succeeds)
+            slot = TeacherBusySlot(
+                teacher_short_name=action.teacher_short_name,
+                scope=action.scope,
+                day_of_week=action.day_of_week,
+                specific_date=action.specific_date,
+                reason=action.reason
+            )
+            db.add(slot)
+            
+            # 2. Find affected classes
+            affected = [e for e in schedule if e.get("teacher") == action.teacher_short_name and _entry_conflicts_busy(e, action.day_of_week)]
+            
+            new_sched = copy.deepcopy(schedule)
+            moved, cancelled = [], []
+            
+            # 3. Simulate auto-reschedule
+            for entry in affected:
+                violation = {
+                    "rule": "H6_teacher_free_day",
+                    "a": entry,
+                    "entry": entry,
+                    "teacher": action.teacher_short_name,
+                    "day": action.day_of_week,
+                }
+                sugg = suggest_alternatives(
+                    schedule=new_sched,
+                    action_type="MOVE_CLASS",
+                    violation=violation,
+                    teacher=action.teacher_short_name,
+                    need_lab=(entry.get("type") == "Practical"),
+                    orig_target={
+                        "day": entry["day"],
+                        "start_time": entry["start"],
+                        "end_time": entry["end"],
+                        "program": entry["program"],
+                        "semester": entry["semester"],
+                        "subject_code": entry["subject_code"],
+                        "teacher": entry["teacher"],
+                    },
+                    busy_days={action.day_of_week} if action.day_of_week else None,
+                )
+                rich = sugg.get("rich_suggestions", [])
+                if rich:
+                    best = rich[0].get("action", {})
+                    n_day = best.get("new_day", entry["day"])
+                    n_start = best.get("new_start_time", entry["start"])
+                    n_end = best.get("new_end_time", entry["end"])
+                    n_room = best.get("new_room", entry.get("room", ""))
+                    for i, e in enumerate(new_sched):
+                        if (e.get("day") == entry["day"] and e.get("start") == entry["start"] and e.get("subject_code") == entry["subject_code"] and e.get("teacher") == action.teacher_short_name):
+                            new_sched[i] = {**e, "day": n_day, "start": n_start, "end": n_end, "room": n_room}
+                            break
+                    moved.append(f"{entry['subject_code']} -> {n_day} {n_start}")
+                else:
+                    new_sched = [
+                        e for e in new_sched 
+                        if not (e.get("day") == entry["day"] and e.get("start") == entry["start"] and e.get("subject_code") == entry["subject_code"] and e.get("teacher") == action.teacher_short_name)
+                    ]
+                    cancelled.append(entry['subject_code'])
+
+            msg_parts = [f"Marked {action.teacher_short_name} busy on {action.day_of_week}."]
+            if moved: msg_parts.append(f"Auto-moved: {', '.join(moved)}.")
+            if cancelled: msg_parts.append(f"Cancelled (no free slots): {', '.join(cancelled)}.")
+                
+            return new_sched, ActionResult(
+                action_type=atype.value, success=True,
+                change_log=" ".join(msg_parts)
+            )
+
         elif isinstance(action, RestoreVersionAction):
             old_v = timetable_service.get_version(db, action.version_id)
             if not old_v:
@@ -377,9 +453,22 @@ class ActionEngine:
         base_schema_errs = validate_schema(base_schedule)
         base_violations = validate_schedule(base_schedule)
 
+        # H8/H9 violations are quantity-dependent: their actual_minutes change
+        # whenever a class is added, making exact fingerprints false "new" errors.
+        # We match these by (rule, program, semester, subject_code) instead.
+        _QUANTITY_RULES = {"H8_wrong_weekly_hours", "H9_wrong_practical_duration"}
+
         def _fingerprint(err: dict) -> str:
-            # Location is part of a violation's identity. Ignoring it can make
-            # a new clash look like an unrelated pre-existing clash elsewhere.
+            rule = err.get("rule", "")
+            if rule in _QUANTITY_RULES:
+                # Use only the identity fields — ignore the changing metric fields
+                return json.dumps({
+                    "rule": rule,
+                    "subject_code": err.get("subject_code") or err.get("subject", ""),
+                    "program": err.get("program", ""),
+                    "semester": err.get("semester", ""),
+                }, sort_keys=True)
+            # For all other rules, location is part of identity.
             return json.dumps(err, sort_keys=True)
 
         def _get_new_errors(base_list: List[dict], current_list: List[dict]) -> List[dict]:

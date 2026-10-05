@@ -13,7 +13,7 @@ from app.schemas.actions import (
     ActionChatRequest, ActionChatResponse,
 )
 from app.actions.engine import ActionEngine
-from app.actions.parser import ActionParser
+from app.actions.parser import ActionParser, ClarifyNeeded
 from app.actions.types import parse_action
 from app.services.email_service import notify_teachers_of_changes
 
@@ -150,6 +150,14 @@ def chat_execute(
 
     try:
         parsed = _parser.parse(req.text, schedule_context=schedule_ctx)
+    except ClarifyNeeded as cn:
+        # LLM needs more info from user — return a friendly clarification message
+        return ActionChatResponse(
+            parsed_actions=[],
+            action_count=0,
+            interpretation=f"🤔 I need a bit more information to proceed:\n\n**{cn.question}**\n\nPlease reply with the missing detail and I'll take care of it!",
+            executed=False,
+        )
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"NLP parse failed: {e}")
 

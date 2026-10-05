@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, X, Trash2, Bot, Loader2, CheckCircle2, AlertCircle, ChevronDown, ChevronUp, Lightbulb, ChevronRight, RefreshCw } from 'lucide-react'
 import type { ChatMessage, ParsedActionItem, ActionExecuteResponse, ActionResult } from '../../types'
-import { actionChat, executeActions } from '../../api'
+import { actionChat, executeActions, req } from '../../api'
 import { useWorkspaceStore } from '../../store'
 import { getVersion } from '../../api'
 import ReactMarkdown from 'react-markdown'
@@ -93,8 +93,58 @@ function AlternativeCard({
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  
+  // Advanced State
+  const [advancedLoading, setAdvancedLoading] = useState(false)
+  const [advancedResult, setAdvancedResult] = useState<any>(null)
+  const [advSelectedIndex, setAdvSelectedIndex] = useState(0)
+
   const s = failedResult.suggestions
   const rich = s?.rich_suggestions ?? []
+
+  async function runAdvancedSchedule() {
+    setAdvancedLoading(true)
+    try {
+      const entryDetail = failedResult.after || failedResult.before || {}
+      const violA = failedResult.violated_constraint?.a || {}
+      
+      const subject = entryDetail.subject_code || violA.subject_code || ''
+      const prog = entryDetail.program || violA.program || ''
+      const sem = entryDetail.semester || violA.semester || ''
+      const teach = entryDetail.teacher || violA.teacher || ''
+      const type = entryDetail.type || entryDetail.entry_type || violA.type || 'Theory'
+      const room = entryDetail.room || violA.room
+      
+      const payload = {
+        program: prog,
+        semester: sem,
+        subject_code: subject,
+        subject_name: entryDetail.subject_name || violA.subject_name || subject,
+        teacher: teach,
+        entry_type: type,
+        room: room || undefined,
+        preferred_day: entryDetail.day || violA.day || undefined
+      }
+      const data = await req<any>('/actions/smart-schedule/advanced', {
+        method: 'POST', body: JSON.stringify(payload)
+      })
+      setAdvancedResult(data)
+    } finally {
+      setAdvancedLoading(false)
+    }
+  }
+
+  async function applySelectedAdvanced() {
+    const selected = advancedResult?.proposals?.[advSelectedIndex]
+    if (!selected?.actions_to_apply) return
+    setLoading(true)
+    try {
+      const res = await executeActions(selected.actions_to_apply, versionId, false)
+      onApplied(res)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function applySelected() {
     const selected = rich[selectedIndex]
@@ -159,7 +209,7 @@ function AlternativeCard({
       </div>
 
       {/* Suggested fix */}
-      {rich.length > 0 && (
+      {rich.length > 0 && !advancedResult && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
           {rich.map((rs: any, i: number) => (
             <label key={i} style={{
@@ -191,7 +241,7 @@ function AlternativeCard({
 
       {/* Action buttons */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'center' }}>
-        {rich.length > 0 && (
+        {rich.length > 0 && !advancedResult && (
           <button
             className="btn btn-primary btn-sm"
             disabled={loading}
@@ -203,7 +253,7 @@ function AlternativeCard({
           </button>
         )}
         
-        {((s?.free_rooms?.length ?? 0) > 0 || (s?.free_slots?.length ?? 0) > 0) ? (
+        {!advancedResult && ((s?.free_rooms?.length ?? 0) > 0 || (s?.free_slots?.length ?? 0) > 0) ? (
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setExpanded(e => !e)}
@@ -213,20 +263,31 @@ function AlternativeCard({
             <ChevronRight size={11} style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
           </button>
         ) : (
-          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', fontWeight: 600, padding: '4px 8px' }}>
+          !advancedResult && <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', fontWeight: 600, padding: '4px 8px' }}>
             Nothing available.
           </span>
+        )}
+
+        {!advancedResult && (
+          <button 
+            className="btn btn-ghost btn-sm" 
+            disabled={advancedLoading}
+            onClick={runAdvancedSchedule} 
+            style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--clr-primary)', fontSize: 'var(--fs-xs)' }}
+          >
+            {advancedLoading ? <Loader2 size={11} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Lightbulb size={11} />}
+            Try Advanced Smart Schedule
+          </button>
         )}
 
         <button className="btn btn-ghost btn-sm" onClick={onDismiss} style={{ fontSize: 'var(--fs-xs)' }}>
           Cancel
         </button>
       </div>
-
       {/* Expanded alternatives list */}
       {expanded && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-          {s?.free_rooms?.map(room => (
+          {s?.free_rooms?.map((room: string) => (
             <button
               key={room}
               className="badge badge-blue"
@@ -237,7 +298,7 @@ function AlternativeCard({
               {room}
             </button>
           ))}
-          {s?.free_slots?.map((slot, i) => (
+          {s?.free_slots?.map((slot: any, i: number) => (
             <button
               key={i}
               className="badge badge-blue"
@@ -249,6 +310,46 @@ function AlternativeCard({
             </button>
           ))}
         </div>
+      )}
+      {/* Advanced Result State */}
+      {advancedResult && advancedResult.proposals?.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-primary)', fontWeight: 600 }}>Advanced Mode Options Found ({advancedResult.proposals.length})</div>
+          {advancedResult.proposals.map((prop: any, i: number) => (
+            <label key={i} style={{
+              background: advSelectedIndex === i ? 'var(--accent-soft)' : 'color-mix(in oklab, var(--accent) 6%, transparent)',
+              border: `1px solid ${advSelectedIndex === i ? 'var(--accent)' : 'color-mix(in oklab, var(--accent) 20%, transparent)'}`,
+              borderRadius: 'var(--radius)',
+              padding: '10px 12px',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'flex-start',
+              cursor: 'pointer'
+            }}>
+              <input type="radio" name="adv-suggestion" checked={advSelectedIndex === i} onChange={() => setAdvSelectedIndex(i)} style={{ marginTop: 2 }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--ink)', fontWeight: 600 }}>
+                  Option {i + 1}
+                </span>
+                {prop.moves.map((mv: any, j: number) => {
+                   if (mv.action === 'ADD_CLASS') return <span key={j} style={{ fontSize: 'var(--fs-xs)' }}>Add constraint-free timeslot {mv.spec.day} {mv.spec.start_time}–{mv.spec.end_time}</span>;
+                   if (mv.action === 'MOVE_CLASS') return <span key={j} style={{ fontSize: 'var(--fs-xs)' }}>Move {mv.target?.subject_code} to {mv.new_day} {mv.new_start_time}</span>;
+                   return <span key={j} style={{ fontSize: 'var(--fs-xs)' }}>{mv.action}</span>;
+                })}
+              </div>
+            </label>
+          ))}
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button className="btn btn-primary btn-sm" disabled={loading} onClick={applySelectedAdvanced}>
+              {loading ? <Loader2 size={11} style={{ animation: 'spin 0.7s linear infinite' }} /> : 'Apply Selected'}
+            </button>
+          </div>
+        </div>
+      )}
+      {advancedResult && (!advancedResult.proposals || advancedResult.proposals.length === 0) && (
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--red)', fontWeight: 600, padding: '4px 8px' }}>
+          No Advanced Options available either.
+        </span>
       )}
     </div>
   )

@@ -2,7 +2,7 @@
 NLP → Action List parser.
 
 Converts free-text teacher commands into a list of ParsedAction objects
-using the Groq LLM, then validates/grounds the output against authoritative
+using an LLM, then validates/grounds the output against authoritative
 data (TEACHER_SUBJECTS, ROOM_FACILITIES, PROGRAMME_SUBJECT_MAP).
 
 LLM provides intent. Backend validation is the final authority.
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import List
+from typing import List, Optional
 
 from loguru import logger
 
@@ -26,16 +26,64 @@ from app.scheduler.constraints import (
 # Parser system prompt
 # ---------------------------------------------------------------------------
 
-_ACTION_SCHEMA = """
-Supported action types:
-  ADD_CLASS           - add a new class
+SYSTEM_PROMPT = """\
+You are an intelligent timetable assistant. Your ONLY job is to parse a natural language command into a JSON array of action objects.
+
+=== CRITICAL RULES (READ EVERY ONE) ===
+
+RULE 1 — ALWAYS RETURN A JSON ARRAY.
+Multiple requested changes MUST produce multiple objects in the same array. Never stop at one action if the request implies more.
+
+RULE 2 — INFER ALL IMPLIED ACTIONS.
+When the user says something like:
+  "Add subject X, professor is Y, schedule classes on Tuesday and Friday"
+You MUST emit ALL of the following:
+  • ADD_SUBJECT (to register the subject in the catalog)
+  • ADD_TEACHER (if the teacher sounds like a new person not in the system)
+  • ADD_CLASS once for EACH day mentioned
+
+RULE 3 — USE REASONABLE DEFAULTS (never leave required fields blank).
+  • No time given for a class → use 10:00-11:00 for Theory, 10:00-12:00 for Practical.
+  • No room given → use R#205 for Theory, R#207A for Practical/Lab.
+  • No entry_type → default to "Theory".
+  • No program for ADD_SUBJECT → use "B.Tech" and ask for semester via CLARIFY.
+
+RULE 4 — AMBIGUITY: emit CLARIFY only when critical fields are truly unknown.
+Critical fields: program + semester when scheduling/adding classes.
+Optional fields (room, time, duration): use defaults, do NOT ask.
+If you must ask, emit ONE object: {"action": "CLARIFY", "question": "...your question..."}
+
+RULE 5 — ORDER OF ACTIONS.
+Catalog actions first (ADD_SUBJECT, ADD_TEACHER), then schedule actions (ADD_CLASS etc.).
+
+=== MULTI-ACTION EXAMPLE ===
+User: "Add System Design as new subject code sd, professor Rahul Das (rd), schedule classes tuesday and friday for btech 3rd semester"
+
+Correct response:
+[
+  {"action": "ADD_SUBJECT", "code": "sd", "name": "System Design", "program": "B.Tech", "semester": "3rd", "entry_type": "Theory", "weekly_hours": 2},
+  {"action": "ADD_TEACHER", "short_name": "rd", "full_name": "Rahul Das", "subjects_csv": "sd", "is_internal": true},
+  {"action": "ADD_CLASS", "spec": {"program": "B.Tech", "semester": "3rd", "day": "Tuesday", "start_time": "10:00", "end_time": "11:00", "subject_code": "sd", "subject_name": "System Design", "teacher": "rd", "entry_type": "Theory", "room": "R#205"}},
+  {"action": "ADD_CLASS", "spec": {"program": "B.Tech", "semester": "3rd", "day": "Friday", "start_time": "10:00", "end_time": "11:00", "subject_code": "sd", "subject_name": "System Design", "teacher": "rd", "entry_type": "Theory", "room": "R#205"}}
+]
+
+=== CLARIFY EXAMPLE (semester unknown) ===
+User: "Add System Design as new subject, professor Rahul Das, schedule on tuesday and friday"
+
+Correct response:
+[
+  {"action": "CLARIFY", "question": "Which program and semester should the System Design classes be scheduled for? e.g. B.Tech 3rd semester"}
+]
+
+=== ACTION TYPES ===
+  ADD_CLASS           - add a new class slot
   REMOVE_CLASS        - permanently remove a class slot
-  CANCEL_CLASS        - cancel/remove a class slot
-  EXTEND_CLASS        - extend the end time of a class
-  SHORTEN_CLASS       - shorten the end time of a class
+  CANCEL_CLASS        - cancel a class slot
+  EXTEND_CLASS        - extend end time of a class
+  SHORTEN_CLASS       - shorten end time of a class
   MOVE_CLASS          - move to a different day/time
   SWAP_CLASSES        - swap day+time between two classes
-  INTERCHANGE_CLASSES - fully interchange all fields between two classes
+  INTERCHANGE_CLASSES - fully swap all fields between two classes
   CHANGE_TEACHER      - replace teacher on a class
   CHANGE_ROOM         - replace room on a class
   CHANGE_TIME         - change start+end on a class
@@ -45,48 +93,32 @@ Supported action types:
   OPTIMIZE_TIMETABLE  - optimise existing timetable
   VALIDATE_TIMETABLE  - run validation on current timetable
   RESTORE_VERSION     - restore a specific previous version
-  ADD_TEACHER         - add a new teacher to the catalog; fields: short_name, full_name, subjects_csv (comma-separated subject codes), is_internal (bool), email (optional)
-  ADD_SUBJECT         - add a new subject to the catalog; fields: code, name, program, semester, entry_type ("Theory"|"Practical"|"Both"), weekly_hours
-  ADD_PROGRAM         - add a new academic program/course; fields: name, semesters_count, description
+  ADD_TEACHER         - fields: short_name, full_name, subjects_csv, is_internal (bool), email (optional)
+  ADD_SUBJECT         - fields: code, name, program, semester, entry_type ("Theory"|"Practical"|"Both"), weekly_hours
+  ADD_PROGRAM         - fields: name, semesters_count, description
+  ADD_TEACHER_BUSY    - fields: teacher_short_name, scope ("permanent"|"temporary"), day_of_week (if permanent), specific_date "YYYY-MM-DD" (if temporary), reason
+  CLARIFY             - fields: question (ask user exactly what you need)
 
-ClassTarget fields (use only what is needed to identify the class):
-  program, semester, day, start_time, end_time,
-  subject_code, subject_name, teacher, room, entry_type
+ClassTarget fields: program, semester, day, start_time, end_time, subject_code, subject_name, teacher, room, entry_type
+ClassSpec fields (ALL required for ADD_CLASS): program, semester, day, start_time, end_time, subject_code, subject_name, teacher, entry_type, room
 
-ClassSpec fields (all required for ADD_CLASS / REPLACE_CLASS):
-  program, semester, day, start_time, end_time,
-  subject_code, subject_name, teacher, entry_type ("Theory"|"Practical"), room
+Time: "HH:MM" 24h. Days: Monday..Saturday. Programs: B.Tech, M.Tech, M.Sc.
+Valid rooms: R#205, R#207A, R#207B, R#208, R#209, R#303, R#403.
+Use lowercase subject codes: "cn", "dbms-p", "sd".
 
-Time format: "HH:MM" (24h).  
-Days: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday.  
-Programs: B.Tech, M.Tech, M.Sc.
-
-Return a JSON array. Each element is one action object with field "action"
-equal to one of the types above, plus the relevant target/spec fields.
-
-Example for "swap Monday and Tuesday classes of M.Tech 1st semester":
-[
-  {
-    "action": "SWAP_CLASSES",
-    "target_a": {"program": "M.Tech", "semester": "1st", "day": "Monday"},
-    "target_b": {"program": "M.Tech", "semester": "1st", "day": "Tuesday"}
-  }
-]
-
-IMPORTANT:
-- Return ONLY the JSON array. No prose, no markdown fences.
-- Use exact canonical short teacher names (e.g. SK, SKS, PB, PBn).
-- Use lowercase subject codes (e.g. "cn", "dbms-p", "cn-p").
-- Do not invent rooms not in: R#205, R#207A, R#207B, R#208, R#209, R#303, R#403.
+Return ONLY a valid JSON array. No prose, no markdown, no explanation.
 """
 
-SYSTEM_PROMPT = (
-    "You are a timetable assistant. "
-    "Parse the user's natural language command into a JSON array of action objects. "
-    "IF THE USER ENTERS MULTIPLE INSTRUCTIONS, YOU MUST RETURN MULTIPLE ACTION OBJECTS IN THE ARRAY. "
-    "Do not miss any requested changes. "
-    + _ACTION_SCHEMA
-)
+
+# ---------------------------------------------------------------------------
+# Clarification response
+# ---------------------------------------------------------------------------
+
+class ClarifyNeeded(Exception):
+    """Raised when the LLM signals it needs more info from the user before acting."""
+    def __init__(self, question: str):
+        self.question = question
+        super().__init__(question)
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +129,6 @@ def _ground_teacher(name: str) -> str:
     """Fuzzy-ground a teacher identifier against the authoritative short-name set."""
     if name in INTERNAL_TEACHERS:
         return name
-    # Case-insensitive match for known internal teachers
     name_l = name.strip().lower()
     for canonical in INTERNAL_TEACHERS:
         if canonical.lower() == name_l:
@@ -122,13 +153,10 @@ def _ground_action_dict(d: dict) -> dict:
             elif k in ("subject_code",):
                 grounded[k] = _ground_subject_code(v)
             elif k == "room" or k == "new_room":
-                # Just preserve as-is; engine checks ROOM_FACILITIES
                 grounded[k] = v
             elif k in ("day", "new_day") and v:
-                # Title-case
                 grounded[k] = v.strip().title()
             elif k == "program" and v:
-                # Normalise program string
                 mapping = {"btech": "B.Tech", "mtech": "M.Tech", "msc": "M.Sc",
                            "b.tech": "B.Tech", "m.tech": "M.Tech", "m.sc": "M.Sc"}
                 grounded[k] = mapping.get(v.lower(), v)
@@ -151,16 +179,14 @@ class ActionParser:
     def parse(self, text: str, schedule_context: str = "") -> List[ParsedAction]:
         """
         Parse 'text' into a list of ParsedAction objects.
+        Raises ClarifyNeeded if the LLM requests clarification.
         Raises ValueError if parsing or validation fails after self-repair.
-
-        schedule_context: optional string with live schedule rows to inject into
-        the system prompt so the LLM can ground targets against real data.
         """
         system_with_context = SYSTEM_PROMPT
         if schedule_context:
             system_with_context = (
                 SYSTEM_PROMPT
-                + "\n\nCURRENT LIVE SCHEDULE (use this to resolve targets precisely):\n"
+                + "\n\nCURRENT LIVE SCHEDULE (use this to resolve targets precisely and pick non-conflicting time slots):\n"
                 + schedule_context
                 + "\n\nIMPORTANT: When identifying a class to modify, use the exact day, "
                 "start_time, end_time, subject_code, and teacher from the schedule above "
@@ -200,8 +226,9 @@ class ActionParser:
             f"attempts. Last LLM output: {raw2[:400]}"
         )
 
-    def _parse_and_validate(self, raw: str) -> List[ParsedAction] | None:
-        """Try to parse raw text into a list of ParsedAction. Returns None on failure."""
+    def _parse_and_validate(self, raw: str) -> Optional[List[ParsedAction]]:
+        """Try to parse raw text into a list of ParsedAction. Returns None on failure.
+        Raises ClarifyNeeded if the LLM returned a CLARIFY action."""
         try:
             data = self._extract_json_array(raw)
         except Exception as e:
@@ -210,6 +237,11 @@ class ActionParser:
 
         if not isinstance(data, list):
             return None
+
+        # Check for CLARIFY action first
+        for item in data:
+            if isinstance(item, dict) and item.get("action") == "CLARIFY":
+                raise ClarifyNeeded(item.get("question", "Please provide more details."))
 
         parsed: List[ParsedAction] = []
         for item in data:
@@ -227,12 +259,7 @@ class ActionParser:
 
     @staticmethod
     def _extract_json_array(text: str) -> list:
-        """Extract a JSON array from raw LLM text.
-        
-        Handles both:
-        - A JSON array: [{...}, {...}]
-        - A single JSON object: {...}  (wraps it in a list automatically)
-        """
+        """Extract a JSON array from raw LLM text."""
         t = text.strip()
         # Strip markdown fences
         t = re.sub(r"^```[a-zA-Z0-9]*\s*", "", t).strip()
@@ -243,7 +270,6 @@ class ActionParser:
         start = t.find("[")
         obj_start = t.find("{")
 
-        # If there's an array and it comes before any object, parse as array
         if start != -1 and (obj_start == -1 or start < obj_start):
             end = t.rfind("]")
             if end > start:
@@ -266,7 +292,7 @@ class ActionParser:
                 try:
                     obj = json.loads(candidate)
                     if isinstance(obj, dict):
-                        return [obj]  # wrap single action in list
+                        return [obj]
                 except json.JSONDecodeError:
                     candidate2 = re.sub(r",\s*([}\]])", r"\1", candidate)
                     obj = json.loads(candidate2)

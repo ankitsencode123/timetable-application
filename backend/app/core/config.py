@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     GROQ_API_KEYS: str = ""          # comma-separated key pool
     GROQ_MODEL: str = "openai/gpt-oss-120b"
 
+    # ── LLM / OpenRouter (fallback) ──────────────────────────────────────────
+    OPENROUTER_API_KEY: str = ""     # single key
+    OPENROUTER_MODEL: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+
     # ── CORS ─────────────────────────────────────────────────────────────────
     # Set to specific origin(s) in production, e.g. https://your-app.vercel.app
     CORS_ORIGINS: str = "*"
@@ -54,6 +58,10 @@ class Settings(BaseSettings):
     @property
     def groq_key_list(self) -> List[str]:
         return [k.strip() for k in self.GROQ_API_KEYS.split(",") if k.strip()]
+
+    @property
+    def openrouter_key(self) -> str:
+        return self.OPENROUTER_API_KEY.strip()
 
     @property
     def cors_origin_list(self) -> List[str]:
