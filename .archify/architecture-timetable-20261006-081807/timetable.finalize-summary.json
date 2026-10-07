@@ -1,0 +1,372 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/ankit/Downloads/timetable-application/.archify/architecture-timetable-20261006-081807/candidate.json",
+    "sha256": "be413f01b2e5f985da16a82a934c764a2d495e835485e5a7c7c8de911dc5a8b4",
+    "bytes": 13941
+  },
+  "artifact": {
+    "path": "/home/ankit/Downloads/timetable-application/.archify/architecture-timetable-20261006-081807/timetable.html",
+    "sha256": "474c6f804f6e6e490a82ce36407b827fef5edc9609f8e2138ba8c22d5a30f9d2",
+    "bytes": 830358
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/ankit/Downloads/timetable-application/.archify/architecture-timetable-20261006-081807/timetable.finalize.json",
+    "summaryReceipt": "/home/ankit/Downloads/timetable-application/.archify/architecture-timetable-20261006-081807/timetable.finalize-summary.json",
+    "browserCheckReceipt": "/home/ankit/Downloads/timetable-application/.archify/architecture-timetable-20261006-081807/timetable.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-06T02:50:11.466Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 8102,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "resolvedCrossovers": 28,
+      "routesOverSuggestedBends": 11,
+      "routesOverSuggestedStretch": 5
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [
+        {
+          "left": {
+            "from": "vercel",
+            "to": "spa",
+            "label": "",
+            "collectionIndex": 1,
+            "artifactIndex": 2
+          },
+          "right": {
+            "from": "spa",
+            "to": "pg_admin",
+            "label": "",
+            "collectionIndex": 6,
+            "artifactIndex": 7
+          },
+          "point": [
+            217,
+            480
+          ],
+          "sharedNode": "spa"
+        },
+        {
+          "left": {
+            "from": "spa",
+            "to": "pg_login",
+            "label": "",
+            "collectionIndex": 5,
+            "artifactIndex": 6
+          },
+          "right": {
+            "from": "spa",
+            "to": "pg_admin",
+            "label": "",
+            "collectionIndex": 6,
+            "artifactIndex": 7
+          },
+          "point": [
+            217,
+            466
+          ],
+          "sharedNode": "spa"
+        },
+        {
+          "left": {
+            "from": "spa",
+            "to": "pg_chat",
+            "label": "",
+            "collectionIndex": 7,
+            "artifactIndex": 8
+          },
+          "right": {
+            "from": "spa",
+            "to": "pg_cal",
+            "label": "",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "point": [
+            394,
+            494
+          ],
+          "sharedNode": "spa"
+        },
+        {
+          "left": {
+            "from": "spa",
+            "to": "pg_chat",
+            "label": "",
+            "collectionIndex": 7,
+            "artifactIndex": 8
+          },
+          "right": {
+            "from": "apiclient",
+            "to": "fastapi",
+            "label": "",
+            "collectionIndex": 9,
+            "artifactIndex": 10
+          },
+          "point": [
+            394,
+            556
+          ]
+        },
+        {
+          "left": {
+            "from": "spa",
+            "to": "pg_cal",
+            "label": "",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "right": {
+            "from": "apiclient",
+            "to": "fastapi",
+            "label": "",
+            "collectionIndex": 9,
+            "artifactIndex": 10
+          },
+          "point": [
+            427,
+            556
+          ]
+        },
+        {
+          "left": {
+            "from": "api_router",
+            "to": "rt_tt",
+            "label": "",
+            "collectionIndex": 14,
+            "artifactIndex": 15
+          },
+          "right": {
+            "from": "api_router",
+            "to": "rt_users",
+            "label": "",
+            "collectionIndex": 15,
+            "artifactIndex": 16
+          },
+          "point": [
+            668,
+            256
+          ],
+          "sharedNode": "api_router"
+        },
+        {
+          "left": {
+            "from": "api_router",
+            "to": "rt_tt",
+            "label": "",
+            "collectionIndex": 14,
+            "artifactIndex": 15
+          },
+          "right": {
+            "from": "api_router",
+            "to": "rt_cat",
+            "label": "",
+            "collectionIndex": 16,
+            "artifactIndex": 17
+          },
+          "point": [
+            668,
+            556
+          ],
+          "sharedNode": "api_router"
+        },
+        {
+          "left": {
+            "from": "api_router",
+            "to": "rt_tt",
+            "label": "",
+            "collectionIndex": 14,
+            "artifactIndex": 15
+          },
+          "right": {
+            "from": "api_router",
+            "to": "rt_busy",
+            "label": "",
+            "collectionIndex": 17,
+            "artifactIndex": 18
+          },
+          "point": [
+            563,
+            665
+          ],
+          "sharedNode": "api_router"
+        }
+      ],
+      "detours": [
+        {
+          "relationship": {
+            "from": "spa",
+            "to": "pg_admin",
+            "label": "",
+            "collectionIndex": 6,
+            "artifactIndex": 7
+          },
+          "bends": 4,
+          "stretch": 1.787,
+          "directCorridorBlockers": [
+            {
+              "id": "apiclient",
+              "label": "API Client",
+              "box": [
+                220,
+                530,
+                150,
+                52
+              ]
+            }
+          ]
+        },
+        {
+          "relationship": {
+            "from": "spa",
+            "to": "pg_cal",
+            "label": "",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "bends": 3,
+          "stretch": 1.325,
+          "directCorridorBlockers": [
+            {
+              "id": "apiclient",
+              "label": "API Client",
+              "box": [
+                220,
+                530,
+                150,
+                52
+              ]
+            },
+            {
+              "id": "pg_admin",
+              "label": "AdminPanel",
+              "box": [
+                220,
+                610,
+                150,
+                52
+              ]
+            },
+            {
+              "id": "pg_chat",
+              "label": "Chat UI",
+              "box": [
+                220,
+                690,
+                150,
+                52
+              ]
+            }
+          ]
+        },
+        {
+          "relationship": {
+            "from": "api_router",
+            "to": "rt_tt",
+            "label": "",
+            "collectionIndex": 14,
+            "artifactIndex": 15
+          },
+          "bends": 4,
+          "stretch": 1.595
+        },
+        {
+          "relationship": {
+            "from": "api_router",
+            "to": "rt_busy",
+            "label": "",
+            "collectionIndex": 17,
+            "artifactIndex": 18
+          },
+          "bends": 3,
+          "stretch": 1.37
+        },
+        {
+          "relationship": {
+            "from": "api_router",
+            "to": "rt_chat",
+            "label": "",
+            "collectionIndex": 18,
+            "artifactIndex": 19
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "from": "api_router",
+            "to": "rt_actions",
+            "label": "",
+            "collectionIndex": 19,
+            "artifactIndex": 20
+          },
+          "bends": 3,
+          "stretch": 1.184
+        },
+        {
+          "relationship": {
+            "from": "act_eng",
+            "to": "tt_svc",
+            "label": "",
+            "collectionIndex": 28,
+            "artifactIndex": 29
+          },
+          "bends": 3,
+          "stretch": 1.393
+        },
+        {
+          "relationship": {
+            "from": "act_eng",
+            "to": "cal_sys",
+            "label": "",
+            "collectionIndex": 31,
+            "artifactIndex": 32
+          },
+          "bends": 4,
+          "stretch": 1.41
+        }
+      ],
+      "truncated": true
+    },
+    "hints": [
+      "api_router has 6 relationships facing its right side, which fits 2 ports: make that side at least 102px, or move some of those neighbours so they face another side of api_router.",
+      "vercel → spa and spa → pg_admin cross next to spa: move node vercel or pg_admin so the two reach spa from different sides (for example one level with it, one directly above or below it).",
+      "spa → pg_login and spa → pg_admin cross next to spa: move node pg_login or pg_admin so the two reach spa from different sides (for example one level with it, one directly above or below it).",
+      "spa → pg_chat and spa → pg_cal cross next to spa: move node pg_chat or pg_cal so the two reach spa from different sides (for example one level with it, one directly above or below it).",
+      "spa → pg_chat crosses apiclient → fastapi: move the node of whichever is a branch, return, or second entrance to the other side of the main path, so that relationship runs through an empty corridor.",
+      "spa → pg_cal crosses apiclient → fastapi: move the node of whichever is a branch, return, or second entrance to the other side of the main path, so that relationship runs through an empty corridor.",
+      "api_router → rt_tt and api_router → rt_users cross next to api_router: move node rt_tt or rt_users so the two reach api_router from different sides (for example one level with it, one directly above or below it).",
+      "api_router → rt_tt and api_router → rt_cat cross next to api_router: move node rt_tt or rt_cat so the two reach api_router from different sides (for example one level with it, one directly above or below it)."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

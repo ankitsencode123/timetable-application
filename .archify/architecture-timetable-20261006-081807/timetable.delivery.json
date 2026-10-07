@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "d978a579-d226-4b68-b26c-1b30092e9cd3",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/ankit/Downloads/timetable-application/.archify/architecture-timetable-20261006-081807/candidate.json",
+  "output": "/home/ankit/Downloads/timetable-application/.archify/architecture-timetable-20261006-081807/timetable.html",
+  "specification": {
+    "sha256": "be413f01b2e5f985da16a82a934c764a2d495e835485e5a7c7c8de911dc5a8b4",
+    "bytes": 13941
+  },
+  "artifact": {
+    "sha256": "474c6f804f6e6e490a82ce36407b827fef5edc9609f8e2138ba8c22d5a30f9d2",
+    "bytes": 830358
+  }
+}

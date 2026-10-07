@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from loguru import logger
 
@@ -174,13 +174,13 @@ def _ground_action_dict(d: dict) -> dict:
 class ActionParser:
     """Convert natural-language text → list[ParsedAction]."""
 
-    MAX_REPAIR_ATTEMPTS = 1
+    MAX_ATTEMPTS = 5
 
-    def parse(self, text: str, schedule_context: str = "") -> List[ParsedAction]:
+    def parse(self, text: str, schedule_context: str = "", history: Optional[List[Dict[str, str]]] = None) -> List[ParsedAction]:
         """
         Parse 'text' into a list of ParsedAction objects.
         Raises ClarifyNeeded if the LLM requests clarification.
-        Raises ValueError if parsing or validation fails after self-repair.
+        Raises ValueError if parsing or validation fails after 5 attempts.
         """
         system_with_context = SYSTEM_PROMPT
         if schedule_context:
@@ -193,37 +193,48 @@ class ActionParser:
                 "to fill target fields accurately. Never guess.\n"
             )
 
-        messages = [
-            {"role": "system", "content": system_with_context},
-            {"role": "user",   "content": text},
-        ]
+        base_messages = [{"role": "system", "content": system_with_context}]
+        if history:
+            base_messages.extend(history)
+        base_messages.append({"role": "user", "content": text})
 
-        raw, model = call_groq(messages)
-        logger.debug(f"ActionParser LLM ({model}) raw: {raw[:500]}")
+        last_error = None
+        last_raw = ""
 
-        actions = self._parse_and_validate(raw)
-        if actions is not None:
-            return actions
+        for attempt in range(self.MAX_ATTEMPTS):
+            try:
+                # If we're retrying due to a parse error, we want to append the repair prompt
+                messages = list(base_messages)
+                if attempt > 0 and last_raw:
+                    repair_prompt = (
+                        f"Your previous response could not be parsed as a JSON array of action objects.\n"
+                        f"Response was: {last_raw[:800]}\n"
+                        f"Please return ONLY a valid JSON array conforming to the action schema. "
+                        f"No prose, no markdown fences."
+                    )
+                    messages.append({"role": "assistant", "content": last_raw})
+                    messages.append({"role": "user", "content": repair_prompt})
 
-        # Self-repair attempt
-        repair_prompt = (
-            f"Your previous response could not be parsed as a JSON array of action objects.\n"
-            f"Response was: {raw[:800]}\n"
-            f"Please return ONLY a valid JSON array conforming to the action schema. "
-            f"No prose, no markdown fences."
-        )
-        messages.append({"role": "assistant", "content": raw})
-        messages.append({"role": "user",      "content": repair_prompt})
-        raw2, _ = call_groq(messages)
-        logger.debug(f"ActionParser repair raw: {raw2[:500]}")
+                raw, model = call_groq(messages)
+                logger.debug(f"ActionParser LLM ({model}) attempt {attempt+1} raw: {raw[:500]}")
+                last_raw = raw
 
-        actions = self._parse_and_validate(raw2)
-        if actions is not None:
-            return actions
+                actions = self._parse_and_validate(raw)
+                if actions is not None:
+                    return actions
+                last_error = "Parsing or validation returned None"
+            except ClarifyNeeded as cn:
+                # Let clarify propagate out immediately
+                raise cn
+            except Exception as e:
+                logger.warning(f"ActionParser LLM attempt {attempt+1} failed: {e}")
+                last_error = str(e)
+                # We do not have a response to repair, just retry the base prompt
+                last_raw = ""
 
         raise ValueError(
-            f"Failed to parse NLP command into valid actions after {self.MAX_REPAIR_ATTEMPTS + 1} "
-            f"attempts. Last LLM output: {raw2[:400]}"
+            f"Failed to parse NLP command into valid actions after {self.MAX_ATTEMPTS} "
+            f"attempts. Last error: {last_error} / Last output: {last_raw[:400]}"
         )
 
     def _parse_and_validate(self, raw: str) -> Optional[List[ParsedAction]]:

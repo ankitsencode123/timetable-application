@@ -405,10 +405,16 @@ export default function ChatPanel() {
     if (!text || loading) return
     if (!queryOverride) setInput('')
     setAlternatives([])
+
+    const history = messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .slice(-6)
+      .map(m => ({ role: m.role, content: m.content }));
+
     addMsg({ role: 'user', content: text })
     setLoading(true)
     try {
-      const resp = await actionChat(text, currentVersionId, false)
+      const resp = await actionChat(text, currentVersionId, false, history)
       addMsg({
         role: 'assistant',
         content: resp.interpretation || `I parsed ${resp.action_count} action(s). Review below and confirm to apply.`,
@@ -524,10 +530,13 @@ export default function ChatPanel() {
                 <div
                   style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}
                   ref={el => {
+                    if (!el || el.dataset.streamed) return;
                     // Stream-reveal assistant words only on the latest message
-                    if (el && msg.role === 'assistant' && msgIdx === messages.length - 1) {
+                    if (msg.role === 'assistant' && msgIdx === messages.length - 1) {
+                      el.dataset.streamed = 'true'
                       streamRevealWords(el, 40)
-                    } else if (el && msg.role === 'assistant') {
+                    } else if (msg.role === 'assistant') {
+                      el.dataset.streamed = 'true'
                       // older messages: make all words visible immediately
                       el.querySelectorAll<HTMLElement>('.t-stream-w').forEach(sp => sp.classList.add('is-in'))
                     }

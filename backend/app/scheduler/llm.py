@@ -71,7 +71,7 @@ def call_groq(messages: list, preferred_model: str | None = None, expect_json: b
     
     content = _call_provider(
         OPENROUTER_URL, or_key, or_model, messages,
-        expect_json=expect_json,
+        expect_json=False,
         extra_headers=extra,
     )
     

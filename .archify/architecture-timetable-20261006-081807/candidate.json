@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Timetable Application — Full System Architecture",
+    "subtitle": "Academic Scheduling Platform · React SPA + FastAPI + PostgreSQL",
+    "output": ".archify/architecture-timetable-20261006-081807/timetable.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/ankitsencode123/timetable-application",
+      "revision": "52e8b8f5e9b359e4aa6f56863d5105a287819097"
+    }
+  },
+  "components": [
+    { "id": "browser",    "type": "external",  "label": "Browser / User",  "sublabel": "Public · Teacher · Admin", "pos": [30, 480], "size": [140, 56] },
+    { "id": "vercel",     "type": "cloud",      "label": "Vercel CDN",      "sublabel": "Static hosting / Edge",    "pos": [30, 560], "size": [140, 56] },
+
+    { "id": "pg_public",  "type": "frontend",   "label": "PublicPage",      "sublabel": "Unauth timetable",         "pos": [220, 210], "size": [150, 52], "sources": [{"path":"frontend/src/pages/PublicPage.tsx","line":1}] },
+    { "id": "pg_login",   "type": "frontend",   "label": "LoginPage",       "sublabel": "Login form",               "pos": [220, 290], "size": [150, 52], "sources": [{"path":"frontend/src/pages/LoginPage.tsx","line":1}] },
+    { "id": "store",      "type": "frontend",   "label": "Zustand Store",   "sublabel": "Auth state",               "pos": [220, 370], "size": [150, 52], "sources": [{"path":"frontend/src/store.ts","line":1}] },
+    { "id": "spa",        "type": "frontend",   "label": "React SPA",       "tag": "React Router v6",               "pos": [220, 450], "size": [150, 60], "sources": [{"path":"frontend/src/App.tsx","line":1}] },
+    { "id": "apiclient",  "type": "frontend",   "label": "API Client",      "sublabel": "fetch + CSRF header",      "pos": [220, 530], "size": [150, 52], "sources": [{"path":"frontend/src/api.ts","line":1}] },
+    { "id": "pg_admin",   "type": "frontend",   "label": "AdminPanel",      "sublabel": "Manage users",             "pos": [220, 610], "size": [150, 52], "sources": [{"path":"frontend/src/pages/AdminPanel.tsx","line":1}] },
+    { "id": "pg_chat",    "type": "frontend",   "label": "Chat UI",         "sublabel": "AI chat",                  "pos": [220, 690], "size": [150, 52], "sources": [{"path":"frontend/src/components/chat/ChatPanel.tsx","line":1}] },
+    { "id": "pg_cal",     "type": "frontend",   "label": "Calendar UI",     "sublabel": "Overrides",                "pos": [220, 770], "size": [150, 52], "sources": [{"path":"frontend/src/components/calendar/CalendarManager.tsx","line":1}] },
+
+    { "id": "auth_svc",   "type": "backend",    "label": "Auth Service",    "sublabel": "bcrypt/lockout",           "pos": [460, 80],  "size": [150, 52], "sources": [{"path":"backend/app/services/auth_service.py","line":26}] },
+    { "id": "auth_mw",    "type": "security",   "label": "Security Layer",  "sublabel": "JWT / RBAC",               "pos": [460, 160], "size": [150, 52], "sources": [{"path":"backend/app/core/security.py","line":1}] },
+    { "id": "auth_api",   "type": "security",   "label": "Auth Router",     "tag": "HttpOnly",                      "pos": [460, 240], "size": [150, 52], "sources": [{"path":"backend/app/api/auth.py","line":58}] },
+    { "id": "fastapi",    "type": "backend",    "label": "FastAPI App",     "tag": "CORS Middleware",               "pos": [460, 450], "size": [150, 60], "sources": [{"path":"backend/app/main.py","line":52}] },
+    { "id": "api_router", "type": "backend",    "label": "API Router",      "sublabel": "/api/*",                   "pos": [460, 540], "size": [150, 52], "sources": [{"path":"backend/app/api/router.py","line":9}] },
+
+    { "id": "rt_tt",      "type": "backend",    "label": "Timetable API",   "sublabel": "/timetable",               "pos": [680, 150], "size": [150, 52], "sources": [{"path":"backend/app/api/timetable.py","line":1}] },
+    { "id": "rt_users",   "type": "backend",    "label": "Users API",       "sublabel": "/users",                   "pos": [700, 230], "size": [150, 52], "sources": [{"path":"backend/app/api/users.py","line":1}] },
+    { "id": "rt_cat",     "type": "backend",    "label": "Catalog API",     "sublabel": "/catalog",                 "pos": [720, 310], "size": [150, 52], "sources": [{"path":"backend/app/api/catalog.py","line":1}] },
+    { "id": "rt_busy",    "type": "backend",    "label": "Busy Slots",      "sublabel": "/busy-slots",              "pos": [740, 390], "size": [150, 52], "sources": [{"path":"backend/app/api/busy_slots.py","line":1}] },
+    { "id": "rt_chat",    "type": "backend",    "label": "Chat API",        "sublabel": "/chat",                    "pos": [760, 470], "size": [150, 52], "sources": [{"path":"backend/app/api/chat.py","line":1}] },
+    { "id": "rt_actions", "type": "backend",    "label": "Actions API",     "sublabel": "/actions",                 "pos": [780, 550], "size": [150, 52], "sources": [{"path":"backend/app/api/actions.py","line":1}] },
+    { "id": "rt_smart",   "type": "backend",    "label": "Smart Sch.",      "sublabel": "/smart-schedule",          "pos": [800, 630], "size": [150, 52], "sources": [{"path":"backend/app/api/schedule_smart.py","line":1}] },
+    { "id": "rt_cal",     "type": "backend",    "label": "Calendar API",    "sublabel": "/calendar",                "pos": [820, 710], "size": [150, 52], "sources": [{"path":"backend/app/calendar_system.py","line":1}] },
+
+    { "id": "tt_svc",     "type": "backend",    "label": "Timetable Svc",   "sublabel": "Version mgmt",             "pos": [980, 150], "size": [150, 52], "sources": [{"path":"backend/app/services/timetable_service.py","line":1}] },
+    { "id": "pub_svc",    "type": "backend",    "label": "Publish Service", "sublabel": "DRAFT → PUBLISHED",        "pos": [1000, 230], "size": [150, 52], "sources": [{"path":"backend/app/services/publication_service.py","line":1}] },
+    { "id": "email_svc",  "type": "backend",    "label": "Email Service",   "sublabel": "Brevo client",             "pos": [1020, 310], "size": [150, 52], "sources": [{"path":"backend/app/services/email_service.py","line":1}] },
+    { "id": "act_eng",    "type": "backend",    "label": "Action Engine",   "sublabel": "ADD/CANCEL/MODIFY",        "pos": [1040, 390], "size": [150, 60], "sources": [{"path":"backend/app/api/actions.py","line":1}] },
+    { "id": "chat_svc",   "type": "backend",    "label": "Chat Service",    "sublabel": "Intent dispatch",          "pos": [1040, 480], "size": [150, 52], "sources": [{"path":"backend/app/services/chat_service.py","line":1}] },
+    { "id": "sched_eng",  "type": "backend",    "label": "Scheduler Eng.",  "tag": "OR-Tools",                      "pos": [1040, 570], "size": [150, 60], "sources": [{"path":"backend/app/scheduler/constraints.py","line":1}] },
+    { "id": "cal_sys",    "type": "backend",    "label": "Calendar Sys",    "sublabel": "Validity overrides",       "pos": [1060, 720], "size": [150, 52], "sources": [{"path":"backend/app/calendar_system.py","line":1}] },
+
+    { "id": "orm",        "type": "database",   "label": "SQLAlchemy ORM",  "sublabel": "Session",                  "pos": [1280, 80], "size": [150, 60], "sources": [{"path":"backend/app/core/database.py","line":1}] },
+    { "id": "brevo",      "type": "external",   "label": "Brevo API",       "sublabel": "SMTP",                     "pos": [1280, 310], "size": [150, 52], "sources": [{"path":"backend/app/services/email_service.py","line":14}] },
+    { "id": "sqlite",     "type": "database",   "label": "SQLite (dev)",    "sublabel": "dev.db",                   "pos": [1280, 390], "size": [150, 52], "sources": [{"path":"backend/app/core/config.py","line":12}] },
+    { "id": "llm",        "type": "backend",    "label": "LLM Client",      "sublabel": "OpenRouter",               "pos": [1280, 470], "size": [150, 52], "sources": [{"path":"backend/app/scheduler/llm.py","line":1}] },
+    { "id": "ortools",    "type": "external",   "label": "OR-Tools",        "sublabel": "Constraint engine",        "pos": [1300, 570], "size": [150, 52], "sources": [{"path":"backend/requirements.txt","line":25}] },
+    { "id": "cal_tables", "type": "database",   "label": "Calendar Tables", "sublabel": "validity_windows",         "pos": [1280, 720], "size": [150, 52], "sources": [{"path":"backend/app/calendar_system.py","line":1}] },
+
+    { "id": "db_models",  "type": "database",   "label": "DB Models",       "sublabel": "Users/Tokens",             "pos": [1540, 150], "size": [150, 52], "sources": [{"path":"backend/app/models/timetable_entry.py","line":1}] },
+    { "id": "postgres",   "type": "database",   "label": "PostgreSQL",      "sublabel": "Supabase (prod)",          "pos": [1540, 390], "size": [150, 52], "sources": [{"path":"backend/requirements.txt","line":11}] },
+    { "id": "openrouter", "type": "external",   "label": "OpenRouter",      "sublabel": "nvidia/nemotron",          "pos": [1540, 470], "size": [150, 52], "sources": [{"path":"backend/app/scheduler/llm.py","line":11}] },
+    { "id": "prompts",    "type": "backend",    "label": "Prompts",         "sublabel": "System + user",            "pos": [1540, 570], "size": [150, 52], "sources": [{"path":"backend/app/scheduler/prompts.py","line":1}] }
+  ],
+  "boundaries": [
+    {
+      "kind": "region", "label": "Vercel / FrontendEdge", "wraps": ["vercel","spa","store","apiclient","pg_public","pg_login","pg_admin","pg_chat","pg_cal"], "pad": 20
+    },
+    {
+      "kind": "region", "label": "Render / Backend", "wraps": ["fastapi","auth_api","auth_mw","auth_svc","api_router","rt_users","rt_tt","rt_cat","rt_busy","rt_chat","rt_actions","rt_smart","rt_cal","sched_eng","llm","prompts","chat_svc","act_eng","tt_svc","pub_svc","cal_sys","email_svc"], "pad": 25
+    },
+    {
+      "kind": "security-group", "label": "Auth Sec", "wraps": ["auth_api","auth_mw","auth_svc"], "pad": 12
+    },
+    {
+      "kind": "region", "label": "Persistence", "wraps": ["orm","db_models","cal_tables","sqlite","postgres"], "pad": 20
+    }
+  ],
+  "connections": [
+    { "from": "browser", "to": "vercel" },
+    { "from": "vercel", "to": "spa" },
+    { "from": "spa", "to": "store" },
+    { "from": "spa", "to": "apiclient" },
+    
+    { "from": "spa", "to": "pg_public", "variant": "dashed" },
+    { "from": "spa", "to": "pg_login", "variant": "dashed" },
+    { "from": "spa", "to": "pg_admin", "variant": "dashed" },
+    { "from": "spa", "to": "pg_chat", "variant": "dashed" },
+    { "from": "spa", "to": "pg_cal", "variant": "dashed" },
+
+    { "from": "apiclient", "to": "fastapi", "variant": "emphasis" },
+
+    { "from": "fastapi", "to": "api_router" },
+    { "from": "fastapi", "to": "auth_api" },
+    { "from": "auth_api", "to": "auth_mw" },
+    { "from": "auth_mw", "to": "auth_svc" },
+
+    { "from": "api_router", "to": "rt_tt" },
+    { "from": "api_router", "to": "rt_users" },
+    { "from": "api_router", "to": "rt_cat" },
+    { "from": "api_router", "to": "rt_busy" },
+    { "from": "api_router", "to": "rt_chat" },
+    { "from": "api_router", "to": "rt_actions" },
+    { "from": "api_router", "to": "rt_smart" },
+    { "from": "api_router", "to": "rt_cal" },
+
+    { "from": "rt_tt", "to": "tt_svc" },
+    { "from": "rt_chat", "to": "chat_svc" },
+    { "from": "rt_actions", "to": "act_eng" },
+    { "from": "rt_smart", "to": "sched_eng" },
+    { "from": "rt_cal", "to": "cal_sys" },
+
+    { "from": "chat_svc", "to": "act_eng" },
+    
+    { "from": "act_eng", "to": "tt_svc" },
+    { "from": "act_eng", "to": "pub_svc" },
+    { "from": "act_eng", "to": "email_svc" },
+    { "from": "act_eng", "to": "cal_sys" },
+
+    { "from": "email_svc", "to": "brevo" },
+
+    { "from": "sched_eng", "to": "llm" },
+    { "from": "sched_eng", "to": "ortools" },
+    { "from": "llm", "to": "openrouter" },
+    { "from": "prompts", "to": "llm", "variant": "dashed" },
+
+    { "from": "auth_svc", "to": "orm" },
+    { "from": "tt_svc", "to": "orm" },
+    { "from": "sched_eng", "to": "orm", "variant": "dashed" },
+
+    { "from": "cal_sys", "to": "cal_tables" },
+    { "from": "orm", "to": "db_models" },
+    { "from": "orm", "to": "sqlite" },
+    { "from": "orm", "to": "postgres", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "Frontend (Vercel)",
+      "items": [
+        "React 18 + Vite + TypeScript SPA served from Vercel CDN",
+        "React Router v6 with ProtectedRoute guard (Zustand isLoggedIn state)",
+        "Components: AI ChatPanel, CalendarManager, TimetableGrid"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Backend API (Render)",
+      "items": [
+        "FastAPI + Uvicorn with CORS middleware for Vercel origin",
+        "9 API routers: auth, users, timetable, catalog, busy-slots, chat, actions, smart-schedule, calendar"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Security & Architecture",
+      "items": [
+        "JWT HS256: access (30m) + refresh (7d) token pair with HttpOnly cookie transport",
+        "CSRF double-submit cookie pattern + RBAC (ADMIN/TEACHER)"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Scheduling & Intelligence",
+      "items": [
+        "Google OR-Tools CP-SAT constraint solver (teacher, room, 10-17:30 core window)",
+        "ChatService parses intent → maps to Action Engine (ADD/CANCEL/DAY_OFF)",
+        "LLM client triggers OpenRouter API dynamically via prompt templates"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Calendar System & Notifications",
+      "items": [
+        "Tracks overarching validity windows + daily overrides for precise query execution",
+        "Brevo email service seamlessly fires on successful transaction commits"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Database",
+      "items": [
+        "SQLAlchemy 2.x ORM with production PostgreSQL and fallback SQLite",
+        "Composite index structures handle rapid tenant + version scoping"
+      ]
+    }
+  ]
+}

@@ -149,7 +149,7 @@ def chat_execute(
     schedule_ctx = _build_schedule_context(db, req.version_id)
 
     try:
-        parsed = _parser.parse(req.text, schedule_context=schedule_ctx)
+        parsed = _parser.parse(req.text, schedule_context=schedule_ctx, history=req.history)
     except ClarifyNeeded as cn:
         # LLM needs more info from user — return a friendly clarification message
         return ActionChatResponse(

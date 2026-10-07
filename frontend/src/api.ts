@@ -262,10 +262,10 @@ export async function parseActions(text: string): Promise<{ parsed_actions: unkn
   return request('/actions/parse', { method: 'POST', body: JSON.stringify({ text }) });
 }
 
-export async function actionChat(text: string, version_id?: number | null, execute = false): Promise<ActionChatResponse> {
+export async function actionChat(text: string, version_id?: number | null, execute = false, history?: {role: string, content: string}[]): Promise<ActionChatResponse> {
   return request<ActionChatResponse>('/actions/chat', {
     method: 'POST',
-    body: JSON.stringify({ text, version_id, execute }),
+    body: JSON.stringify({ text, version_id, execute, history }),
   });
 }
 

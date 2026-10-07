@@ -93,6 +93,7 @@ class ActionChatRequest(BaseModel):
     version_id:  Optional[int] = None
     execute:     bool = False
     partial_ok:  bool = False
+    history:     Optional[List[Dict[str, str]]] = None
 
 
 class ActionChatResponse(BaseModel):
