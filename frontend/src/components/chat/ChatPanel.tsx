@@ -105,8 +105,8 @@ function AlternativeCard({
   async function runAdvancedSchedule() {
     setAdvancedLoading(true)
     try {
-      const entryDetail = failedResult.after || failedResult.before || {}
-      const violA = failedResult.violated_constraint?.a || {}
+      const entryDetail: any = failedResult.after || failedResult.before || {}
+      const violA: any = failedResult.violated_constraint?.a || {}
       
       const subject = entryDetail.subject_code || violA.subject_code || ''
       const prog = entryDetail.program || violA.program || ''
