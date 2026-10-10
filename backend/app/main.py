@@ -25,6 +25,9 @@ async def lifespan(app: FastAPI):
     from app.calendar_system import init_calendar_tables
     init_calendar_tables(engine)
 
+    from app.actions.concurrency import ensure_concurrency_schema
+    ensure_concurrency_schema(engine)
+
     db = next(get_db())
     try:
         from app.scheduler import constraints as C
@@ -55,6 +58,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+from app.actions.concurrency import install_concurrency_handlers  # noqa: E402
+install_concurrency_handlers(app)
 
 _cors_origins = settings.cors_origin_list
 _allow_all = _cors_origins == ["*"]

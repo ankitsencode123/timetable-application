@@ -51,6 +51,11 @@ def handle_public_chat(message: str, db: Session | None = None) -> dict:
     Falls back to a structured text search if LLM is unavailable.
     """
     try:
+        from app.calendar_chat import try_handle_calendar_question
+        r = try_handle_calendar_question(message, db)
+        if r is not None:
+            return r
+
         from app.scheduler.data import (
             EXISTING_TIMETABLE_MD, FACULTY_MASTER_MD, ROOM_EXAMPLE_MD
         )
@@ -145,6 +150,11 @@ def handle_teacher_chat(user: User, message: str, db: Session | None = None) -> 
     Actions are NOT auto-executed here — the user must confirm via /actions/execute.
     """
     try:
+        from app.calendar_chat import try_handle_calendar_question
+        r = try_handle_calendar_question(message, db, user=user)
+        if r is not None:
+            return r
+
         from app.actions.parser import ActionParser
         parser = ActionParser()
 

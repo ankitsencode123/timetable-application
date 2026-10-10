@@ -1,7 +1,9 @@
 """Actions API — unified endpoint for button and NLP-driven timetable mutations."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -12,9 +14,15 @@ from app.schemas.actions import (
     ActionParseRequest, ActionParseResponse,
     ActionChatRequest, ActionChatResponse,
 )
-from app.actions.engine import ActionEngine
 from app.actions.parser import ActionParser, ClarifyNeeded
 from app.actions.types import parse_action
+from app.actions.concurrency import (
+    SafeActionEngine,
+    if_match_header,
+    idempotency_key_header,
+    resolve_expected_version,
+    current_head,
+)
 from app.services.email_service import notify_teachers_of_changes
 
 router = APIRouter()
@@ -89,29 +97,39 @@ def parse_actions(
 def execute_actions(
     req: ActionExecuteRequest,
     background_tasks: BackgroundTasks,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
+    if_match: Optional[str] = Depends(if_match_header),
+    idem_key: Optional[str] = Depends(idempotency_key_header),
 ):
     """
     Execute a list of action dicts transactionally.
     Actions can come from the button UI (structured) or from the /parse preview.
+
+    Concurrency-safe: acquires a per-scope distributed lock, performs stale
+    detection via If-Match / version_id, auto-rebases disjoint edits, and
+    stores idempotency records so client retries are safe.
+    Successful responses carry an ETag header for the next If-Match.
     """
     try:
         parsed = [parse_action(a) for a in req.actions]
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Invalid action payload: {e}")
 
-    engine = ActionEngine(
+    guarded = SafeActionEngine(
         db=db,
         user=user,
-        version_id=req.version_id,
+        base_version_id=resolve_expected_version(req.version_id, if_match),
         partial_ok=req.partial_ok,
         skip_suggestions=req.skip_suggestions,
-    )
+        idempotency_key=idem_key,
+    ).execute(parsed)
+    result = guarded.result
 
-    result = engine.execute(parsed)
+    # Emit ETag so the client can send If-Match on the next request
+    response.headers.update(guarded.response_headers())
 
-    # Dispath email notification in the background
     if result.success or result.partial_applied:
         background_tasks.add_task(notify_teachers_of_changes, result, db)
 
@@ -134,8 +152,11 @@ def execute_actions(
 def chat_execute(
     req: ActionChatRequest,
     background_tasks: BackgroundTasks,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
+    if_match: Optional[str] = Depends(if_match_header),
+    idem_key: Optional[str] = Depends(idempotency_key_header),
 ):
     """
     Combined NLP parse and optional execute.
@@ -144,9 +165,14 @@ def chat_execute(
     - If execute=True: parses and immediately executes (trusted/power-user mode).
 
     The same H1-H11 validation always runs regardless of execute flag.
+    Base version is captured BEFORE the LLM call so the stale window does not
+    include the ~2 s LLM round-trip.
     """
+    # Capture base version BEFORE the LLM call (widest stale window).
+    base = resolve_expected_version(req.version_id, if_match) or current_head(db)
+
     # Load live schedule context so LLM can resolve ambiguous targets
-    schedule_ctx = _build_schedule_context(db, req.version_id)
+    schedule_ctx = _build_schedule_context(db, base)
 
     try:
         parsed = _parser.parse(req.text, schedule_context=schedule_ctx, history=req.history)
@@ -172,14 +198,18 @@ def chat_execute(
             executed=False,
         )
 
-    # Execute
-    engine = ActionEngine(
+    # Execute via SafeActionEngine (serialised, stale-detected, idempotent)
+    guarded = SafeActionEngine(
         db=db,
         user=user,
-        version_id=req.version_id,
-        partial_ok=True, # Allow multiple chat intents to proceed independently
-    )
-    result = engine.execute(parsed)
+        base_version_id=base,
+        partial_ok=True,  # Allow multiple chat intents to proceed independently
+        idempotency_key=idem_key,
+    ).execute(parsed)
+    result = guarded.result
+
+    # Emit ETag
+    response.headers.update(guarded.response_headers())
 
     # Dispatch email notification in the background
     if result.success or result.partial_applied:

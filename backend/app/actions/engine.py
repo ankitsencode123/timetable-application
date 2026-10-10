@@ -369,9 +369,12 @@ def _simulate_one(
             )
 
     except ValueError as e:
+        error_str = str(e)
+        if "No matching class found for" in error_str:
+            error_str = "Class not found. It may have been recently modified or deleted by another user. Please refresh your timetable."
         return schedule, ActionResult(
             action_type=atype.value, success=False,
-            error=str(e)
+            error=error_str
         )
 
 

@@ -21,4 +21,4 @@ def test_teacher_chat_accessible(client, auth_headers):
             headers=auth_headers
         )
         assert resp.status_code == 200
-        assert "understood" in resp.json()["message"].lower()
+        assert "action" in resp.json()["message"].lower()

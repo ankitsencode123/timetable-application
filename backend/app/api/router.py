@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api import users, teachers, timetable, versions, public, chat, actions, profile
 from app.api import catalog, busy_slots, schedule_smart
 from app.calendar_system import router as calendar_router
+from app.calendar_chat import router as calendar_chat_router
 
 api_router = APIRouter()
 
@@ -20,3 +21,4 @@ api_router.include_router(catalog.router,        prefix="/catalog",         tags
 api_router.include_router(busy_slots.router,     prefix="/busy-slots",      tags=["busy-slots"])
 api_router.include_router(schedule_smart.router, prefix="/actions/smart-schedule", tags=["smart-schedule"])
 api_router.include_router(calendar_router)   # /calendar/* and /admin/calendar/* (prefixes defined in module)
+api_router.include_router(calendar_chat_router)

@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # Defaults for local docker-compose
+      - DATABASE_URL=sqlite:///./dev.db
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend:/app
+      - /app/venv
+      - /app/__pycache__
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
