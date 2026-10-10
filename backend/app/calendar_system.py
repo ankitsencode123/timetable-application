@@ -537,9 +537,9 @@ def _unforceable(v: dict) -> bool:
     return rule.startswith("schema_") or rule in UNFORCEABLE_RULES
 
 
-def _check_delta(before: dict, after: dict, force: bool) -> list:
+def _check_delta(before: dict, after: dict, force: bool, base_v: Optional[dict] = None) -> list:
     """Return accepted-by-force violations; raise 409 on blocking ones."""
-    new = [v for sig, v in after.items() if sig not in before]
+    new = [v for sig, v in after.items() if sig not in before and (not base_v or sig not in base_v)]
     if not new:
         return []
     hard = [v for v in new if _unforceable(v)]
@@ -816,11 +816,16 @@ def delete_override(db: Session, user: Any, override_id: int, force: bool) -> di
             raise _err(404, "NOT_FOUND", f"Override #{override_id} does not exist.")
         d = row.on_date
         _assert_editable_date(d)
+        
+        ctx_base = _load_ctx(db, d, d)
+        ctx_base.overrides = {}
+        base_v = _violations(_resolve_day(ctx_base, d)["entries"])
+        
         ctx = _load_ctx(db, d, d)
         before_v = _violations(_resolve_day(ctx, d)["entries"])
         ctx.overrides[d] = [o for o in ctx.overrides.get(d, []) if o.id != override_id]
         after_v = _violations(_resolve_day(ctx, d)["entries"])
-        _check_delta(before_v, after_v, force)
+        _check_delta(before_v, after_v, force, base_v=base_v)
         snap = _ov_out(row)
         db.delete(row)
         _audit(db, user, "DELETE", "override", override_id, snap)
