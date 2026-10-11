@@ -90,6 +90,7 @@ from app.core.database import get_db                                            
 from app.api.auth import get_current_user                               ###
 from app.models.base import Base                                                  ###
 from app.models.timetable import TimetableVersion, VersionStatus                  ###
+from app.models.busy_slot import TeacherBusySlot
 from app.scheduler.constraints import (
     PROGRAMME_SUBJECT_MAP, SCHEDULE_REQUIRED_KEYS, VALID_PROGRAMS, normalize_program,
 )
@@ -331,6 +332,7 @@ class Ctx:
     windows: list
     overrides: dict
     published_id: Optional[int]
+    busy_slots: dict = field(default_factory=dict)
     entries_cache: dict = field(default_factory=dict)
     status_cache: dict = field(default_factory=dict)
 
@@ -361,12 +363,21 @@ def _load_ctx(db: Session, start: dt.date, end: dt.date) -> Ctx:
         CalendarValidityWindow.start_date <= end, CalendarValidityWindow.end_date >= start)).scalars().all()
     ovs = db.execute(select(CalendarOverride).where(
         CalendarOverride.on_date >= start, CalendarOverride.on_date <= end)).scalars().all()
+    busy_recs = db.execute(select(TeacherBusySlot).where(
+        TeacherBusySlot.scope == "temporary",
+        TeacherBusySlot.specific_date >= start,
+        TeacherBusySlot.specific_date <= end,
+    )).scalars().all()
     by_date: dict = {}
     for o in ovs:
         by_date.setdefault(o.on_date, []).append(_ov_rec(o))
+    busy_by_date: dict = {}
+    for b in busy_recs:
+        if b.specific_date:
+            busy_by_date.setdefault(b.specific_date, []).append(b)
     pub = timetable_service.get_published_version(db)
     ctx = Ctx(db=db, windows=[_win_rec(w) for w in wins], overrides=by_date,
-              published_id=pub.id if pub else None)
+              published_id=pub.id if pub else None, busy_slots=busy_by_date)
     if pub:
         ctx.entries_cache[pub.id] = [e.to_dict() for e in pub.entries]
         ctx.status_cache[pub.id] = getattr(pub.status, "value", pub.status)
@@ -407,6 +418,7 @@ def _resolve_day(ctx: Ctx, d: dt.date, extra: Optional[list] = None) -> dict:
     cancelled: list = []
     warnings: list = []
     day_offs: list = []
+    notices: list = []
 
     for o in recs:
         if o.action == "MODIFY":
@@ -453,23 +465,44 @@ def _resolve_day(ctx: Ctx, d: dt.date, extra: Optional[list] = None) -> dict:
                 e[META + "note"] = o.reason
             live.append(e)
 
+    # Check if any teacher is marked busy on date d
+    date_busy = ctx.busy_slots.get(d, [])
+    busy_teachers = {b.teacher_short_name.lower(): b for b in date_busy}
+    if busy_teachers:
+        for b in date_busy:
+            notices.append(f"Teacher {b.teacher_short_name} is unavailable on this date" + (f": {b.reason}" if b.reason else "."))
+        for e in list(live):
+            e_teachers = {t.lower() for t in teacher_set(e)}
+            matched_busy = [busy_teachers[t] for t in e_teachers if t in busy_teachers]
+            if matched_busy:
+                slot_info = matched_busy[0]
+                live.remove(e)
+                note_str = f"Teacher {slot_info.teacher_short_name} unavailable" + (f": {slot_info.reason}" if slot_info.reason else "")
+                cancelled.append({
+                    **e,
+                    META + "cancelled_by": "teacher_busy",
+                    META + "override_id": None,
+                    META + "note": note_str,
+                })
+
     live.sort(key=lambda e: (_safe_minutes(e.get("start")), str(e.get("program", "")),
                              str(e.get("semester", "")), str(e.get("subject_code") or e.get("subject_name") or "")))
     cancelled.sort(key=lambda e: (_safe_minutes(e.get("start")), str(e.get("program", ""))))
 
-    notices: list = []
+    notices_out: list = []
     for x in day_offs:
         scope = " / ".join(s for s in (x["program"], x["semester"]) if s) or "all classes"
-        notices.append(f"No classes ({scope})" + (f": {x['reason']}" if x["reason"] else "."))
+        notices_out.append(f"No classes ({scope})" + (f": {x['reason']}" if x["reason"] else "."))
+    notices_out.extend(notices)
     if vid is None:
-        notices.append("No timetable is published for this date.")
+        notices_out.append("No timetable is published for this date.")
 
     return {
         "date": d.isoformat(), "weekday": weekday, "version_id": vid,
         "validity_id": win.id if win else None, "validity_label": win.label if win else None,
         "is_holiday": any(x["program"] is None and x["semester"] is None for x in day_offs),
-        "has_overrides": bool(recs), "day_offs": day_offs,
-        "entries": live, "cancelled": cancelled, "notices": notices, "warnings": warnings,
+        "has_overrides": bool(recs or date_busy), "day_offs": day_offs,
+        "entries": live, "cancelled": cancelled, "notices": notices_out, "warnings": warnings,
     }
 
 

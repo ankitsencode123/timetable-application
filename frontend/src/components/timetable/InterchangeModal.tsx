@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { X, RefreshCw, AlertTriangle, CheckCircle2, ChevronDown } from 'lucide-react'
 import type { TimetableEntry } from '../../types'
-import { executeActions } from '../../api'
+import { executeActions, getCurrentDraft, getVersion, listVersions } from '../../api'
+import { useWorkspaceStore } from '../../store'
 
 interface Props {
   entry: TimetableEntry
@@ -10,23 +11,26 @@ interface Props {
 }
 
 async function fetchCurrentEntries(): Promise<TimetableEntry[]> {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
-  const csrf = match ? decodeURIComponent(match[1]) : null
-  const res = await fetch('/api/versions', {
-    headers: { ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
-    credentials: 'include',
-  })
-  if (!res.ok) return []
-  const versions: { id: number; status: string }[] = await res.json()
-  const pub = versions.find(v => v.status === 'PUBLISHED') ?? versions[0]
-  if (!pub) return []
-  const dRes = await fetch(`/api/versions/${pub.id}`, {
-    headers: { ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
-    credentials: 'include',
-  })
-  if (!dRes.ok) return []
-  const data: { entries?: TimetableEntry[] } = await dRes.json()
-  return data.entries ?? []
+  const storeEntries = useWorkspaceStore.getState().entries
+  if (storeEntries && storeEntries.length > 0) {
+    return storeEntries
+  }
+  try {
+    const draft = await getCurrentDraft().catch(() => null)
+    if (draft && draft.id) {
+      const detail = await getVersion(draft.id)
+      return detail.entries || []
+    }
+    const versions = await listVersions().catch(() => [])
+    const pub = versions.find(v => v.status === 'PUBLISHED') ?? versions[0]
+    if (pub) {
+      const detail = await getVersion(pub.id)
+      return detail.entries || []
+    }
+  } catch (err) {
+    console.error('Failed to fetch entries for interchange modal', err)
+  }
+  return []
 }
 
 export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
@@ -41,10 +45,19 @@ export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
   const [selectedSuggestionIdx, setSelectedSuggestionIdx] = useState<number>(-1)
 
   useEffect(() => {
-    fetchCurrentEntries().then(entries => {
-      setAllEntries(entries)
-      setFetching(false)
-    })
+    let active = true
+    setFetching(true)
+    fetchCurrentEntries()
+      .then(entries => {
+        if (active) setAllEntries(entries)
+      })
+      .catch(err => {
+        console.error('Error loading interchange classes', err)
+      })
+      .finally(() => {
+        if (active) setFetching(false)
+      })
+    return () => { active = false }
   }, [])
 
   // Eligible: every class except the current one
@@ -179,6 +192,8 @@ export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
           </label>
           {fetching ? (
             <div style={{ color: 'var(--clr-text-3)', fontSize: 'var(--fs-sm)' }}>Loading classes…</div>
+          ) : eligible.length === 0 ? (
+            <div style={{ color: 'var(--clr-text-3)', fontSize: 'var(--fs-sm)' }}>No eligible classes available to interchange with.</div>
           ) : (
             <div style={{ position: 'relative' }}>
               <select

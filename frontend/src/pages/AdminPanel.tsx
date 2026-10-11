@@ -28,7 +28,7 @@ export default function AdminPanel() {
   const [activity, setActivity] = useState<any[]>([])
 
   useEffect(() => {
-    if (user && user.role !== 'ADMIN') navigate('/teacher')
+    if (user && user.role?.toUpperCase() !== 'ADMIN') navigate('/teacher')
   }, [user, navigate])
 
   useEffect(() => { fetchUsers() }, [])
@@ -99,6 +99,11 @@ export default function AdminPanel() {
             <div style={{ position: 'relative', marginBottom: 'var(--sp-4)' }}>
               <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--ink-soft)' }} />
               <input
+                type="search"
+                name="admin_user_search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 className="input"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -242,13 +247,26 @@ function UserRow({ u, isSelf, onRefresh, onViewActivity }: { u: AdminUser; isSel
       {resetOpen && (
         <tr style={{ background: 'var(--paper)' }}>
           <td colSpan={5} style={{ padding: '8px 14px' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input className="input" type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="New password (min 8 chars)" style={{ width: 220 }} />
-              <button onClick={doReset} disabled={loading === 'reset'} className="btn btn-primary btn-sm">
+            <form
+              autoComplete="off"
+              onSubmit={e => { e.preventDefault(); doReset(); }}
+              style={{ display: 'flex', gap: 8, alignItems: 'center' }}
+            >
+              <input
+                className="input"
+                type="password"
+                name="new-password"
+                autoComplete="new-password"
+                value={newPw}
+                onChange={e => setNewPw(e.target.value)}
+                placeholder="New password (min 8 chars)"
+                style={{ width: 220 }}
+              />
+              <button type="submit" disabled={loading === 'reset'} className="btn btn-primary btn-sm">
                 {loading === 'reset' ? '…' : 'Set password'}
               </button>
-              <button onClick={() => { setResetOpen(false); setNewPw(''); setMsg('') }} className="btn btn-ghost btn-sm">Cancel</button>
-            </div>
+              <button type="button" onClick={() => { setResetOpen(false); setNewPw(''); setMsg('') }} className="btn btn-ghost btn-sm">Cancel</button>
+            </form>
           </td>
         </tr>
       )}

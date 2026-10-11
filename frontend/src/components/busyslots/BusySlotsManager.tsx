@@ -52,10 +52,17 @@ export default function BusySlotsManager() {
   const [teachers, setTeachers] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ teacher_short_name: '', scope: 'permanent', day_of_week: 'Monday', specific_date: '', reason: '' })
+  const [form, setForm] = useState({
+    teacher_short_name: '',
+    scope: 'permanent',
+    day_of_week: 'Monday',
+    specific_date: '',
+    reason: '',
+    reschedule_affected: true,
+  })
   const [lastResult, setLastResult] = useState<CreateResult | null>(null)
 
-  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+  const setF = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   async function load() {
     setLoading(true)
@@ -88,11 +95,15 @@ export default function BusySlotsManager() {
         scope: form.scope,
         reason: form.reason || undefined,
       }
-      if (form.scope === 'permanent') body.day_of_week = form.day_of_week
-      else body.specific_date = form.specific_date
+      if (form.scope === 'permanent') {
+        body.day_of_week = form.day_of_week
+        body.reschedule_affected = form.reschedule_affected
+      } else {
+        body.specific_date = form.specific_date
+      }
       const result: CreateResult = await request('/busy-slots', { method: 'POST', body: JSON.stringify(body) })
       setLastResult(result)
-      if (result.auto_rescheduled && result.auto_rescheduled.length > 0) {
+      if ((result.auto_rescheduled && result.auto_rescheduled.length > 0) || (result.cancelled_classes && result.cancelled_classes.length > 0)) {
         try {
           const draft = await getCurrentDraft()
           const detail = await getVersion(draft.id)
@@ -100,10 +111,17 @@ export default function BusySlotsManager() {
           const vList = await listVersions()
           setVersions(vList)
         } catch (err) {
-          console.error("Failed to fetch updated draft after rescheduling", err)
+          console.error("Failed to fetch updated draft after rescheduling/cancellation", err)
         }
       }
-      setForm({ teacher_short_name: '', scope: 'permanent', day_of_week: 'Monday', specific_date: '', reason: '' })
+      setForm({
+        teacher_short_name: '',
+        scope: 'permanent',
+        day_of_week: 'Monday',
+        specific_date: '',
+        reason: '',
+        reschedule_affected: true,
+      })
       await load()
     } catch (e: unknown) { alert((e as Error).message) }
     setSaving(false)
@@ -153,6 +171,38 @@ export default function BusySlotsManager() {
             <label className="form-label">Reason <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
             <input className="form-control" placeholder="e.g. Conference, Leave" value={form.reason} onChange={e => setF('reason', e.target.value)} />
           </div>
+
+          {form.scope === 'permanent' && (
+            <div className="form-group" style={{ gridColumn: '1 / -1', background: 'var(--clr-bg-3)', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--clr-border)' }}>
+              <label className="form-label" style={{ fontWeight: 600, marginBottom: 8, display: 'block' }}>
+                Conflict Resolution for Affected Classes:
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 'var(--fs-xs)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="reschedule_choice"
+                    checked={form.reschedule_affected === true}
+                    onChange={() => setF('reschedule_affected', true)}
+                  />
+                  <span>
+                    <strong>Auto-reschedule</strong> — automatically find conflict-free slots for affected classes
+                  </span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="reschedule_choice"
+                    checked={form.reschedule_affected === false}
+                    onChange={() => setF('reschedule_affected', false)}
+                  />
+                  <span>
+                    <strong>Keep cancelled</strong> — do not move classes; keep affected classes cancelled
+                  </span>
+                </label>
+              </div>
+            </div>
+          )}
         </div>
         <button
           className="btn btn-primary"
@@ -161,7 +211,7 @@ export default function BusySlotsManager() {
           style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}
         >
           {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Plus size={14} />}
-          {saving ? 'Adding & Rescheduling…' : 'Add Busy Slot'}
+          {saving ? 'Processing…' : form.scope === 'permanent' && !form.reschedule_affected ? 'Add Slot (Keep Cancelled)' : 'Add Slot & Reschedule'}
         </button>
       </div>
 

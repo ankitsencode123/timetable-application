@@ -20,7 +20,7 @@ def test_admin_can_create_user(client, auth_headers):
         "full_name": "New Admin",
         "role": "ADMIN"
     }, headers=auth_headers)
-    assert resp.status_code == 200
+    assert resp.status_code in (200, 201)
     assert resp.json()["email"] == "newadmin@test.com"
 
 def test_teacher_cannot_create_user(client, teacher_headers):

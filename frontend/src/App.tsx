@@ -6,9 +6,14 @@ import TeacherWorkspace from './pages/TeacherWorkspace'
 import AdminPanel from './pages/AdminPanel'
 import ProfilePage from './pages/ProfilePage'
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children, role }: { children: React.ReactNode; role?: string }) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
-  return isLoggedIn ? <>{children}</> : <Navigate to="/login" replace />
+  const user = useAuthStore((s) => s.user)
+  if (!isLoggedIn) return <Navigate to="/login" replace />
+  if (role && user && user.role?.toUpperCase() !== role.toUpperCase()) {
+    return <Navigate to="/teacher" replace />
+  }
+  return <>{children}</>
 }
 
 export default function App() {
@@ -36,7 +41,7 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute role="ADMIN">
               <AdminPanel />
             </ProtectedRoute>
           }

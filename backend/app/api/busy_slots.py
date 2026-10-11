@@ -28,6 +28,7 @@ class BusySlotIn(BaseModel):
     day_of_week: Optional[str] = None   # required for permanent
     specific_date: Optional[date] = None  # required for temporary
     reason: Optional[str] = None
+    reschedule_affected: bool = True    # if False, classes remain cancelled instead of rescheduled
 
 
 class BusySlotOut(BaseModel):
@@ -83,9 +84,11 @@ def _reschedule_affected_classes(
     db: Session,
     teacher: str,
     conflict_day: Optional[str],
+    reschedule_affected: bool = True,
 ) -> Dict[str, Any]:
     """
-    Attempt to auto-reschedule all classes of `teacher` on `conflict_day`.
+    Attempt to auto-reschedule all classes of `teacher` on `conflict_day`,
+    or keep them cancelled if `reschedule_affected` is False.
     Returns a dict with 'auto_rescheduled' and 'cancelled_classes' lists.
     """
     from app.services.timetable_service import get_published_version, list_versions, create_draft, get_version
@@ -128,6 +131,35 @@ def _reschedule_affected_classes(
     auto_rescheduled: List[dict] = []
     cancelled_classes: List[dict] = []
     current_schedule = copy.deepcopy(schedule)
+
+    # If user explicitly chose to keep classes cancelled without rescheduling
+    if not reschedule_affected:
+        for entry in affected:
+            cancelled_classes.append({
+                "subject_code": entry["subject_code"],
+                "subject_name": entry.get("subject_name", ""),
+                "day": entry["day"],
+                "start": entry["start"],
+                "end": entry["end"],
+                "reason": f"Teacher {teacher} is marked busy on {conflict_day}; class kept cancelled as requested.",
+            })
+        current_schedule = [
+            e for e in current_schedule
+            if not (e.get("teacher") == teacher and _entry_conflicts_busy(e, conflict_day))
+        ]
+        if cancelled_classes:
+            new_version_summary = (
+                f"Classes cancelled: teacher {teacher} marked busy on {conflict_day}. "
+                f"{len(cancelled_classes)} class(es) cancelled."
+            )
+            create_draft(
+                db=db,
+                user=admin_user,
+                entries=current_schedule,
+                change_summary=new_version_summary,
+                parent_id=version.id,
+            )
+        return {"auto_rescheduled": [], "cancelled_classes": cancelled_classes}
 
     for entry in affected:
         # Build a synthetic violation to pass into suggest_alternatives
@@ -252,6 +284,7 @@ def create_busy_slot(
                 db=db,
                 teacher=req.teacher_short_name,
                 conflict_day=req.day_of_week,
+                reschedule_affected=req.reschedule_affected,
             )
         except Exception as e:
             # Non-fatal: log but don't block the response
@@ -261,11 +294,16 @@ def create_busy_slot(
     rescheduled_count = len(auto_result["auto_rescheduled"])
     cancelled_count = len(auto_result["cancelled_classes"])
     if rescheduled_count or cancelled_count:
-        msg = (
-            f"Busy slot created. "
-            f"{rescheduled_count} class(es) auto-rescheduled"
-            + (f", {cancelled_count} could not be moved (see cancelled_classes)." if cancelled_count else ".")
-        )
+        details = []
+        if rescheduled_count:
+            details.append(f"{rescheduled_count} class(es) auto-rescheduled")
+        if cancelled_count:
+            details.append(
+                f"{cancelled_count} class(es) kept cancelled"
+                if not req.reschedule_affected
+                else f"{cancelled_count} could not be moved (see cancelled_classes)"
+            )
+        msg = f"Busy slot created. {', '.join(details)}."
     else:
         msg = "Busy slot created. No existing classes were affected."
 

@@ -40,7 +40,11 @@ export default function LoginPage() {
         role: (data.user?.role as User['role']) ?? 'TEACHER',
       }
       loginStore(user)
-      navigate('/teacher')
+      if (user.role?.toUpperCase() === 'ADMIN') {
+        navigate('/admin')
+      } else {
+        navigate('/teacher')
+      }
     } catch (err: unknown) {
       setError((err as Error).message || 'Invalid credentials')
       // Shake both fields on login failure

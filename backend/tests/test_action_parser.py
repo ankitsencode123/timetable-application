@@ -84,4 +84,4 @@ def test_parse_fails_after_max_attempts():
         with pytest.raises(ValueError, match="Failed to parse NLP command"):
             parser.parse("hello")
         
-        assert mock_call.call_count == 2  # initial + 1 repair limit
+        assert mock_call.call_count == parser.MAX_ATTEMPTS
