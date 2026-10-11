@@ -18,7 +18,12 @@ except ImportError:
     tz = pytz.timezone("Asia/Kolkata")
 
 def _build_schedule_context(db: Session, version_id: int | None = None) -> str:
-    """Build a compact schedule context string for the LLM."""
+    """Build a compact schedule context string for the LLM using the cache layer."""
+    try:
+        from app.services.cache_layer import build_schedule_context_cached
+        return build_schedule_context_cached(db, version_id)
+    except Exception:
+        pass
     try:
         from app.models.timetable import TimetableVersion
         from app.services import timetable_service

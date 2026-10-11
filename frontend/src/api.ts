@@ -420,5 +420,60 @@ export async function adminCalendarSuggest(date: string, targetKey: string): Pro
   })
 }
 
+// ── Advanced Chat ──────────────────────────────────────────────────────────
+
+export interface AdvancedChatRequest {
+  text: string;
+  execute?: boolean;
+  confirm?: boolean;
+  plan_id?: string;
+  session_id?: string;
+  version_id?: number;
+  history?: { role: string; content: string }[];
+  partial_ok?: boolean;
+}
+
+export interface AdvancedChatResponse {
+  status: string;
+  interpretation: string;
+  decision: string;
+  parsed_actions: any[];
+  action_count: number;
+  executed: boolean;
+  execution_result?: any;
+  issues: any[];
+  questions: string[];
+  assumptions: string[];
+  preflight: any[];
+  plan_id?: string;
+  requires_confirmation: boolean;
+  confirmation_reasons: string[];
+  active_rules: any[];
+  base_version_id?: number;
+  new_version_id?: number;
+  verified?: boolean;
+  llm_calls: number;
+  cached: boolean;
+  warnings: string[];
+}
+
+export async function advancedChat(payload: AdvancedChatRequest): Promise<AdvancedChatResponse> {
+  return request('/actions/advanced-chat', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function getAdvancedChatStatus(): Promise<any> {
+  return request('/actions/advanced-chat/status')
+}
+
+export async function resetAdvancedChatSession(sessionId?: string): Promise<{ ok: boolean }> {
+  const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ''
+  return request(`/actions/advanced-chat/session${qs}`, {
+    method: 'DELETE',
+  })
+}
+
 export { request as req };
 

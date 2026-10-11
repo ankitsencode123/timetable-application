@@ -6,6 +6,7 @@ from app.api import users, teachers, timetable, versions, public, chat, actions,
 from app.api import catalog, busy_slots, schedule_smart
 from app.calendar_system import router as calendar_router
 from app.calendar_chat import router as calendar_chat_router
+from app.actions.advanced_chat import router as advanced_chat_router
 
 api_router = APIRouter()
 
@@ -17,6 +18,7 @@ api_router.include_router(versions.router,       prefix="/versions",        tags
 api_router.include_router(public.router,         prefix="/public",          tags=["public"])
 api_router.include_router(chat.router,           prefix="",                 tags=["chat"])
 api_router.include_router(actions.router,        prefix="/actions",         tags=["actions"])
+api_router.include_router(advanced_chat_router, prefix="/actions",         tags=["advanced-chat"])
 api_router.include_router(catalog.router,        prefix="/catalog",         tags=["catalog"])
 api_router.include_router(busy_slots.router,     prefix="/busy-slots",      tags=["busy-slots"])
 api_router.include_router(schedule_smart.router, prefix="/actions/smart-schedule", tags=["smart-schedule"])

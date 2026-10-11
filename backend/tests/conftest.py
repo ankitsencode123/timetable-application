@@ -52,7 +52,10 @@ def client(db):
             pass
             
     app.dependency_overrides[get_db] = override_get_db
+    from app.services.cache_layer import invalidate_timetable_data
+    invalidate_timetable_data("test-setup")
     yield TestClient(app)
+    invalidate_timetable_data("test-teardown")
     app.dependency_overrides.clear()
 
 

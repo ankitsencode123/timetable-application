@@ -62,6 +62,9 @@ app = FastAPI(
 from app.actions.concurrency import install_concurrency_handlers  # noqa: E402
 install_concurrency_handlers(app)
 
+from app.services.cache_layer import install_cache  # noqa: E402
+install_cache(app)
+
 _cors_origins = settings.cors_origin_list
 _allow_all = _cors_origins == ["*"]
 
