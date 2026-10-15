@@ -475,5 +475,97 @@ export async function resetAdvancedChatSession(sessionId?: string): Promise<{ ok
   })
 }
 
+// ── Smart Weekly Scheduling ──────────────────────────────────────────────────
+
+export interface WeeklyScheduleRequest {
+  program: string
+  semester: string
+  subject_code: string
+  subject_name?: string
+  teacher: string
+  entry_type?: 'Theory' | 'Practical'
+  room?: string
+  weekly_hours: number
+  selected_days: string[]
+  day_rule?: 'exactly' | 'at_least' | 'at_most'
+  day_count?: number
+  outside_days?: 'auto' | 'allow' | 'deny'
+  preferred_start?: string
+  include_advanced?: boolean
+  allow_cancel?: boolean
+  max_proposals?: number
+}
+
+export interface DayReportItem {
+  day: string
+  selected: boolean
+  available: boolean
+  reason?: string | null
+  windows: string[]
+}
+
+export interface SessionPlanItem {
+  day: string
+  start: string
+  end: string
+  room: string
+  duration_minutes: number
+  uses_requested_room: boolean
+  alternatives?: { start: string; end: string; room: string }[]
+}
+
+export interface ModificationItem {
+  kind: 'MOVE_CLASS' | 'REMOVE_CLASS'
+  description: string
+  target: Record<string, any>
+  new_day?: string | null
+  new_start?: string | null
+  new_end?: string | null
+  new_room?: string | null
+}
+
+export interface ShortfallItem {
+  days_short: number
+  hours_short: number
+  reason: string
+}
+
+export interface WeeklyProposalItem {
+  id: string
+  category: 'exact' | 'substitute' | 'advanced' | 'partial'
+  satisfies_request: boolean
+  title: string
+  description: string
+  days: string[]
+  sessions: SessionPlanItem[]
+  total_minutes: number
+  requested_minutes: number
+  honored_days: string[]
+  dropped_days: string[]
+  substitute_days: string[]
+  shortfall?: ShortfallItem | null
+  modifications: ModificationItem[]
+  actions_to_apply: Record<string, any>[]
+  warnings: string[]
+}
+
+export interface WeeklyScheduleResponse {
+  found: boolean
+  status: 'exact' | 'substituted' | 'needs_changes' | 'partial' | 'none' | 'invalid'
+  message: string
+  notes: string[]
+  day_report: DayReportItem[]
+  valid_day_counts: number[]
+  proposals: WeeklyProposalItem[]
+}
+
+export async function weeklySmartSchedule(payload: WeeklyScheduleRequest): Promise<WeeklyScheduleResponse> {
+  return request<WeeklyScheduleResponse>('/actions/smart-schedule/weekly', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
 export { request as req };
+
 

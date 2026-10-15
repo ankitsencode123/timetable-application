@@ -146,12 +146,33 @@ function AlternativeCard({
     }
   }
 
+  function sanitizeAction(rawAction: any): any {
+    if (!rawAction) return rawAction
+    if (rawAction.action === 'ADD_CLASS' && rawAction.spec) {
+      return {
+        ...rawAction,
+        spec: {
+          ...rawAction.spec,
+          program: rawAction.spec.program || 'B.Tech',
+          semester: rawAction.spec.semester || '1st',
+          subject_code: rawAction.spec.subject_code || 'class',
+          subject_name: rawAction.spec.subject_name || rawAction.spec.subject_code || 'Class',
+          teacher: rawAction.spec.teacher || '',
+          room: rawAction.spec.room || 'R#205',
+          entry_type: rawAction.spec.entry_type || 'Theory',
+        }
+      }
+    }
+    return rawAction
+  }
+
   async function applySelected() {
     const selected = rich[selectedIndex]
     if (!selected?.action) return
+    const actionToApply = sanitizeAction(selected.action)
     setLoading(true)
     try {
-      const res = await executeActions([selected.action], versionId)
+      const res = await executeActions([actionToApply], versionId)
       onApplied(res)
     } finally {
       setLoading(false)

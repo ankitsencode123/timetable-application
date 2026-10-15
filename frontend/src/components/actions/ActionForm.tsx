@@ -205,8 +205,8 @@ export default function ActionForm({ actionType, onClose }: Props) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 560 }}>
-        <div className="modal-header">
+      <div className="modal" style={{ maxWidth: 560, maxHeight: 'min(90vh, calc(100vh - 32px))', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div className="modal-header" style={{ flexShrink: 0 }}>
           <h2 className="modal-title">{label}</h2>
           <button className="btn-icon" onClick={onClose}><X size={18} /></button>
         </div>

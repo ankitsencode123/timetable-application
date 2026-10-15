@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api import users, teachers, timetable, versions, public, chat, actions, profile
-from app.api import catalog, busy_slots, schedule_smart
+from app.api import catalog, busy_slots, schedule_smart, schedule_smart_weekly
 from app.calendar_system import router as calendar_router
 from app.calendar_chat import router as calendar_chat_router
 from app.actions.advanced_chat import router as advanced_chat_router
@@ -22,5 +22,6 @@ api_router.include_router(advanced_chat_router, prefix="/actions",         tags=
 api_router.include_router(catalog.router,        prefix="/catalog",         tags=["catalog"])
 api_router.include_router(busy_slots.router,     prefix="/busy-slots",      tags=["busy-slots"])
 api_router.include_router(schedule_smart.router, prefix="/actions/smart-schedule", tags=["smart-schedule"])
+api_router.include_router(schedule_smart_weekly.router, prefix="/actions/smart-schedule/weekly", tags=["smart-schedule-weekly"])
 api_router.include_router(calendar_router)   # /calendar/* and /admin/calendar/* (prefixes defined in module)
 api_router.include_router(calendar_chat_router)

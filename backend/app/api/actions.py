@@ -45,17 +45,29 @@ def _build_schedule_context(db: Session, version_id: int | None) -> str:
         if not version or not version.entries:
             return ""
         rows = []
+        teacher_theory_days: dict[str, set[str]] = {}
         for e in version.entries:
             rows.append(
                 f"| {e.day} | {e.program} | {e.semester} | "
                 f"{e.start_time} | {e.end_time} | {e.subject_code} | "
                 f"{e.subject_name} | {e.teacher} | {e.room} | {e.entry_type} |"
             )
+            if (e.entry_type or "").strip() == "Theory" and e.teacher and e.day:
+                for t in [x.strip() for x in str(e.teacher).split(",") if x.strip()]:
+                    teacher_theory_days.setdefault(t, set()).add(e.day)
+
         header = (
             "| Day | Program | Semester | Start Time | End Time | Code | Subject | Teacher | Room | Type |\n"
             "|---|---|---|---|---|---|---|---|---|---|\n"
         )
-        return header + "\n".join(rows)
+        context = header + "\n".join(rows)
+        if teacher_theory_days:
+            theory_info = [
+                f"- {t}: already has Theory on {', '.join(sorted(days))} (CANNOT take any more Theory classes on these days due to Rule H5)"
+                for t, days in sorted(teacher_theory_days.items())
+            ]
+            context += "\n\nTEACHER DAILY THEORY ALLOCATIONS (Rule H5: Max 1 Theory per teacher per day):\n" + "\n".join(theory_info)
+        return context
     except Exception:
         return ""
 

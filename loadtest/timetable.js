@@ -4,7 +4,9 @@ import { Counter } from 'k6/metrics';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 const API = `${BASE_URL}/api`;
-const STUDENT_VUS = Number(__ENV.STUDENT_VUS || 120);
+// Defaults to 1,000 total VUs: 996 student sessions and 4 admin sessions.
+// Set ADMIN_VUS=0 and STUDENT_VUS=1000 for an all-student test.
+const STUDENT_VUS = Number(__ENV.STUDENT_VUS || 996);
 const ADMIN_VUS = Number(__ENV.ADMIN_VUS || 4);
 const RAMP = __ENV.RAMP_DURATION || '2m';
 const HOLD = __ENV.HOLD_DURATION || '5m';

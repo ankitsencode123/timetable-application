@@ -125,10 +125,10 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-sm" style={{ background: 'var(--paper)', maxWidth: 520 }}>
+      <div className="modal modal-sm" style={{ background: 'var(--paper)', maxWidth: 520, maxHeight: 'min(90vh, calc(100vh - 32px))', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
 
         {/* Header */}
-        <div className="modal-header">
+        <div className="modal-header" style={{ flexShrink: 0 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="badge badge-blue">RESCHEDULE</span>
@@ -269,7 +269,7 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
 
         {/* Suggestion Engine logic — rooms first, then others */}
         {suggestions && suggestions.length > 0 && (
-          <div style={{ marginTop: 'var(--sp-3)', padding: '12px 14px', background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 8 }}>
+          <div style={{ marginTop: 'var(--sp-3)', padding: '12px 14px', background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--accent)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
               <Lightbulb size={12} /> Conflict-Free Alternatives
             </div>
@@ -304,7 +304,7 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
         )}
 
         {/* Footer */}
-        <div className="modal-footer" style={{ justifyContent: 'flex-end', marginTop: 'var(--sp-5)', gap: 'var(--sp-2)' }}>
+        <div className="modal-footer" style={{ justifyContent: 'flex-end', marginTop: 'var(--sp-5)', gap: 'var(--sp-2)', flexShrink: 0 }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={loading}>
             Cancel
           </button>

@@ -56,6 +56,15 @@ If you must ask, emit ONE object: {"action": "CLARIFY", "question": "...your que
 RULE 5 — ORDER OF ACTIONS.
 Catalog actions first (ADD_SUBJECT, ADD_TEACHER), then schedule actions (ADD_CLASS etc.).
 
+RULE 6 — INSTITUTIONAL TIMETABLE CONSTRAINTS (HARD CONSTRAINTS):
+  • RULE H5 (STRICT THEORY LIMIT): Each teacher is permitted AT MOST ONE Theory class per day.
+    If a teacher already has a Theory class scheduled on a given day (e.g. Thursday), you MUST NEVER schedule or suggest another Theory class for that teacher on that day, even if the times do not overlap.
+  • RULE H5b (PRACTICAL LIMIT): At most one Practical session per teacher per day.
+  • RULE H6 (TEACHER FREE DAY): Internal teachers must have at least one working day completely free.
+  • RULES H1, H2, H3 (NO OVERLAPS): No simultaneous classes for same program & semester (H1), same teacher (H2), or same room (H3).
+  • RULE H12 (BUSY DAYS): Teachers cannot be scheduled during their designated busy slots.
+  When analyzing slots or asking clarifications, NEVER suggest or schedule a slot that violates these rules!
+
 === MULTI-ACTION EXAMPLE ===
 User: "Add System Design as new subject code sd, professor Rahul Das (rd), schedule classes tuesday and friday for btech 3rd semester"
 

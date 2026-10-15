@@ -16,34 +16,34 @@ from app.services.seed_timetable import seed_default_timetable_if_needed, seed_c
 import secrets
 
 # === Teacher Registry ===
-# Internal faculty (permanent staff)
+# Internal faculty (permanent staff) — Exactly 7
 INTERNAL_TEACHERS = [
-    {"short_name": "SCh", "full_name": "Dr. Sumit Chakraborty",     "subjects_csv": "Discrete Mathematics"},
-    {"short_name": "NC",  "full_name": "Dr. Nabendu Chaki",          "subjects_csv": "Software Engineering,SE Lab,Advance DBMS,ADBMS Lab"},
-    {"short_name": "RKP", "full_name": "Dr. Rajat Kumar Pal",        "subjects_csv": "VLSI Design,Problem Solving Techniques"},
-    {"short_name": "SKS", "full_name": "Dr. Sanjit Kumar Setua",     "subjects_csv": "Compiler Design,CD Lab,Deep Learning"},
-    {"short_name": "SC",  "full_name": "Dr. Sankhayan Choudhury",    "subjects_csv": "DBMS,DBMS Lab,Wireless & Mobile Computing"},
-    {"short_name": "RD",  "full_name": "Dr. Rajib Kumar Das",        "subjects_csv": "Microprocessor & Microcontroller,Introduction to Data Mining,IDM Lab,Digital Logic & Microprocessor Lab"},
-    {"short_name": "PB",  "full_name": "Dr. Pritha Banerjee",        "subjects_csv": "Data Structure,Data Structure Lab,Advanced Algorithms,AA Lab"},
-    {"short_name": "SK",  "full_name": "Dr. Sunirmal Khatua",        "subjects_csv": "Digital Logic,Computer Networks,CN Lab,Wireless & Mobile Computing,Digital Logic & Microprocessor Lab"},
+    {"short_name": "SKS", "full_name": "Dr. Sanjit Kumar Setua",  "designation": "Associate Professor",                      "subjects_csv": "Compiler Design,CD Lab,Deep Learning"},
+    {"short_name": "RKP", "full_name": "Dr. Rajat Kumar Pal",    "designation": "Professor",                                "subjects_csv": "VLSI Design,Problem Solving Techniques"},
+    {"short_name": "SC",  "full_name": "Dr. Sankhayan Choudhury", "designation": "Professor",                                "subjects_csv": "DBMS,DBMS Lab,Wireless & Mobile Computing"},
+    {"short_name": "NC",  "full_name": "Dr. Nabendu Chaki",       "designation": "Professor",                                "subjects_csv": "Software Engineering,SE Lab,Advance DBMS,ADBMS Lab"},
+    {"short_name": "RD",  "full_name": "Dr. Rajib Kumar Das",     "designation": "Associate Professor & Head of Department",  "subjects_csv": "Microprocessor & Microcontroller,Introduction to Data Mining,IDM Lab,Digital Logic & Microprocessor Lab"},
+    {"short_name": "PB",  "full_name": "Dr. Pritha Banerjee",     "designation": "Assistant Professor",                      "subjects_csv": "Data Structure,Data Structure Lab,Advanced Algorithms,AA Lab"},
+    {"short_name": "SK",  "full_name": "Dr. Sunirmal Khatua",     "designation": "Assistant Professor",                      "subjects_csv": "Digital Logic,Computer Networks,CN Lab,Wireless & Mobile Computing,Digital Logic & Microprocessor Lab"},
 ]
 
 # External / Guest faculty
 EXTERNAL_TEACHERS = [
-    {"short_name": "PBn", "full_name": "Dr. Priya Banerjee",         "subjects_csv": "Environmental Science"},
-    {"short_name": "AD",  "full_name": "Dr. Amartya Dutta",          "subjects_csv": "AI & Machine Learning,AIML Lab"},
-    {"short_name": "SN",  "full_name": "Dr. Somen Nandy",            "subjects_csv": "Algorithmic Graph Theory,AGT Lab"},
-    {"short_name": "GM",  "full_name": "Dr. Gautam Mahapatra",       "subjects_csv": "Computer Graphics,CG Lab"},
-    {"short_name": "AB",  "full_name": "Dr. Ansuman Banerjee",       "subjects_csv": "Artificial Intelligence & Machine Learning,AIML Lab"},
-    {"short_name": "TD",  "full_name": "Dr. Tathagata Das",          "subjects_csv": "Environment Systems & Internet of Things,ES&IoT Lab"},
-    {"short_name": "DK",  "full_name": "Dr. Dhiman Karmakar",        "subjects_csv": "Image Processing & Pattern Recognition"},
-    {"short_name": "AG",  "full_name": "Dr. Anupam Ghosh",           "subjects_csv": "Artificial Intelligence,AI Lab"},
-    {"short_name": "SGC", "full_name": "Dr. Shruti Gan Choudhuri",   "subjects_csv": "Mathematical Foundations of Computer Science"},
-    {"short_name": "SR",  "full_name": "Dr. Samir Roy",              "subjects_csv": "Soft Computing,Soft Computing Lab"},
-    {"short_name": "SD",  "full_name": "Dr. Susmita Das",            "subjects_csv": "English for Research Paper Writing"},
-    {"short_name": "DC",  "full_name": "Dr. Debesh Choudhury",       "subjects_csv": "Research Methodology"},
-    {"short_name": "RS",  "full_name": "Dr. Rituparna Sinha",        "subjects_csv": "Bioinformatics"},
-    {"short_name": "TG",  "full_name": "Dr. Tathagata Ghosh",        "subjects_csv": "ES&IoT Lab"},
+    {"short_name": "SCh", "full_name": "Dr. Sumit Chakraborty",   "designation": "External Guest Faculty", "subjects_csv": "Discrete Mathematics"},
+    {"short_name": "PBn", "full_name": "Dr. Priya Banerjee",       "designation": "External Guest Faculty", "subjects_csv": "Environmental Science"},
+    {"short_name": "AD",  "full_name": "Dr. Amartya Dutta",        "designation": "External Guest Faculty", "subjects_csv": "AI & Machine Learning,AIML Lab"},
+    {"short_name": "SN",  "full_name": "Dr. Somen Nandy",          "designation": "External Guest Faculty", "subjects_csv": "Algorithmic Graph Theory,AGT Lab"},
+    {"short_name": "GM",  "full_name": "Dr. Gautam Mahapatra",     "designation": "External Guest Faculty", "subjects_csv": "Computer Graphics,CG Lab"},
+    {"short_name": "AB",  "full_name": "Dr. Ansuman Banerjee",     "designation": "External Guest Faculty", "subjects_csv": "Artificial Intelligence & Machine Learning,AIML Lab"},
+    {"short_name": "TD",  "full_name": "Dr. Tathagata Das",        "designation": "External Guest Faculty", "subjects_csv": "Environment Systems & Internet of Things,ES&IoT Lab"},
+    {"short_name": "DK",  "full_name": "Dr. Dhiman Karmakar",      "designation": "External Guest Faculty", "subjects_csv": "Image Processing & Pattern Recognition"},
+    {"short_name": "AG",  "full_name": "Dr. Anupam Ghosh",         "designation": "External Guest Faculty", "subjects_csv": "Artificial Intelligence,AI Lab"},
+    {"short_name": "SGC", "full_name": "Dr. Shruti Gan Choudhuri", "designation": "External Guest Faculty", "subjects_csv": "Mathematical Foundations of Computer Science"},
+    {"short_name": "SR",  "full_name": "Dr. Samir Roy",            "designation": "External Guest Faculty", "subjects_csv": "Soft Computing,Soft Computing Lab"},
+    {"short_name": "SD",  "full_name": "Dr. Susmita Das",          "designation": "External Guest Faculty", "subjects_csv": "English for Research Paper Writing"},
+    {"short_name": "DC",  "full_name": "Dr. Debesh Choudhury",     "designation": "External Guest Faculty", "subjects_csv": "Research Methodology"},
+    {"short_name": "RS",  "full_name": "Dr. Rituparna Sinha",      "designation": "External Guest Faculty", "subjects_csv": "Bioinformatics"},
+    {"short_name": "TG",  "full_name": "Dr. Tathagata Ghosh",      "designation": "External Guest Faculty", "subjects_csv": "ES&IoT Lab"},
 ]
 
 def seed_all():
@@ -75,12 +75,14 @@ def seed_all():
 def _upsert_teacher(db, t_data, is_internal: bool):
     short_name = t_data["short_name"]
     full_name  = t_data["full_name"]
+    designation = t_data.get("designation")
     existing = db.query(Teacher).filter(Teacher.short_name == short_name).first()
     if existing:
         existing.subjects_csv = t_data.get("subjects_csv", "")
         existing.is_internal  = is_internal
+        existing.designation  = designation
         db.commit()
-        print(f"Updated teacher: {short_name} ({full_name})")
+        print(f"Updated teacher: {short_name} ({full_name}) -> {'Internal' if is_internal else 'External'}")
         return
 
     email = f"{short_name.lower()}@college.edu"
@@ -99,10 +101,12 @@ def _upsert_teacher(db, t_data, is_internal: bool):
         full_name=full_name,
         subjects_csv=t_data.get("subjects_csv", ""),
         is_internal=is_internal,
+        designation=designation,
     )
     db.add(teacher)
     db.commit()
     print(f"Added {'internal' if is_internal else 'external'} teacher: {short_name} ({full_name})")
+
 
 
 if __name__ == "__main__":

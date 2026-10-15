@@ -8,7 +8,7 @@ const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
 const ENTRY_TYPES = ['Theory', 'Practical', 'Both']
 
 // ── Types ──────────────────────────────────────────
-interface Teacher { id: number; short_name: string; full_name: string; subjects_csv: string; is_internal: boolean; user_id: number; auto_email?: string; auto_password?: string }
+interface Teacher { id: number; short_name: string; full_name: string; designation?: string; subjects_csv: string; is_internal: boolean; user_id: number; auto_email?: string; auto_password?: string }
 interface Subject { id: number; code: string; name: string; program: string; semester: string; entry_type: string; weekly_hours: number }
 interface Program { id: number; name: string; semesters_count: number; description: string; is_active: boolean }
 
@@ -22,7 +22,7 @@ function TeachersTab() {
   const [editId, setEditId] = useState<number | null>(null)
   const [editSubjects, setEditSubjects] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
-  const [form, setForm] = useState({ short_name: '', full_name: '', subjects_csv: '', is_internal: true, email: '' })
+  const [form, setForm] = useState({ short_name: '', full_name: '', designation: '', subjects_csv: '', is_internal: true, email: '' })
   const [formError, setFormError] = useState<string | null>(null)
   const setF = (k: string, v: unknown) => setForm(f => ({ ...f, [k]: v }))
 
@@ -55,7 +55,7 @@ function TeachersTab() {
       const r = await req<Teacher>('/catalog/teachers', { method: 'POST', body: JSON.stringify(form) })
       setList(l => [...l, r])
       if (r.auto_email) setCreated({ email: r.auto_email, password: r.auto_password })
-      setForm({ short_name: '', full_name: '', subjects_csv: '', is_internal: true, email: '' })
+      setForm({ short_name: '', full_name: '', designation: '', subjects_csv: '', is_internal: true, email: '' })
     } catch (e: unknown) { alert((e as Error).message) }
     setSaving(false)
   }
@@ -84,7 +84,12 @@ function TeachersTab() {
       <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
         <div style={{ fontWeight: 700, marginBottom: 12 }}>+ New Teacher</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-3)' }}>
-          {[['short_name', 'Short Name', 'e.g. AK'], ['full_name', 'Full Name', 'e.g. Dr. Ankit Kumar'], ['email', 'Email (auto if blank)', '']].map(([k, label, ph]) => (
+          {[
+            ['short_name', 'Short Name', 'e.g. AK'],
+            ['full_name', 'Full Name', 'e.g. Dr. Ankit Kumar'],
+            ['designation', 'Designation', 'e.g. Associate Professor'],
+            ['email', 'Email (auto if blank)', '']
+          ].map(([k, label, ph]) => (
             <div className="form-group" key={k}>
               <label className="form-label">{label}</label>
               <input className="form-control" placeholder={ph} value={(form as Record<string, unknown>)[k] as string} onChange={e => setF(k, e.target.value)} />
@@ -108,7 +113,7 @@ function TeachersTab() {
             <label className="form-label">Type</label>
             <select className="form-control" value={form.is_internal ? 'internal' : 'external'} onChange={e => setF('is_internal', e.target.value === 'internal')}>
               <option value="internal">Internal (permanent faculty)</option>
-              <option value="external">External / Visiting</option>
+              <option value="external">External / Visiting Guest Faculty</option>
             </select>
           </div>
         </div>
@@ -124,18 +129,32 @@ function TeachersTab() {
 
       {loading ? <div style={{ textAlign: 'center', padding: 24 }}><Loader2 size={20} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--clr-text-3)' }} /></div> : (
         <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)', minWidth: 480 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)', minWidth: 540 }}>
             <thead><tr style={{ background: 'var(--clr-bg-3)' }}>
-              {['Short Name', 'Full Name', 'Type', 'Subjects', ''].map(h => (
+              {['Short Name', 'Full Name', 'Designation', 'Type', 'Subjects', ''].map(h => (
                 <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--clr-text-2)', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>{list.map(t => (
               <tr key={t.id} style={{ borderTop: '1px solid var(--clr-border-soft)' }}>
                 <td style={{ padding: '8px 12px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.short_name}</td>
-                <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{t.full_name}</td>
+                <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontWeight: 500 }}>{t.full_name}</td>
+                <td style={{ padding: '8px 12px', fontSize: '11px', color: 'var(--clr-text-2)', whiteSpace: 'nowrap' }}>
+                  {t.designation || (t.is_internal ? 'Faculty' : 'Guest Faculty')}
+                </td>
                 <td style={{ padding: '8px 12px' }}>
-                  <span style={{ padding: '2px 8px', borderRadius: 20, fontSize: '11px', fontWeight: 700, background: t.is_internal ? 'var(--clr-primary-10)' : 'var(--clr-bg-3)', color: t.is_internal ? 'var(--clr-primary)' : 'var(--clr-text-3)', whiteSpace: 'nowrap' }}>{t.is_internal ? 'Internal' : 'External'}</span>
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    background: t.is_internal ? 'var(--clr-primary-10)' : 'var(--clr-bg-3)',
+                    color: t.is_internal ? 'var(--clr-primary)' : 'var(--clr-text-3)',
+                    border: t.is_internal ? '1px solid var(--clr-primary-20, rgba(0,0,0,0.1))' : '1px solid var(--clr-border)',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {t.is_internal ? 'Internal' : 'Guest Faculty'}
+                  </span>
                 </td>
                 <td style={{ padding: '8px 12px', color: 'var(--clr-text-2)', fontFamily: 'monospace', fontSize: '11px', minWidth: 140 }}>
                   {editId === t.id ? (

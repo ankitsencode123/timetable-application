@@ -21,6 +21,7 @@ def _call_provider(
     messages: list,
     expect_json: bool = True,
     extra_headers: dict | None = None,
+    timeout: int = 25,
 ) -> str | None:
     """POST to an OpenAI-compatible endpoint. Returns content string or None on failure."""
     payload: dict = {
@@ -42,7 +43,7 @@ def _call_provider(
         headers.update(extra_headers)
 
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=180)
+        r = requests.post(url, headers=headers, json=payload, timeout=timeout)
         if r.status_code == 200:
             return r.json()["choices"][0]["message"]["content"]
     except Exception:
@@ -52,7 +53,7 @@ def _call_provider(
 
 def call_groq(messages: list, preferred_model: str | None = None, expect_json: bool = True) -> tuple[str, str]:
     """
-    Calls OpenRouter exclusively, as requested by the user.
+    Calls OpenRouter with a multi-model cascade to minimize latency while guaranteeing quality.
     The function name remains call_groq to maintain compatibility with existing imports.
     """
     settings = get_settings()
@@ -61,24 +62,41 @@ def call_groq(messages: list, preferred_model: str | None = None, expect_json: b
     if not or_key:
         raise RuntimeError("No OpenRouter API key configured. Set OPENROUTER_API_KEY in .env")
 
-    or_model = preferred_model if preferred_model else settings.OPENROUTER_MODEL
-    
     # OpenRouter requires HTTP-Referer and X-Title for free models
     extra = {
         "HTTP-Referer": "https://timetable-app.onrender.com",
         "X-Title": "Timetable Application",
     }
-    
-    content = _call_provider(
-        OPENROUTER_URL, or_key, or_model, messages,
-        expect_json=False,
-        extra_headers=extra,
-    )
-    
-    if content is not None:
-        return content, or_model
+
+    # Priority cascade: preferred/configured model first, then fast alternatives
+    models_to_try = []
+    if preferred_model:
+        models_to_try.append(preferred_model)
+    if settings.OPENROUTER_MODEL and settings.OPENROUTER_MODEL not in models_to_try:
+        models_to_try.append(settings.OPENROUTER_MODEL)
+
+    fallbacks = [
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemini-2.0-flash-exp:free",
+        "mistralai/mistral-small-24b-instruct-2501:free",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+    ]
+    for fb in fallbacks:
+        if fb not in models_to_try:
+            models_to_try.append(fb)
+
+    for model in models_to_try:
+        content = _call_provider(
+            OPENROUTER_URL, or_key, model, messages,
+            expect_json=False,
+            extra_headers=extra,
+            timeout=25,
+        )
+        if content is not None and content.strip():
+            return content, model
         
-    raise RuntimeError(f"OpenRouter LLM request failed for model {or_model}.")
+    raise RuntimeError(f"OpenRouter LLM request failed for all attempted models: {models_to_try}.")
 
 
 def extract_json(text: str) -> dict:

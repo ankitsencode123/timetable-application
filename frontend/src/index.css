@@ -268,23 +268,35 @@ select.form-control, select.input { cursor: pointer; }
 /* ── Modal ──────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.3); backdrop-filter: blur(4px);
-  z-index: 100; display: flex; align-items: center; justify-content: center;
-  padding: var(--sp-4);
+  background: rgba(0,0,0,0.45); backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: fadeIn 150ms ease;
 }
 .modal {
   background: var(--card-bg); border: 1px solid var(--line);
   border-radius: var(--radius-xl); padding: var(--sp-6);
   max-width: 520px; width: 100%;
+  max-height: min(90vh, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   box-shadow: var(--shadow);
   animation: slideUp 200ms cubic-bezier(0.34,1.56,0.64,1);
+  margin: auto;
 }
 .modal-lg { max-width: 700px; }
-.modal-sm { max-width: 380px; }
+.modal-sm { max-width: 440px; }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: var(--sp-5);
+  margin-bottom: var(--sp-4);
+  flex-shrink: 0;
 }
 .modal-title {
   font-family: var(--font-display);
@@ -292,10 +304,17 @@ select.form-control, select.input { cursor: pointer; }
   color: var(--ink);
   letter-spacing: -0.015em;
 }
+.modal-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .modal-footer {
   display: flex; align-items: center; justify-content: flex-end;
-  gap: var(--sp-3); margin-top: var(--sp-5);
+  gap: var(--sp-3); margin-top: var(--sp-4);
   padding-top: var(--sp-4); border-top: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }

@@ -144,10 +144,10 @@ export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-sm" style={{ background: 'var(--clr-bg-2)', maxWidth: 520 }}>
+      <div className="modal modal-sm" style={{ background: 'var(--clr-bg-2)', maxWidth: 540, maxHeight: 'min(90vh, calc(100vh - 32px))', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
 
         {/* Header */}
-        <div className="modal-header">
+        <div className="modal-header" style={{ flexShrink: 0 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{
@@ -248,24 +248,38 @@ export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
           </div>
         )}
 
-        {/* Alternative suggestions */}
+        {/* Suggestions */}
         {suggestions.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--clr-text-2)', marginBottom: 6 }}>
-              Validated Alternatives (Select to apply):
+          <div style={{
+            marginTop: 'var(--sp-4)', padding: '12px 14px',
+            background: 'rgba(16, 185, 129, 0.05)',
+            border: '1px solid rgba(16, 185, 129, 0.25)',
+            borderRadius: 8,
+            maxHeight: 220,
+            overflowY: 'auto'
+          }}>
+            <div style={{
+              fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
+              color: '#10b981', marginBottom: 8, textTransform: 'uppercase',
+              letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 5
+            }}>
+              <CheckCircle2 size={12} /> Conflict-Free Alternative Matches
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {suggestions.map((s, i) => (
-                <label key={i} style={{
-                  display: 'flex', gap: 10, alignItems: 'flex-start',
-                  padding: '8px 12px', borderRadius: 8,
-                  background: selectedSuggestionIdx === i ? 'rgba(16,185,129,0.1)' : 'var(--clr-bg-3)',
-                  border: `1px solid ${selectedSuggestionIdx === i ? '#10b981' : 'var(--clr-border)'}`,
-                  cursor: 'pointer'
-                }}>
+                <label
+                  key={i}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
+                    padding: '8px 10px', borderRadius: 6, cursor: 'pointer',
+                    background: selectedSuggestionIdx === i ? 'rgba(16, 185, 129, 0.12)' : 'var(--paper)',
+                    border: `1.5px solid ${selectedSuggestionIdx === i ? '#10b981' : 'var(--line)'}`,
+                    transition: 'all 0.15s'
+                  }}
+                >
                   <input
                     type="radio"
-                    name="interchange_suggestion"
+                    name="interchange-suggestion"
                     checked={selectedSuggestionIdx === i}
                     onChange={() => setSelectedSuggestionIdx(i)}
                     style={{ marginTop: 3 }}
@@ -285,7 +299,7 @@ export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
         )}
 
         {/* Footer */}
-        <div className="modal-footer" style={{ justifyContent: 'flex-end', marginTop: 'var(--sp-5)', gap: 'var(--sp-2)' }}>
+        <div className="modal-footer" style={{ justifyContent: 'flex-end', marginTop: 'var(--sp-5)', gap: 'var(--sp-2)', flexShrink: 0 }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={loading}>
             Cancel
           </button>

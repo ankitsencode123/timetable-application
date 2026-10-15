@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Timely at 1 Million Registered Users",
+    "output": "system-design.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "read-path", "label": "Public read path", "focus": ["users", "edge", "api", "cache", "postgres"], "note": "Published schedules are cached by tenant and version." },
+      { "id": "admin-path", "label": "Admin write path", "focus": ["admins", "edge", "api", "postgres", "queue"], "note": "Version-checked edits commit to PostgreSQL before follow-up jobs." },
+      { "id": "slow-work", "label": "Slow work", "focus": ["api", "queue", "workers", "ai"], "note": "AI and other slow jobs run in isolated, rate-limited workers." }
+    ]
+  },
+  "components": [
+    { "id": "users", "type": "external", "label": "Students & teachers", "sublabel": "Web / mobile", "pos": [35, 285], "size": [150, 70] },
+    { "id": "admins", "type": "external", "label": "School admins", "sublabel": "Authenticated edits", "pos": [35, 435], "size": [150, 70] },
+    { "id": "edge", "type": "cloud", "label": "CDN + WAF", "sublabel": "TLS, static assets, limits", "pos": [260, 325], "size": [160, 78] },
+    { "id": "api", "type": "backend", "label": "FastAPI replicas", "sublabel": "Stateless, autoscaled", "pos": [505, 325], "size": [160, 78], "tag": "Tenant-aware" },
+    { "id": "cache", "type": "database", "label": "Redis", "sublabel": "Versioned read cache", "pos": [765, 175], "size": [150, 70] },
+    { "id": "postgres", "type": "database", "label": "PostgreSQL", "sublabel": "Primary + read replica", "pos": [765, 325], "size": [150, 78], "tag": "Source of truth" },
+    { "id": "queue", "type": "messagebus", "label": "Durable queue", "sublabel": "Outbox, retries, DLQ", "pos": [765, 480], "size": [150, 75] },
+    { "id": "workers", "type": "backend", "label": "Worker pools", "sublabel": "Scheduling, email, AI", "pos": [1000, 480], "size": [155, 75] },
+    { "id": "ai", "type": "external", "label": "AI provider", "sublabel": "Timeout + budget limits", "pos": [1200, 480], "size": [150, 75] },
+    { "id": "storage", "type": "cloud", "label": "Object storage", "sublabel": "Exports, private files", "pos": [260, 510], "size": [160, 72] }
+  ],
+  "connections": [
+    { "id": "student-edge", "from": "users", "to": "edge", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "admin-edge", "from": "admins", "to": "edge", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "edge-api", "from": "edge", "to": "api", "label": "route requests" },
+    { "id": "api-cache", "from": "api", "to": "cache", "label": "cache read / invalidate", "fromSide": "top", "toSide": "left" },
+    { "id": "api-db", "from": "api", "to": "postgres", "label": "SQL via bounded pool", "labelDy": 63 },
+    { "id": "api-queue", "from": "api", "to": "queue", "label": "transactional outbox", "fromSide": "bottom", "toSide": "left" },
+    { "id": "queue-workers", "from": "queue", "to": "workers", "label": "async jobs" },
+    { "id": "workers-ai", "from": "workers", "to": "ai", "label": "rate-limited calls", "labelDy": 61 },
+    { "id": "edge-storage", "from": "edge", "to": "storage", "label": "signed download", "fromSide": "bottom", "toSide": "top", "labelDy": 24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Scale the read path", "items": ["CDN and Redis absorb repeated published schedule reads", "FastAPI replicas scale horizontally behind a load balancer"] },
+    { "dot": "emerald", "title": "Protect correctness", "items": ["PostgreSQL is the source of truth", "Tenant scope, version checks, and idempotency protect writes"] },
+    { "dot": "violet", "title": "Isolate slow work", "items": ["Queue-backed workers handle scheduling and notifications", "AI concurrency, timeouts, retries, and spend have separate limits"] }
+  ]
+}

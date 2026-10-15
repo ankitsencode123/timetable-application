@@ -531,13 +531,20 @@ class ActionEngine:
                     orig_target = action.target_a.model_dump(exclude_none=True)
                 
                 mutated_entry = None
-                candidate_ids = [first_v.get(key) for key in ("entry", "a", "b") if isinstance(first_v.get(key), dict)]
-                
-                for c in new_sched:
-                    if c not in current_schedule:
-                        if _entry_id(c) in candidate_ids:
-                            mutated_entry = c
-                            break
+                if hasattr(action, "spec") and action.spec:
+                    mutated_entry = action.spec.to_schedule_dict()
+                elif hasattr(action, "new_spec") and action.new_spec:
+                    mutated_entry = action.new_spec.to_schedule_dict()
+
+                if not mutated_entry:
+                    candidate_ids = [first_v.get(key) for key in ("entry", "a", "b") if isinstance(first_v.get(key), dict)]
+                    for c in new_sched:
+                        if c not in current_schedule:
+                            if candidate_ids and _entry_id(c) in candidate_ids:
+                                mutated_entry = c
+                                break
+                            elif not candidate_ids and mutated_entry is None:
+                                mutated_entry = c
 
                 sugg = {}
                 if not self.skip_suggestions:

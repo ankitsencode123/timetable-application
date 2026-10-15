@@ -145,6 +145,7 @@ export interface CatalogTeacher {
   full_name: string;
   subjects_csv: string;
   is_internal: boolean;
+  designation?: string;
 }
 
 export interface CatalogSubject {

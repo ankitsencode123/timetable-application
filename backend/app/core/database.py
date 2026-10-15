@@ -14,8 +14,11 @@ connect_args = {}
 
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
-elif db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+elif db_url.startswith("postgresql://") or db_url.startswith("postgresql+psycopg2://"):
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    if "sslmode" not in db_url:
+        connect_args["sslmode"] = "require"
 
 engine = create_engine(
     db_url,

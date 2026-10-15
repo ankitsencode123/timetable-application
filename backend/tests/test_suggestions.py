@@ -65,3 +65,48 @@ def test_move_suggestions_search_and_validate_all_windows():
         )
         assert "M.Tech 1st" in item["title"]
         assert item["status"] == "Conflict-free and validated"
+
+
+def test_add_class_suggestions_for_h5_violation():
+    schedule = [
+        _entry("Thursday", "12:00", "14:00", "algo", "SC", "R#205", "Algorithms"),
+    ]
+    added_entry = {
+        "day": "Thursday",
+        "start": "10:00",
+        "end": "12:00",
+        "program": "B.Tech",
+        "semester": "5th",
+        "subject_code": "dbms",
+        "subject_name": "DBMS",
+        "teacher": "SC",
+        "type": "Theory",
+        "room": "R#207B",
+    }
+    violation = {
+        "rule": "H5_multiple_theory_same_day",
+        "teacher": "SC",
+        "day": "Thursday",
+    }
+    suggestions = suggest_alternatives(
+        schedule,
+        "ADD_CLASS",
+        violation,
+        teacher="SC",
+        mutated_entry=added_entry,
+    )
+
+    assert suggestions["rich_suggestions"]
+    assert len(suggestions["rich_suggestions"]) > 0
+    for item in suggestions["rich_suggestions"]:
+        act = item["action"]
+        assert act["action"] == "ADD_CLASS"
+        spec = act["spec"]
+        assert spec["program"] == "B.Tech"
+        assert spec["semester"] == "5th"
+        assert spec["subject_code"] == "dbms"
+        assert spec["teacher"] == "SC"
+        assert spec["day"] != "Thursday"
+        assert spec["room"]
+        assert "Schedule" in item["title"]
+

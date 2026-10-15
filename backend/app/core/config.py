@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # ── LLM / OpenRouter (fallback) ──────────────────────────────────────────
     OPENROUTER_API_KEY: str = ""     # single key
-    OPENROUTER_MODEL: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct:free"
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     # Set to specific origin(s) in production, e.g. https://your-app.vercel.app

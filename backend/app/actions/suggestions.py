@@ -544,20 +544,28 @@ def _build_proposed_move_class(entry: dict, valid_slot: Dict[str, str],
 
 
 def _build_proposed_add_class(entry: dict, valid_slot: Dict[str, str]) -> Dict[str, Any]:
-    """Build an ADD_CLASS proposed action with updated slot parameters."""
+    """Build an ADD_CLASS proposed action with updated slot parameters, guaranteeing non-null fields."""
+    program = entry.get("program") or "B.Tech"
+    semester = entry.get("semester") or "1st"
+    subject_code = entry.get("subject_code") or entry.get("subject") or "class"
+    subject_name = entry.get("subject_name") or subject_code
+    teacher = entry.get("teacher") or ""
+    entry_type = entry.get("type") or entry.get("entry_type") or "Theory"
+    room = valid_slot.get("room") or entry.get("room") or "R#205"
+
     return {
         "action": "ADD_CLASS",
         "spec": {
-            "program": entry.get("program"),
-            "semester": entry.get("semester"),
-            "day": valid_slot.get("day", entry.get("day")),
-            "start_time": valid_slot.get("start", entry.get("start")),
-            "end_time": valid_slot.get("end", entry.get("end")),
-            "subject_code": entry.get("subject_code") or entry.get("subject", ""),
-            "subject_name": entry.get("subject_name", ""),
-            "teacher": entry.get("teacher", ""),
-            "entry_type": entry.get("type", "Theory"),
-            "room": valid_slot.get("room", entry.get("room", "")),
+            "program": str(program),
+            "semester": str(semester),
+            "day": str(valid_slot.get("day", entry.get("day", "Monday"))),
+            "start_time": str(valid_slot.get("start", entry.get("start", "10:00"))),
+            "end_time": str(valid_slot.get("end", entry.get("end", "12:00"))),
+            "subject_code": str(subject_code),
+            "subject_name": str(subject_name),
+            "teacher": str(teacher),
+            "entry_type": str(entry_type),
+            "room": str(room),
         }
     }
 
@@ -1013,10 +1021,12 @@ def suggest_alternatives(
         for valid_slot in valid_slots:
                 if is_add_action:
                     proposed = _build_proposed_add_class(entry, valid_slot)
+                    title = f"Schedule {subject_name} on {valid_slot['day']} {valid_slot['start']}–{valid_slot['end']}"
                 else:
                     proposed = _build_proposed_move_class(entry, valid_slot, orig_target)
+                    title = f"Move {subject_name} to {valid_slot['day']} {valid_slot['start']}–{valid_slot['end']}"
                 room_txt = f" in {valid_slot['room']}" if "room" in valid_slot else ""
-                _add_rich_suggestion(proposed, f"Move {subject_name} to {valid_slot['day']} {valid_slot['start']}–{valid_slot['end']}", f"Avoids scheduling {_teacher} twice on {conflict_day}{room_txt}.")
+                _add_rich_suggestion(proposed, title, f"Avoids scheduling {_teacher} twice on {conflict_day}{room_txt}.")
 
     # ── H6: Teacher has no free day ───────────────────────────────────────────
     elif rule == "H6_no_free_day":

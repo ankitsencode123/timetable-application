@@ -27,6 +27,7 @@ class TeacherIn(BaseModel):
     full_name: str
     subjects_csv: str = ""
     is_internal: bool = True
+    designation: Optional[str] = None
     email: Optional[str] = None          # auto-generated if not provided
     password: Optional[str] = None       # auto-generated if not provided
 
@@ -36,6 +37,7 @@ class TeacherOut(BaseModel):
     full_name: str
     subjects_csv: str
     is_internal: bool
+    designation: Optional[str] = None
     user_id: int
     auto_email: Optional[str] = None
     auto_password: Optional[str] = None
@@ -47,6 +49,7 @@ class TeacherPatch(BaseModel):
     full_name: Optional[str] = None
     subjects_csv: Optional[str] = None
     is_internal: Optional[bool] = None
+    designation: Optional[str] = None
 
 
 class SubjectIn(BaseModel):
@@ -140,6 +143,7 @@ def create_teacher(
         full_name=req.full_name,
         subjects_csv=req.subjects_csv,
         is_internal=req.is_internal,
+        designation=req.designation,
     )
     db.add(teacher)
     db.commit()
@@ -170,6 +174,8 @@ def update_teacher(
         t.subjects_csv = req.subjects_csv
     if req.is_internal is not None:
         t.is_internal = req.is_internal
+    if req.designation is not None:
+        t.designation = req.designation
     db.commit()
     db.refresh(t)
     C.reload_catalog(db)

@@ -109,13 +109,13 @@ ROOM_FACILITIES: dict = _parse_room_facilities()
 # Short codes must match the teacher codes used in the timetable entries.
 # External/visiting faculty are NOT in this set and do not require a free day.
 INTERNAL_TEACHERS: set = {
-    "SKS",   # Sanjit Kumar Setua
-    "RKP",   # Rajat Kumar Pal
-    "SCh",   # Sankhayan Choudhury
-    "NC",    # Nabendu Chaki
-    "RD",    # Rajib Kumar Das
-    "PB",    # Pritha Banerjee
-    "SK",    # Sunirmal Khatua
+    "SKS",   # Sanjit Kumar Setua — Associate Professor
+    "RKP",   # Rajat Kumar Pal — Professor
+    "SC",    # Sankhayan Choudhury — Professor
+    "NC",    # Nabendu Chaki — Professor
+    "RD",    # Rajib Kumar Das — Associate Professor & Head of Department
+    "PB",    # Pritha Banerjee — Assistant Professor
+    "SK",    # Sunirmal Khatua — Assistant Professor
 }
 
 
@@ -180,8 +180,11 @@ def reload_catalog(db=None) -> None:
         for prog in db.query(Program).filter_by(is_active=True).all():
             VALID_PROGRAMS.add(prog.name)
 
-        for t in db.query(Teacher).filter_by(is_internal=True).all():
-            INTERNAL_TEACHERS.add(t.short_name)
+        internal_db_teachers = {t.short_name for t in db.query(Teacher).filter_by(is_internal=True).all()}
+        if internal_db_teachers:
+            INTERNAL_TEACHERS.clear()
+            INTERNAL_TEACHERS.update(internal_db_teachers)
 
     except Exception:
         pass
+

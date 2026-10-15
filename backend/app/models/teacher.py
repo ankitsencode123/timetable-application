@@ -17,6 +17,7 @@ class Teacher(Base):
     # Comma-separated list of subjects allocated to this teacher
     subjects_csv: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_internal: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    designation: Mapped[str | None] = mapped_column(String(100), nullable=True, default=None)
 
     # Relationships
     user = relationship("User", back_populates="teacher_profile")

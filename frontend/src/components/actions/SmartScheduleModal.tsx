@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { X, Sparkles, Loader2, CheckCircle2, AlertCircle, CalendarClock, Zap, ArrowRight, ChevronRight, AlertTriangle } from 'lucide-react'
+import { X, Sparkles, Loader2, CheckCircle2, AlertCircle, CalendarClock, Zap, ArrowRight, ChevronRight, AlertTriangle, Calendar } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
 import { getVersion, req } from '../../api'
+import WeeklyScheduleTab from './WeeklyScheduleTab'
 
 const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -42,6 +43,7 @@ interface Props { onClose: () => void }
 
 export default function SmartScheduleModal({ onClose }: Props) {
   const { currentVersionId, setCurrentVersion } = useWorkspaceStore()
+  const [activeTab, setActiveTab] = useState<'weekly' | 'single'>('weekly')
   const [fields, setFields] = useState<Record<string, string>>({
     program: '', semester: '', subject_code: '', subject_name: '',
     teacher: '', custom_teacher: '', entry_type: 'Theory', room: '', preferred_day: '',
@@ -222,81 +224,146 @@ export default function SmartScheduleModal({ onClose }: Props) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 620 }}>
-        <div className="modal-header">
+      <div className="modal" style={{ maxWidth: 680, maxHeight: 'min(90vh, calc(100vh - 32px))', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div className="modal-header" style={{ flexShrink: 0 }}>
           <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Sparkles size={18} style={{ color: 'var(--clr-primary)' }} /> Smart Auto-Schedule
+            <Sparkles size={18} style={{ color: 'var(--clr-primary)' }} /> Smart Scheduling
           </h2>
           <button className="btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
 
-        {/* ── Step 1: Form ── */}
-        {step === 'form' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)', padding: '8px 12px', background: 'var(--clr-primary-10)', borderRadius: 'var(--radius)', border: '1px solid var(--clr-primary-20)' }}>
-              Fill in the class details — the system will automatically find the best available time slots.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
-              <div className="form-group">
-                <label className="form-label">Program</label>
-                <select className="form-control" value={fields.program} onChange={e => setF('program', e.target.value)}>
-                  <option value="">Select…</option>
-                  {dynamicPrograms.map(o => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Semester</label>
-                <select className="form-control" value={fields.semester} onChange={e => setF('semester', e.target.value)}>
-                  <option value="">Select…</option>
-                  {SEMS.map(o => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Subject Name</label>
-                <input className="form-control" placeholder="e.g. Computer Networks" value={fields.subject_name} onChange={e => setF('subject_name', e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Subject Code <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
-                <input className="form-control" placeholder="e.g. cn (auto-derived)" value={fields.subject_code} onChange={e => setF('subject_code', e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Teacher</label>
-                <select className="form-control" value={fields.teacher} onChange={e => setF('teacher', e.target.value)}>
-                  <option value="">Select…</option>
-                  {dynamicTeachers.map(t => <option key={t}>{t}</option>)}
-                  <option value="Other…">Other…</option>
-                </select>
-              </div>
-              {fields.teacher === 'Other…' && (
-                <div className="form-group">
-                  <label className="form-label">Teacher Short Name</label>
-                  <input className="form-control" placeholder="e.g. AK" value={fields.custom_teacher} onChange={e => setF('custom_teacher', e.target.value)} />
-                </div>
-              )}
-              <div className="form-group">
-                <label className="form-label">Class Type</label>
-                <select className="form-control" value={fields.entry_type} onChange={e => setF('entry_type', e.target.value)}>
-                  <option>Theory</option>
-                  <option>Practical</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Preferred Day <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
-                <select className="form-control" value={fields.preferred_day} onChange={e => setF('preferred_day', e.target.value)}>
-                  <option value="">Any Day</option>
-                  {DAYS.map(d => <option key={d}>{d}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Room <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
-                <input className="form-control" placeholder="Leave blank to auto-assign" value={fields.room} onChange={e => setF('room', e.target.value)} />
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ── Mode Tabs ── */}
+        <div style={{
+          display: 'flex',
+          gap: 6,
+          background: 'var(--clr-bg-2, rgba(0,0,0,0.04))',
+          padding: 4,
+          borderRadius: 'var(--radius)',
+          marginBottom: 16
+        }}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('weekly')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '7px 12px',
+              borderRadius: 'var(--radius-sm, 4px)',
+              border: 'none',
+              background: activeTab === 'weekly' ? 'var(--card-bg, #fff)' : 'transparent',
+              color: activeTab === 'weekly' ? 'var(--clr-primary)' : 'var(--clr-text-2)',
+              fontWeight: activeTab === 'weekly' ? 600 : 400,
+              fontSize: 'var(--fs-sm)',
+              boxShadow: activeTab === 'weekly' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Calendar size={15} /> Weekly Routine Planner
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('single')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '7px 12px',
+              borderRadius: 'var(--radius-sm, 4px)',
+              border: 'none',
+              background: activeTab === 'single' ? 'var(--card-bg, #fff)' : 'transparent',
+              color: activeTab === 'single' ? 'var(--clr-primary)' : 'var(--clr-text-2)',
+              fontWeight: activeTab === 'single' ? 600 : 400,
+              fontSize: 'var(--fs-sm)',
+              boxShadow: activeTab === 'single' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Sparkles size={15} /> Single Class Slot
+          </button>
+        </div>
 
-        {/* ── Step 2: Normal preview (multiple options) ── */}
-        {step === 'preview' && result?.found && result.proposals && (
+        {activeTab === 'weekly' ? (
+          <WeeklyScheduleTab
+            dynamicPrograms={dynamicPrograms}
+            dynamicTeachers={dynamicTeachers}
+            onClose={onClose}
+          />
+        ) : (
+          <>
+            {/* ── Step 1: Form ── */}
+            {step === 'form' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)', padding: '8px 12px', background: 'var(--clr-primary-10)', borderRadius: 'var(--radius)', border: '1px solid var(--clr-primary-20)' }}>
+                  Fill in the class details — the system will automatically find the best available time slots.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
+                  <div className="form-group">
+                    <label className="form-label">Program</label>
+                    <select className="form-control" value={fields.program} onChange={e => setF('program', e.target.value)}>
+                      <option value="">Select…</option>
+                      {dynamicPrograms.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Semester</label>
+                    <select className="form-control" value={fields.semester} onChange={e => setF('semester', e.target.value)}>
+                      <option value="">Select…</option>
+                      {SEMS.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Subject Name</label>
+                    <input className="form-control" placeholder="e.g. Computer Networks" value={fields.subject_name} onChange={e => setF('subject_name', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Subject Code <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
+                    <input className="form-control" placeholder="e.g. cn (auto-derived)" value={fields.subject_code} onChange={e => setF('subject_code', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Teacher</label>
+                    <select className="form-control" value={fields.teacher} onChange={e => setF('teacher', e.target.value)}>
+                      <option value="">Select…</option>
+                      {dynamicTeachers.map(t => <option key={t}>{t}</option>)}
+                      <option value="Other…">Other…</option>
+                    </select>
+                  </div>
+                  {fields.teacher === 'Other…' && (
+                    <div className="form-group">
+                      <label className="form-label">Teacher Short Name</label>
+                      <input className="form-control" placeholder="e.g. AK" value={fields.custom_teacher} onChange={e => setF('custom_teacher', e.target.value)} />
+                    </div>
+                  )}
+                  <div className="form-group">
+                    <label className="form-label">Class Type</label>
+                    <select className="form-control" value={fields.entry_type} onChange={e => setF('entry_type', e.target.value)}>
+                      <option>Theory</option>
+                      <option>Practical</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Preferred Day <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
+                    <select className="form-control" value={fields.preferred_day} onChange={e => setF('preferred_day', e.target.value)}>
+                      <option value="">Any Day</option>
+                      {DAYS.map(d => <option key={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Room <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
+                    <input className="form-control" placeholder="Leave blank to auto-assign" value={fields.room} onChange={e => setF('room', e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 2: Normal preview (multiple options) ── */}
+            {step === 'preview' && result?.found && result.proposals && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {isPerfect ? (
               <div style={{ padding: '10px 14px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: 'var(--radius)', fontSize: 'var(--fs-sm)', color: 'var(--clr-text-1)' }}>
@@ -484,6 +551,8 @@ export default function SmartScheduleModal({ onClose }: Props) {
 
           {step === 'done' && <button className="btn btn-primary" onClick={onClose}>Done</button>}
         </div>
+          </>
+        )}
       </div>
     </div>
   )
