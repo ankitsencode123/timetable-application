@@ -53,28 +53,28 @@ export default function PublicCalendar() {
   const today = todayStr()
 
   return (
-    <div style={{ background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+    <div className="pub-cal-card" style={{ background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ padding: 'var(--sp-4)', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--paper)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <CalIcon size={15} style={{ color: 'var(--accent)' }} />
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-md)', color: 'var(--ink)' }}>Schedule Calendar</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-soft)', background: 'color-mix(in oklab, var(--ink) 5%, transparent)', borderRadius: 4, padding: '2px 7px' }}>date-aware view</span>
+      <div className="pub-cal-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <CalIcon size={15} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-md)', color: 'var(--ink)', whiteSpace: 'nowrap' }}>Schedule Calendar</span>
+          <span className="pub-cal-badge" style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-soft)', background: 'color-mix(in oklab, var(--ink) 5%, transparent)', borderRadius: 4, padding: '2px 7px', whiteSpace: 'nowrap' }}>date-aware view</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { if (month===1) { setYear(y=>y-1); setMonth(12) } else setMonth(m=>m-1) }} id="pub-cal-prev">
+        <div className="pub-cal-nav" style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { if (month===1) { setYear(y=>y-1); setMonth(12) } else setMonth(m=>m-1) }} id="pub-cal-prev" title="Previous Month">
             <ChevronLeft size={14} />
           </button>
-          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--ink)', minWidth: 110, textAlign: 'center' }}>{MONTH_NAMES[month-1]} {year}</span>
-          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { if (month===12) { setYear(y=>y+1); setMonth(1) } else setMonth(m=>m+1) }} id="pub-cal-next">
+          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--ink)', minWidth: 96, textAlign: 'center' }}>{MONTH_NAMES[month-1]} {year}</span>
+          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => { if (month===12) { setYear(y=>y+1); setMonth(1) } else setMonth(m=>m+1) }} id="pub-cal-next" title="Next Month">
             <ChevronRight size={14} />
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap' }}>
+      <div className="pub-cal-body" style={{ display: 'flex', flexWrap: 'wrap' }}>
         {/* Grid */}
-        <div style={{ flex: '1 1 300px', padding: 'var(--sp-3)' }}>
+        <div className="pub-cal-grid-wrap" style={{ flex: '1 1 280px', padding: 'var(--sp-3)', minWidth: 0 }}>
           {/* Day headers */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 }}>
             {DOW.map(d => (
@@ -96,8 +96,8 @@ export default function PublicCalendar() {
                 const hasChanges = info?.has_changes
 
                 return (
-                  <button key={idx} onClick={() => selectDay(dateStr)} id={`pub-cal-day-${dateStr}`} style={{
-                    minHeight: 52, padding: '4px 3px', borderRadius: 'var(--radius)',
+                  <button key={idx} onClick={() => selectDay(dateStr)} id={`pub-cal-day-${dateStr}`} className="pub-cal-cell-btn" style={{
+                    minHeight: 44, padding: '3px 2px', borderRadius: 'var(--radius)',
                     background: isSelected ? 'var(--accent)' : isHoliday ? 'var(--violation-soft)' : isToday ? 'var(--amber-soft)' : 'transparent',
                     border: `1px solid ${isSelected ? 'var(--accent)' : isToday ? 'var(--amber)' : isHoliday ? 'color-mix(in oklab, var(--violation) 25%, transparent)' : 'transparent'}`,
                     cursor: 'pointer', textAlign: 'center', transition: 'var(--transition)',
@@ -140,7 +140,7 @@ export default function PublicCalendar() {
 
         {/* Day Detail Drawer */}
         {selectedDate && (
-          <div style={{ flex: '1 1 260px', borderLeft: '1px solid var(--line)', padding: 'var(--sp-4)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)', minWidth: 240, maxWidth: 360 }}>
+          <div className="pub-cal-drawer" style={{ flex: '1 1 260px', borderLeft: '1px solid var(--line)', padding: 'var(--sp-4)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)', minWidth: 0, maxWidth: 360 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{dayData?.weekday ?? ''}</div>

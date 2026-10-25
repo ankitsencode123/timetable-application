@@ -68,9 +68,6 @@ app = FastAPI(
 from app.actions.concurrency import install_concurrency_handlers  # noqa: E402
 install_concurrency_handlers(app)
 
-from app.services.semantic_cache import install_semantic_cache  # noqa: E402
-install_semantic_cache(app)
-
 from app.services.cache_layer import install_cache  # noqa: E402
 install_cache(app)
 

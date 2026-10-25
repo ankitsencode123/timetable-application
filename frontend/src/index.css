@@ -559,6 +559,55 @@ select.form-control, select.input { cursor: pointer; }
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
 }
+.date-nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.date-nav-view-toggle {
+  display: flex;
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+.date-nav-date-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.date-nav-input {
+  width: auto;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  height: 28px;
+}
+.date-nav-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.date-nav-arrow {
+  flex-shrink: 0;
+}
+.date-nav-pills-scroller {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.date-nav-pills-scroller::-webkit-scrollbar {
+  display: none;
+}
 .date-pill-btn {
   display: flex;
   flex-direction: column;
@@ -571,6 +620,28 @@ select.form-control, select.input { cursor: pointer; }
   cursor: pointer;
   transition: var(--transition);
   min-width: 60px;
+  flex-shrink: 0;
+}
+.date-pill-day {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  letter-spacing: 0.05em;
+}
+.date-pill-num {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.date-pill-sub {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 .date-pill-btn:hover {
   background: color-mix(in oklab, var(--ink) 4%, transparent);
@@ -602,6 +673,65 @@ select.form-control, select.input { cursor: pointer; }
 }
 .tt-cell-today {
   background-color: color-mix(in oklab, var(--accent) 3.5%, transparent) !important;
+}
+
+/* ── Public Title & Main Layout ──────────────────────────── */
+.public-title-strip {
+  padding: var(--sp-4) var(--sp-6) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.public-title-h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.public-version-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  background: color-mix(in oklab, var(--ink) 5%, transparent);
+  border-radius: var(--radius);
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+.public-main-content {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--sp-4);
+  -webkit-overflow-scrolling: touch;
+}
+.public-day-banner {
+  padding: 14px 20px;
+}
+.public-day-h2 {
+  font-size: var(--fs-xl);
+}
+
+/* ── Public Calendar Component ───────────────────────────── */
+.pub-cal-header {
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--paper);
+  gap: 8px;
+}
+.pub-cal-wrapper-padding {
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
 }
 
 /* ── Conflict-Free Suggestions Container & Cards ──────── */
@@ -939,6 +1069,54 @@ select.form-control, select.input { cursor: pointer; }
   backdrop-filter: blur(8px);
   flex-shrink: 0;
 }
+.filter-search-wrap {
+  position: relative;
+  flex: 1 1 180px;
+  max-width: 280px;
+}
+.filter-search-input {
+  padding-left: 30px !important;
+  padding-right: 26px !important;
+  height: 30px;
+  width: 100%;
+}
+.filter-clear-search-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+}
+.filter-clear-search-btn:hover {
+  color: var(--ink);
+}
+.filter-controls-group {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.filter-reset-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--violation);
+  background: var(--violation-soft);
+  border: 1px solid color-mix(in oklab, var(--violation) 25%, transparent);
+  padding: 3px 8px;
+  height: 28px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.filter-reset-btn:hover {
+  background: color-mix(in oklab, var(--violation) 18%, transparent);
+}
 .filter-select {
   padding: 4px 8px; background: var(--card-bg);
   border: 1px solid var(--line); border-radius: var(--radius);
@@ -1042,16 +1220,164 @@ select.form-control, select.input { cursor: pointer; }
   :root { --sidebar-w: 0px; --chat-h: 340px; }
   .sidebar { display: none; }
   .tt-grid-wrapper { -webkit-overflow-scrolling: touch; overflow-x: auto; overflow-y: auto; }
-  .tt-grid { min-width: 600px; }
-  .tt-cell { min-height: 56px; }
+  .tt-grid { min-width: 580px; }
+  .tt-cell { min-height: 52px; }
   .tt-day-header, .tt-time-col { font-size: 9px; padding: 6px 8px; }
-  .app-header, .public-header { padding: 0 var(--sp-3); }
+  .app-header, .public-header { padding: 0 12px; height: 48px; }
   .modal { padding: var(--sp-4); max-width: calc(100vw - 24px); }
   .modal-lg { max-width: calc(100vw - 12px); }
   .public-hero { padding: var(--sp-5) var(--sp-4) var(--sp-4); }
   .public-hero h1 { font-size: var(--fs-2xl); }
   .class-detail { grid-template-columns: 1fr; }
-  .filter-bar { padding: var(--sp-2) var(--sp-3); gap: 4px; flex-wrap: wrap; }
+
+  /* ── Mobile Filter Bar ── */
+  .filter-bar {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-search-wrap {
+    flex: 1 1 100%;
+    max-width: 100%;
+    width: 100%;
+  }
+  .filter-search-input {
+    height: 34px !important;
+    font-size: 13px;
+  }
+  .filter-controls-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    width: 100%;
+  }
+  .filter-controls-group .filter-select {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 32px;
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+  .filter-reset-btn {
+    height: 32px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .filter-density-tabs {
+    display: none !important;
+  }
+
+  /* ── Mobile Date Nav Bar ── */
+  .date-nav-bar {
+    padding: 8px 12px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .date-nav-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    margin-left: 0;
+  }
+  .date-nav-view-toggle {
+    flex: 1 1 auto;
+    display: flex;
+  }
+  .date-nav-view-toggle button {
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+  .date-nav-date-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .date-nav-input {
+    width: 115px !important;
+    font-size: 11px !important;
+    padding: 2px 4px !important;
+    height: 28px !important;
+  }
+  .date-nav-pills-row {
+    width: 100%;
+    gap: 4px;
+  }
+  .date-pill-btn {
+    min-width: 52px;
+    padding: 5px 6px;
+  }
+  .date-pill-day {
+    font-size: 8px;
+  }
+  .date-pill-num {
+    font-size: 12px;
+  }
+  .date-pill-sub {
+    font-size: 7px;
+  }
+
+  /* ── Mobile Public Layout ── */
+  .public-title-strip {
+    padding: 8px 12px 6px;
+    gap: 6px;
+    align-items: center;
+  }
+  .public-title-h1 {
+    font-size: 18px;
+  }
+  .public-version-badge {
+    padding: 3px 6px;
+    font-size: 9px;
+  }
+  .public-main-content {
+    padding: 10px 12px;
+  }
+  .public-day-banner {
+    padding: 12px 14px;
+  }
+  .public-day-h2 {
+    font-size: 17px;
+  }
+
+  /* ── Mobile Public Calendar ── */
+  .pub-cal-header {
+    padding: 8px 10px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .pub-cal-badge {
+    display: none !important;
+  }
+  .pub-cal-grid-wrap {
+    padding: 8px 6px !important;
+    flex: 1 1 100% !important;
+  }
+  .pub-cal-cell-btn {
+    min-height: 38px !important;
+    padding: 2px 1px !important;
+  }
+  .pub-cal-drawer {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid var(--line) !important;
+    padding: 12px 10px !important;
+  }
+  .pub-cal-wrapper-padding {
+    padding: 8px 8px 12px !important;
+  }
+
   .action-panel {
     display: flex;
     flex-wrap: wrap;
@@ -1269,10 +1595,10 @@ select.form-control, select.input { cursor: pointer; }
   --acc-chevron: 250ms;
   --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
-.t-acc-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--acc-collapse) var(--acc-ease); }
+.t-acc-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--acc-collapse) var(--acc-ease); min-height: 0; }
 .t-acc[data-open="true"] .t-acc-panel { grid-template-rows: 1fr; transition: grid-template-rows var(--acc-expand) var(--acc-ease); }
 .t-acc-panel-inner {
-  overflow: hidden; opacity: 0; filter: blur(2px);
+  overflow: hidden; opacity: 0; filter: blur(2px); min-height: 0;
   transition: opacity var(--acc-collapse) var(--acc-ease), filter var(--acc-collapse) var(--acc-ease);
 }
 .t-acc[data-open="true"] .t-acc-panel-inner { opacity: 1; filter: blur(0); transition: opacity var(--acc-expand) var(--acc-ease), filter var(--acc-expand) var(--acc-ease); }

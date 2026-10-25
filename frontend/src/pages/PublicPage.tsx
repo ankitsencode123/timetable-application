@@ -261,7 +261,7 @@ export default function PublicPage() {
   const todayDayName = getDayName(todayStr)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--paper)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', minHeight: '-webkit-fill-available', overflow: 'hidden', background: 'var(--paper)' }}>
 
       {/* Header */}
       <header className="public-header" style={{ justifyContent: 'space-between' }}>
@@ -284,18 +284,18 @@ export default function PublicPage() {
       </header>
 
       {/* Title + meta */}
-      <div style={{ padding: 'var(--sp-4) var(--sp-6) var(--sp-3)', borderBottom: '1px solid var(--line)', background: 'var(--paper)', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, flexShrink: 0 }}>
+      <div className="public-title-strip">
         <div>
-          <div className="mono-label" style={{ marginBottom: 4 }}>Live Academic Schedule</div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-2xl)', fontWeight: 600, color: 'var(--ink)', letterSpacing: '-0.015em' }}>
+          <div className="mono-label" style={{ marginBottom: 2 }}>Live Academic Schedule</div>
+          <h1 className="public-title-h1">
             Class Timetable
           </h1>
         </div>
         {loading ? (
           <span className="spinner" />
         ) : meta ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-soft)', background: 'color-mix(in oklab, var(--ink) 5%, transparent)', borderRadius: 'var(--radius)', padding: '5px 10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="public-version-badge">
               v<span className="t-digit-group is-animating">
                 {String(meta.version_id).split('').map((d, i) => (
                   <span key={i} className="t-digit" data-stagger={i > 0 ? String(i) : undefined}>{d}</span>
@@ -313,108 +313,109 @@ export default function PublicPage() {
 
       {/* ── Date Navigation & View Mode Strip ── */}
       <div className="date-nav-bar">
-        {/* Left: Quick Day Pills for the week */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto', paddingBottom: 2, flex: '1 1 auto' }}>
-          <button
-            className="btn btn-ghost btn-icon btn-sm"
-            onClick={prevDay}
-            title="Previous Day"
-            style={{ flexShrink: 0 }}
-          >
-            <ChevronLeft size={15} />
-          </button>
-
-          {weekInfo.days.map(d => {
-            const isToday = d.date === todayStr
-            const isSelected = d.date === selectedDate
-            return (
-              <button
-                key={d.date}
-                className={`date-pill-btn ${isSelected ? 'active' : ''} ${isToday ? 'is-today' : ''}`}
-                onClick={() => setSelectedDate(d.date)}
-                title={`${d.weekday}, ${d.dayNum} ${d.monthShort}`}
-              >
-                <span className="date-pill-day" style={{ fontFamily: 'var(--font-mono)', fontSize: 9, textTransform: 'uppercase', color: isSelected ? 'var(--paper)' : 'var(--ink-soft)', letterSpacing: '0.05em' }}>
-                  {d.shortDay}
-                </span>
-                <span className="date-pill-num" style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: isToday ? 700 : 600, color: isSelected ? 'var(--paper)' : isToday ? 'var(--accent)' : 'var(--ink)' }}>
-                  {d.dayNum}
-                </span>
-                {isToday && (
-                  <span className="date-pill-sub" style={{ fontFamily: 'var(--font-mono)', fontSize: 8, textTransform: 'uppercase', color: isSelected ? 'var(--paper)' : 'var(--accent)', fontWeight: 700, letterSpacing: '0.05em' }}>
-                    Today
-                  </span>
-                )}
-              </button>
-            )
-          })}
-
-          <button
-            className="btn btn-ghost btn-icon btn-sm"
-            onClick={nextDay}
-            title="Next Day"
-            style={{ flexShrink: 0 }}
-          >
-            <ChevronRight size={15} />
-          </button>
-        </div>
-
-        {/* Right: Date Picker & View Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
-          <button
-            className={`btn btn-sm ${isSelectedToday ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setSelectedDate(todayStr)}
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 11, padding: '4px 10px' }}
-          >
-            Today ({todayStr.slice(8)})
-          </button>
-
-          <input
-            type="date"
-            className="form-control"
-            value={selectedDate}
-            onChange={e => e.target.value && setSelectedDate(e.target.value)}
-            style={{ width: 'auto', padding: '3px 8px', fontSize: 12, fontFamily: 'var(--font-mono)', height: 30 }}
-            title="Jump to date"
-          />
-
-          <div style={{ display: 'flex', background: 'color-mix(in oklab, var(--ink) 6%, transparent)', borderRadius: 'var(--radius)', padding: 2 }}>
+        {/* View toggle + Jump to date controls */}
+        <div className="date-nav-controls">
+          <div className="date-nav-view-toggle">
             <button
               className={`btn btn-sm ${viewMode === 'day' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('day')}
-              style={{ fontSize: 11, padding: '3px 10px', height: 26 }}
+              style={{ fontSize: 11, padding: '4px 10px', height: 28 }}
             >
               Day Schedule
             </button>
             <button
               className={`btn btn-sm ${viewMode === 'week' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('week')}
-              style={{ fontSize: 11, padding: '3px 10px', height: 26 }}
+              style={{ fontSize: 11, padding: '4px 10px', height: 28 }}
             >
               <Layers size={11} style={{ marginRight: 4 }} />
               Week Grid
             </button>
           </div>
+
+          <div className="date-nav-date-actions">
+            <button
+              className={`btn btn-sm ${isSelectedToday ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setSelectedDate(todayStr)}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, padding: '4px 9px', height: 28, whiteSpace: 'nowrap' }}
+              title="Jump to Today"
+            >
+              Today ({todayStr.slice(8)})
+            </button>
+
+            <input
+              type="date"
+              className="form-control date-nav-input"
+              value={selectedDate}
+              onChange={e => e.target.value && setSelectedDate(e.target.value)}
+              title="Jump to date"
+            />
+          </div>
+        </div>
+
+        {/* Quick Day Pills for the week */}
+        <div className="date-nav-pills-row">
+          <button
+            className="btn btn-ghost btn-icon btn-sm date-nav-arrow"
+            onClick={prevDay}
+            title="Previous Day"
+          >
+            <ChevronLeft size={15} />
+          </button>
+
+          <div className="date-nav-pills-scroller">
+            {weekInfo.days.map(d => {
+              const isToday = d.date === todayStr
+              const isSelected = d.date === selectedDate
+              return (
+                <button
+                  key={d.date}
+                  className={`date-pill-btn ${isSelected ? 'active' : ''} ${isToday ? 'is-today' : ''}`}
+                  onClick={() => setSelectedDate(d.date)}
+                  title={`${d.weekday}, ${d.dayNum} ${d.monthShort}`}
+                >
+                  <span className="date-pill-day">
+                    {d.shortDay}
+                  </span>
+                  <span className="date-pill-num">
+                    {d.dayNum}
+                  </span>
+                  {isToday && (
+                    <span className="date-pill-sub">
+                      Today
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          <button
+            className="btn btn-ghost btn-icon btn-sm date-nav-arrow"
+            onClick={nextDay}
+            title="Next Day"
+          >
+            <ChevronRight size={15} />
+          </button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0, padding: 'var(--sp-4)' }}>
+      <div className="public-main-content">
 
         {/* VIEW MODE 1: DAY SCHEDULE (Focused Date View) */}
         {viewMode === 'day' && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, minHeight: 0 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
             {/* Day Header Banner */}
-            <div style={{
+            <div className="public-day-banner" style={{
               background: 'var(--card-bg)',
               border: `1px solid ${isSelectedToday ? 'var(--accent)' : 'var(--line)'}`,
               borderRadius: 'var(--radius-lg)',
-              padding: '14px 20px',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               flexWrap: 'wrap',
-              gap: 12,
+              gap: 10,
               boxShadow: isSelectedToday ? '0 2px 12px color-mix(in oklab, var(--accent) 12%, transparent)' : undefined
             }}>
               <div>
@@ -433,7 +434,7 @@ export default function PublicPage() {
                     </span>
                   )}
                 </div>
-                <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-xl)', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>
+                <h2 className="public-day-h2" style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>
                   {formatLongDate(selectedDate)}
                 </h2>
               </div>
@@ -496,7 +497,7 @@ export default function PublicPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
                 {filteredDayEntries.map((e, idx) => {
                   const isPractical = e.type === 'Practical'
                   const isModified = e.cal_source === 'modified'
@@ -550,7 +551,7 @@ export default function PublicPage() {
 
                       {/* Middle row: Subject */}
                       <div>
-                        <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--ink)' }}>
+                        <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--ink)', wordBreak: 'break-word' }}>
                           {e.subject_name}
                         </div>
                         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-soft)', marginTop: 2 }}>
@@ -559,7 +560,7 @@ export default function PublicPage() {
                       </div>
 
                       {/* Bottom row: Teacher + Room */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid var(--line)', marginTop: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8, borderTop: '1px solid var(--line)', marginTop: 2, flexWrap: 'wrap', gap: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--ink-soft)' }}>
                           <User size={13} style={{ color: 'var(--ink-soft)' }} />
                           <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{e.teacher}</span>
@@ -588,7 +589,7 @@ export default function PublicPage() {
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--violation)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>🚫 Cancelled Classes on {formatShortDate(selectedDate)} ({dayData.cancelled.length})</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
                   {dayData.cancelled.map((c, i) => (
                     <div
                       key={i}
@@ -628,7 +629,7 @@ export default function PublicPage() {
         {viewMode === 'week' && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {/* Week info header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
                   Week of {formatShortDate(weekInfo.start)} – {formatShortDate(weekInfo.end)}
@@ -636,7 +637,7 @@ export default function PublicPage() {
                 {weekLoading && <span className="spinner" style={{ width: 14, height: 14 }} />}
               </div>
               <span style={{ fontSize: 11, color: 'var(--ink-soft)', fontFamily: 'var(--font-mono)' }}>
-                Date-aware timetable (reflects live changes & overrides)
+                Date-aware timetable (live overrides)
               </span>
             </div>
 
@@ -660,100 +661,116 @@ export default function PublicPage() {
 
       {/* ── AI Chatbot Drawer ── */}
       {chatOpen && (
-        <div
-          className="t-panel-slide"
-          data-open="true"
-          style={{
-            position: 'fixed', bottom: 0, right: 0,
-            width: isMobile ? '100%' : 520,
-            height: isMobile ? '80vh' : '600px',
-            background: 'var(--card-bg)',
-            borderTop: '1px solid var(--line)',
-            borderLeft: isMobile ? 'none' : '1px solid var(--line)',
-            borderTopLeftRadius: isMobile ? 20 : 12,
-            boxShadow: 'var(--shadow)',
-            display: 'flex', flexDirection: 'column', zIndex: 100,
-          }}
-        >
-          {/* Chat Header */}
-          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 24, height: 24, background: 'var(--accent-soft)', borderRadius: 6, display: 'grid', placeItems: 'center' }}>
-                <Sparkles size={13} style={{ color: 'var(--accent)' }} />
-              </div>
-              <div>
-                <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--ink)' }}>
-                  Timetable Assistant
-                </span>
-                <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginLeft: 8 }}>
-                  ● Active
-                </span>
-              </div>
-            </div>
-            <button className="btn-icon" onClick={() => setChatOpen(false)} title="Close Chat">
-              <X size={14} />
-            </button>
-          </div>
-
-          {/* Chat Messages */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-3)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-            {messages.map((m, i) => (
-              <div key={i} className={`chat-msg ${m.role}`}>
-                <div style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}>
-                  {m.role === 'assistant' ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
-                  ) : m.content}
+        <>
+          {isMobile && (
+            <div
+              className="chat-backdrop"
+              onClick={() => setChatOpen(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0, 0, 0, 0.45)',
+                zIndex: 99,
+                backdropFilter: 'blur(2px)',
+              }}
+            />
+          )}
+          <div
+            className="t-panel-slide"
+            data-open="true"
+            style={{
+              position: 'fixed', bottom: 0, right: 0,
+              width: isMobile ? '100%' : 520,
+              height: isMobile ? '82dvh' : '600px',
+              background: 'var(--card-bg)',
+              borderTop: '1px solid var(--line)',
+              borderLeft: isMobile ? 'none' : '1px solid var(--line)',
+              borderTopLeftRadius: isMobile ? 20 : 12,
+              borderTopRightRadius: isMobile ? 20 : 0,
+              boxShadow: 'var(--shadow)',
+              display: 'flex', flexDirection: 'column', zIndex: 100,
+            }}
+          >
+            {/* Chat Header */}
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 24, height: 24, background: 'var(--accent-soft)', borderRadius: 6, display: 'grid', placeItems: 'center' }}>
+                  <Sparkles size={13} style={{ color: 'var(--accent)' }} />
                 </div>
-              </div>
-            ))}
-
-            {/* Typing Indicator while AI is generating response */}
-            {chatLoading && (
-              <div className="chat-msg assistant chat-typing-indicator">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--ink-soft)' }}>
-                    AI is typing
+                <div>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--ink)' }}>
+                    Timetable Assistant
                   </span>
-                  <div className="chat-typing-dots">
-                    <span className="chat-typing-dot" />
-                    <span className="chat-typing-dot" />
-                    <span className="chat-typing-dot" />
-                  </div>
+                  <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginLeft: 8 }}>
+                    ● Active
+                  </span>
                 </div>
               </div>
-            )}
-
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Chat Input */}
-          <div style={{ padding: '10px var(--sp-3)', borderTop: '1px solid var(--line)' }}>
-            <div className="chat-suggestions" style={{ marginBottom: 8 }}>
-              <button className="chat-suggestion" onClick={() => setInput('What classes are scheduled today?')}>Classes today?</button>
-              <button className="chat-suggestion" onClick={() => setInput('Where is DBMS?')}>Where is DBMS?</button>
-              <button className="chat-suggestion" onClick={() => setInput('What does B.Tech 5th have on Monday?')}>B.Tech 5th Monday?</button>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="form-control"
-                placeholder="Ask about classes, dates, teachers, rooms…"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && sendChat()}
-                disabled={chatLoading}
-              />
-              <button
-                className="btn btn-primary"
-                onClick={sendChat}
-                disabled={!input.trim() || chatLoading}
-                style={{ padding: '0 12px', flexShrink: 0 }}
-                title="Send message"
-              >
-                {chatLoading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={14} />}
+              <button className="btn-icon" onClick={() => setChatOpen(false)} title="Close Chat">
+                <X size={14} />
               </button>
             </div>
+
+            {/* Chat Messages */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-3)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+              {messages.map((m, i) => (
+                <div key={i} className={`chat-msg ${m.role}`}>
+                  <div style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}>
+                    {m.role === 'assistant' ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                    ) : m.content}
+                  </div>
+                </div>
+              ))}
+
+              {/* Typing Indicator while AI is generating response */}
+              {chatLoading && (
+                <div className="chat-msg assistant chat-typing-indicator">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--ink-soft)' }}>
+                      AI is typing
+                    </span>
+                    <div className="chat-typing-dots">
+                      <span className="chat-typing-dot" />
+                      <span className="chat-typing-dot" />
+                      <span className="chat-typing-dot" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Chat Input */}
+            <div style={{ padding: '10px var(--sp-3)', borderTop: '1px solid var(--line)' }}>
+              <div className="chat-suggestions" style={{ marginBottom: 8 }}>
+                <button className="chat-suggestion" onClick={() => setInput('What classes are scheduled today?')}>Classes today?</button>
+                <button className="chat-suggestion" onClick={() => setInput('Where is DBMS?')}>Where is DBMS?</button>
+                <button className="chat-suggestion" onClick={() => setInput('What does B.Tech 5th have on Monday?')}>B.Tech 5th Monday?</button>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="form-control"
+                  placeholder="Ask about classes, dates, teachers, rooms…"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && sendChat()}
+                  disabled={chatLoading}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={sendChat}
+                  disabled={!input.trim() || chatLoading}
+                  style={{ padding: '0 12px', flexShrink: 0 }}
+                  title="Send message"
+                >
+                  {chatLoading ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={14} />}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -791,7 +808,7 @@ function CalendarSection() {
       </button>
       <div className="t-acc-panel">
         <div className="t-acc-panel-inner">
-          <div style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-5)' }}>
+          <div className="pub-cal-wrapper-padding">
             <PublicCalendar />
           </div>
         </div>
