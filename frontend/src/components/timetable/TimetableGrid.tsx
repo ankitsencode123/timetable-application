@@ -19,11 +19,17 @@ interface Props {
   density?: 'comfortable' | 'compact'
   onEntryClick?: (e: TimetableEntry) => void
   showDays?: string[]
+  dayDateMap?: Record<string, string>
+  todayDay?: string
 }
 
-export default function TimetableGrid({ entries, filters, density = 'comfortable', onEntryClick, showDays }: Props) {
+export default function TimetableGrid({ entries, filters, density = 'comfortable', onEntryClick, showDays, dayDateMap, todayDay }: Props) {
   const [selected, setSelected] = useState<TimetableEntry | null>(null)
-  const days = showDays ?? DAYS
+  const days = useMemo(() => {
+    if (showDays) return showDays
+    const hasSunday = entries.some(e => e.day === 'Sunday') || todayDay === 'Sunday'
+    return hasSunday ? ['Sunday', ...DAYS] : [...DAYS]
+  }, [showDays, entries, todayDay])
 
   // Filter entries
   const filtered = useMemo(() => {
@@ -98,21 +104,72 @@ export default function TimetableGrid({ entries, filters, density = 'comfortable
         >
           {/* Header row */}
           <div className="tt-day-header" style={{ background: 'var(--clr-bg-3)' }}>Time</div>
-          {days.map(d => (
-            <div key={d} className="tt-day-header">{d}</div>
-          ))}
+          {days.map(d => {
+            const isToday = d === todayDay
+            const dateLabel = dayDateMap?.[d]
+            return (
+              <div
+                key={d}
+                className={`tt-day-header ${isToday ? 'tt-day-header-today' : ''}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 2,
+                  padding: '6px 4px',
+                  background: isToday ? 'var(--accent-soft)' : undefined,
+                  borderBottom: isToday ? '2px solid var(--accent)' : undefined,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontWeight: isToday ? 700 : 600, color: isToday ? 'var(--accent)' : undefined }}>{d}</span>
+                  {isToday && (
+                    <span style={{
+                      fontSize: 9,
+                      fontFamily: 'var(--font-mono)',
+                      background: 'var(--accent)',
+                      color: 'var(--paper)',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      lineHeight: '1.2'
+                    }}>
+                      Today
+                    </span>
+                  )}
+                </div>
+                {dateLabel && (
+                  <span style={{
+                    fontSize: 10,
+                    fontFamily: 'var(--font-mono)',
+                    color: isToday ? 'var(--accent)' : 'var(--ink-soft)',
+                    fontWeight: isToday ? 600 : 400
+                  }}>
+                    {dateLabel}
+                  </span>
+                )}
+              </div>
+            )
+          })}
 
           {/* Data rows */}
           {dynamicTimeRows.map(row => (
-            <>
-              <div key={`t-${row.label}`} className="tt-time-col" style={{ minHeight: minH }}>
+            <div key={`row-${row.label}`} style={{ display: 'contents' }}>
+              <div className="tt-time-col" style={{ minHeight: minH }}>
                 <span>{row.start}</span>
                 <span style={{ fontSize: '9px', color: 'var(--clr-text-3)', display: 'block', marginTop: 2 }}>{row.end}</span>
               </div>
               {days.map(day => {
                 const cells = getCellEntries(day, row)
+                const isToday = day === todayDay
                 return (
-                  <div key={`${day}-${row.label}`} className="tt-cell" style={{ minHeight: minH }}>
+                  <div
+                    key={`${day}-${row.label}`}
+                    className={`tt-cell ${isToday ? 'tt-cell-today' : ''}`}
+                    style={{ minHeight: minH }}
+                  >
                     {cells.map((entry, i) => (
                       <ClassCell
                         key={`${entry.subject_code}-${entry.teacher}-${i}`}
@@ -127,7 +184,7 @@ export default function TimetableGrid({ entries, filters, density = 'comfortable
                   </div>
                 )
               })}
-            </>
+            </div>
           ))}
         </div>
       </div>

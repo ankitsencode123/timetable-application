@@ -512,6 +512,98 @@ select.form-control, select.input { cursor: pointer; }
 }
 .chat-suggestion:hover { color: var(--ink); border-color: var(--ink-soft); }
 
+/* ── Typing Indicator for AI Chat ────────────────────────── */
+.chat-typing-indicator {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  width: fit-content;
+}
+.chat-typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-typing-dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+  animation: typingDotPulse 1.4s infinite ease-in-out both;
+}
+.chat-typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.chat-typing-dot:nth-child(2) { animation-delay: -0.16s; }
+.chat-typing-dot:nth-child(3) { animation-delay: 0s; }
+
+@keyframes typingDotPulse {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.35;
+  }
+  40% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+/* ── Date-Aware Dashboard Styles ─────────────────────────── */
+.date-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px var(--sp-6);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.date-pill-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--card-bg);
+  cursor: pointer;
+  transition: var(--transition);
+  min-width: 60px;
+}
+.date-pill-btn:hover {
+  background: color-mix(in oklab, var(--ink) 4%, transparent);
+  border-color: var(--ink-soft);
+}
+.date-pill-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+.date-pill-btn.active .date-pill-num,
+.date-pill-btn.active .date-pill-day,
+.date-pill-btn.active .date-pill-sub {
+  color: var(--paper) !important;
+}
+.date-pill-btn.is-today:not(.active) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.date-pill-btn.is-today:not(.active) .date-pill-num {
+  color: var(--accent);
+  font-weight: 700;
+}
+.tt-day-header-today {
+  background: var(--accent-soft) !important;
+  color: var(--accent) !important;
+  border-bottom: 2px solid var(--accent) !important;
+  font-weight: 700 !important;
+}
+.tt-cell-today {
+  background-color: color-mix(in oklab, var(--accent) 3.5%, transparent) !important;
+}
+
 /* ── Conflict-Free Suggestions Container & Cards ──────── */
 .conflict-suggestions-box {
   margin-top: var(--sp-3);
