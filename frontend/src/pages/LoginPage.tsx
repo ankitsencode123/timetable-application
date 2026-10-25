@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
-import { login } from '../api'
+import { login, warmBackend } from '../api'
 import { useAuthStore } from '../store'
 import type { User } from '../types'
 
@@ -17,6 +17,19 @@ export default function LoginPage() {
   // refs for shake animation
   const emailWrapRef = useRef<HTMLDivElement>(null)
   const pwWrapRef = useRef<HTMLDivElement>(null)
+
+  // Optimistic preload: 1) page load wakes the backend (no e-mail needed),
+  // 2) debounced while typing the e-mail. The password is never sent.
+  const warmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    warmBackend('')
+    return () => { if (warmTimer.current) clearTimeout(warmTimer.current) }
+  }, [])
+  useEffect(() => {
+    if (!email) return
+    if (warmTimer.current) clearTimeout(warmTimer.current)
+    warmTimer.current = setTimeout(() => warmBackend(email), 500)
+  }, [email])
 
   const shakeInput = useCallback((ref: React.RefObject<HTMLDivElement | null>) => {
     const el = ref.current?.querySelector('.t-input') as HTMLElement | null
@@ -127,6 +140,7 @@ export default function LoginPage() {
                     placeholder="••••••••"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
+                    onFocus={() => warmBackend(email)}
                     required
                     autoComplete="current-password"
                     style={{ paddingRight: 36 }}

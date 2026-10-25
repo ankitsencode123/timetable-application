@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Clock, Calendar, ArrowRight, X, AlertTriangle, Lightbulb, Home } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Clock, Calendar, ArrowRight, X, AlertTriangle, Lightbulb, Home, Check } from 'lucide-react'
 import type { TimetableEntry } from '../../types'
 import { executeActions } from '../../api'
 
@@ -18,6 +18,21 @@ const TIME_SLOTS = [
   '16:00', '16:30', '17:00', '17:30',
 ]
 
+function renderFormattedMessage(text: string) {
+  if (!text) return null
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={i} style={{ color: 'inherit', fontWeight: 700 }}>{part.slice(2, -2)}</strong>
+        }
+        return <span key={i}>{part}</span>
+      })}
+    </>
+  )
+}
+
 function isRoomSuggestion(rs: any): boolean {
   // A suggestion is a "room change" if the action involves keeping same time but different room
   const action = rs.action
@@ -34,13 +49,50 @@ function isRoomSuggestion(rs: any): boolean {
   return false
 }
 
+function formatSuggestion(rs: any) {
+  const isRoom = isRoomSuggestion(rs)
+  const action = rs.action || {}
+
+  const newDay = action.new_day || action.day || rs.day
+  const newStart = action.new_start_time || action.start_time || rs.start
+  const newEnd = action.new_end_time || action.end_time || rs.end
+  const newRoom = action.new_room || action.room || rs.room || action.spec?.room
+
+  let headline = rs.title || ''
+  if (isRoom && newRoom) {
+    headline = `Change room to ${newRoom}`
+  } else if (newDay && newStart && newEnd) {
+    headline = `Move to ${newDay} · ${newStart}–${newEnd}`
+  } else if (newDay && newStart) {
+    headline = `Move to ${newDay} at ${newStart}`
+  }
+
+  // Clean description to avoid repeating headline verbatim
+  let description = rs.description || ''
+  if (headline && description.toLowerCase().includes(headline.toLowerCase())) {
+    description = 'Conflict-free slot resolving all classroom, teacher, and batch overlaps.'
+  }
+
+  return {
+    isRoom,
+    headline,
+    day: newDay,
+    time: (newStart && newEnd) ? `${newStart}–${newEnd}` : '',
+    room: newRoom,
+    description,
+    status: rs.status || 'Conflict-free and validated'
+  }
+}
+
 export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
   const [newDay, setNewDay] = useState(entry.day)
   const [newStart, setNewStart] = useState(entry.start)
   const [newEnd, setNewEnd] = useState(entry.end)
   const [loading, setLoading] = useState(false)
+  const [applyingIndex, setApplyingIndex] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<any[] | null>(null)
+  const suggestionsRef = useRef<HTMLDivElement | null>(null)
 
   const isCustomEnd = !TIME_SLOTS.includes(newEnd)
 
@@ -83,7 +135,7 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
         const firstResult = result.results?.[0]
         setError(firstResult?.error ?? 'Could not reschedule. Check for conflicts.')
         const raw = firstResult?.suggestions?.rich_suggestions ?? null
-        if (raw) {
+        if (raw && raw.length > 0) {
           // Sort: room suggestions first, then others
           const sorted = [...raw].sort((a, b) => {
             const aRoom = isRoomSuggestion(a) ? 0 : 1
@@ -91,6 +143,9 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
             return aRoom - bRoom
           })
           setSuggestions(sorted)
+          setTimeout(() => {
+            suggestionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          }, 100)
         } else {
           setSuggestions(null)
         }
@@ -102,8 +157,10 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
     }
   }
 
-  async function applySuggestion(action: any) {
-    setLoading(true); setError(null); setSuggestions(null)
+  async function applySuggestion(action: any, index: number) {
+    setLoading(true)
+    setApplyingIndex(index)
+    setError(null)
     try {
       const result = await executeActions([action])
       if (result.success) {
@@ -120,12 +177,15 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
       }
     } catch(err: any) {
        setError(err.message)
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+      setApplyingIndex(null)
+    }
   }
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-sm" style={{ background: 'var(--paper)', maxWidth: 520, maxHeight: 'min(90vh, calc(100vh - 32px))', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div className="modal" style={{ background: 'var(--paper)', maxWidth: 540, width: '100%', maxHeight: 'min(90vh, calc(100vh - 32px))', display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box' }}>
 
         {/* Header */}
         <div className="modal-header" style={{ flexShrink: 0 }}>
@@ -258,44 +318,84 @@ export default function RescheduleModal({ entry, onClose, onSuccess }: Props) {
         {/* Error display */}
         {error && (
           <div style={{
-            marginTop: 'var(--sp-4)', padding: '10px 14px', borderRadius: 8,
+            marginTop: 'var(--sp-4)', padding: '12px 14px', borderRadius: 8,
             background: 'var(--violation-soft)', border: '1px solid color-mix(in oklab, var(--violation) 25%, transparent)',
-            color: 'var(--violation)', fontSize: 'var(--fs-xs)', display: 'flex', alignItems: 'flex-start', gap: 8
+            color: 'var(--violation)', fontSize: 'var(--fs-xs)', display: 'flex', alignItems: 'flex-start', gap: 10,
+            flexShrink: 0, lineHeight: 1.45
           }}>
-            <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} />
-            {error}
+            <AlertTriangle size={16} style={{ marginTop: 2, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+              {renderFormattedMessage(error)}
+            </div>
           </div>
         )}
 
         {/* Suggestion Engine logic — rooms first, then others */}
         {suggestions && suggestions.length > 0 && (
-          <div style={{ marginTop: 'var(--sp-3)', padding: '12px 14px', background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 8, maxHeight: 220, overflowY: 'auto' }}>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--accent)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-              <Lightbulb size={12} /> Conflict-Free Alternatives
+          <div ref={suggestionsRef} className="conflict-suggestions-box">
+            <div className="conflict-suggestions-header">
+              <div className="conflict-suggestions-title">
+                <Lightbulb size={13} />
+                <span>Conflict-Free Alternatives</span>
+              </div>
+              <span className="conflict-suggestions-badge">
+                {suggestions.length} {suggestions.length === 1 ? 'option available' : 'options available'}
+              </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="conflict-suggestions-subtitle">
+              Choose an alternative slot verified to have zero conflicts with faculty, rooms, or student batches:
+            </div>
+            <div className="conflict-suggestions-list">
               {suggestions.map((rs: any, i: number) => {
-                const isRoom = isRoomSuggestion(rs)
+                const info = formatSuggestion(rs)
+                const isApplyingThis = loading && applyingIndex === i
                 return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 12px', background: 'var(--paper)', border: `1px solid color-mix(in oklab, ${isRoom ? 'var(--accent)' : 'var(--line)'} 40%, transparent)`, borderRadius: 6 }}>
-                    <div>
-                      {isRoom && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                          <Home size={10} style={{ color: 'var(--accent)' }} />
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Room change</span>
+                  <div
+                    key={i}
+                    className={`suggestion-card ${info.isRoom ? 'is-room' : ''}`}
+                  >
+                    <div className="suggestion-card-content">
+                      <div className="suggestion-card-badges">
+                        {info.isRoom ? (
+                          <span className="suggestion-type-pill room">
+                            <Home size={10} /> Room change
+                          </span>
+                        ) : (
+                          <span className="suggestion-type-pill reschedule">
+                            <Calendar size={10} /> Alternative slot
+                          </span>
+                        )}
+                        <span className="suggestion-status-pill">
+                          <Check size={11} /> {info.status}
+                        </span>
+                      </div>
+                      <div className="suggestion-slot-title">
+                        <span>{info.headline}</span>
+                        {info.room && !info.isRoom && (
+                          <span className="suggestion-room-tag">
+                            Room {info.room}
+                          </span>
+                        )}
+                      </div>
+                      {info.description && (
+                        <div className="suggestion-desc">
+                          {info.description}
                         </div>
                       )}
-                      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--ink)' }}>{rs.title}</div>
-                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>{rs.description}</div>
                     </div>
-                    <button 
-                      onClick={() => applySuggestion(rs.action)}
-                      className="btn btn-primary btn-sm"
-                      disabled={loading}
-                      style={{ flexShrink: 0 }}
-                    >
-                      Apply
-                    </button>
+                    <div className="suggestion-apply-action">
+                      <button 
+                        onClick={() => applySuggestion(rs.action, i)}
+                        className="btn btn-primary suggestion-apply-btn"
+                        disabled={loading}
+                      >
+                        {isApplyingThis ? (
+                          <>Applying…</>
+                        ) : (
+                          <><Check size={13} /> Apply Suggestion</>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )
               })}

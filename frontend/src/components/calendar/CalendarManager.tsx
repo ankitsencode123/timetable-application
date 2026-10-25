@@ -556,13 +556,29 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
                   {modSuggestions.slice(0, 6).map((rs: any, i: number) => {
                     const isRoom = !!(rs.action?.spec?.room || rs.action?.new_room)
                     return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', background: 'var(--card-bg)', border: `1px solid color-mix(in oklab, ${isRoom ? 'var(--accent)' : 'var(--line)'} 40%, transparent)`, borderRadius: 6 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          {isRoom && <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 1 }}><Home size={9} style={{ color: 'var(--accent)' }} /><span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: 'var(--accent)', textTransform: 'uppercase' }}>Room change</span></div>}
-                          <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rs.title}</div>
-                          <div style={{ fontSize: 10, color: 'var(--ink-soft)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rs.description}</div>
+                      <div key={i} className={`suggestion-card ${isRoom ? 'is-room' : ''}`} style={{ padding: '9px 12px' }}>
+                        <div className="suggestion-card-content">
+                          {isRoom && (
+                            <div className="suggestion-card-badges">
+                              <span className="suggestion-type-pill room">
+                                <Home size={9} /> Room change
+                              </span>
+                            </div>
+                          )}
+                          <div className="suggestion-slot-title" style={{ fontSize: 'var(--fs-xs)' }}>
+                            {rs.title}
+                          </div>
+                          {rs.description && (
+                            <div className="suggestion-desc">
+                              {rs.description}
+                            </div>
+                          )}
                         </div>
-                        <button className="btn btn-primary btn-sm" style={{ flexShrink: 0, fontSize: 10 }} onClick={() => applyModSuggestion(rs)}>Use</button>
+                        <div className="suggestion-apply-action">
+                          <button className="btn btn-primary suggestion-apply-btn" style={{ padding: '5px 12px', fontSize: 11 }} onClick={() => applyModSuggestion(rs)}>
+                            Apply
+                          </button>
+                        </div>
                       </div>
                     )
                   })}

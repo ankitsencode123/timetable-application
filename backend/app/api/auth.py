@@ -74,6 +74,13 @@ def login(body: dict, response: Response, db: Session = Depends(get_db)):
     refresh = create_refresh_token(str(user.id))
     store_refresh_token(db, user.id, refresh)
 
+    # Belt and braces: make sure the dashboard bundle is hot right at login.
+    try:
+        from app.services.preload import kick_preload
+        kick_preload("post-login")
+    except Exception:
+        pass
+
     # Set refresh token in HttpOnly cookie
     response.set_cookie(
         key=_COOKIE, value=refresh,

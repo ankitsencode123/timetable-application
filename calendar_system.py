@@ -108,7 +108,7 @@ MAX_WINDOW_DAYS = 366          # longest validity window
 MAX_PUBLIC_RANGE_DAYS = 62
 MAX_ADMIN_RANGE_DAYS = 366
 MIN_DATE, MAX_DATE = dt.date(2000, 1, 1), dt.date(2100, 12, 31)
-PUBLIC_CACHE_SECONDS = 30
+PUBLIC_CACHE_SECONDS = 15
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 SEMESTERS = {"1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"}

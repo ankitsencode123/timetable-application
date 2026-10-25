@@ -23,7 +23,7 @@ from app.actions.concurrency import (
     resolve_expected_version,
     current_head,
 )
-from app.services.email_service import notify_teachers_of_changes
+from app.services import notification_service as notif
 
 router = APIRouter()
 _parser = ActionParser()
@@ -143,7 +143,7 @@ def execute_actions(
     response.headers.update(guarded.response_headers())
 
     if result.success or result.partial_applied:
-        background_tasks.add_task(notify_teachers_of_changes, result, db)
+        notif.publish_engine_result(result, actor=user)
 
     return ActionExecuteResponse(
         success=result.success,
@@ -225,7 +225,7 @@ def chat_execute(
 
     # Dispatch email notification in the background
     if result.success or result.partial_applied:
-        background_tasks.add_task(notify_teachers_of_changes, result, db)
+        notif.publish_engine_result(result, actor=user)
 
     # Build rich execution result
     exec_response = ActionExecuteResponse(

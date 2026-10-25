@@ -49,7 +49,13 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    from app.services import notification_service as notif
+    notif.ensure_notification_schema(engine)
+    notif.start_worker()
+
     yield
+
+    notif.stop_worker()
 
 
 app = FastAPI(
@@ -62,8 +68,21 @@ app = FastAPI(
 from app.actions.concurrency import install_concurrency_handlers  # noqa: E402
 install_concurrency_handlers(app)
 
+from app.services.semantic_cache import install_semantic_cache  # noqa: E402
+install_semantic_cache(app)
+
 from app.services.cache_layer import install_cache  # noqa: E402
 install_cache(app)
+
+# Optimistic preloading (login-page warm-up + RAM-served dashboard data).
+# Must run AFTER install_cache and BEFORE include_router so the shadow GET
+# routes below win over the original DB-backed handlers.
+from app.services.preload import install_preload  # noqa: E402
+install_preload(
+    app,
+    versions_prefix="/api/versions",        # GET /api/versions, GET /api/versions/{id}
+    draft_path="/api/timetable/draft",      # GET /api/timetable/draft
+)
 
 _cors_origins = settings.cors_origin_list
 _allow_all = _cors_origins == ["*"]

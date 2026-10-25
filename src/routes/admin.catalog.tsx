@@ -256,15 +256,6 @@ function CatalogPage() {
                     <option>Lab</option>
                   </Select>
                 </Field>
-                <Field label="Weekly hours">
-                  <Input
-                    type="number"
-                    value={subjectForm.weekly_hours}
-                    onChange={(e) =>
-                      setSubjectForm({ ...subjectForm, weekly_hours: e.target.value })
-                    }
-                  />
-                </Field>
               </div>
               <Button variant="primary" size="sm" type="submit">
                 Create subject

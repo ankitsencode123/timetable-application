@@ -157,16 +157,29 @@ _MONTHS = {
     "december": 12, "dec": 12,
 }
 _WD = {
-    "monday": 0, "mon": 0, "tuesday": 1, "tues": 1, "tue": 1, "wednesday": 2, "wed": 2,
-    "thursday": 3, "thurs": 3, "thur": 3, "thu": 3, "friday": 4, "fri": 4,
-    "saturday": 5, "sat": 5, "sunday": 6, "sun": 6,
+    # Monday
+    "monday": 0, "mon": 0, "mnday": 0, "mndy": 0,
+    # Tuesday
+    "tuesday": 1, "tues": 1, "tue": 1, "tueday": 1, "tuesay": 1, "teusday": 1, "tuesdy": 1,
+    # Wednesday
+    "wednesday": 2, "wed": 2, "wednesay": 2, "wensday": 2, "wednessday": 2, "wedneday": 2,
+    "wedensday": 2, "wendsday": 2, "wenezday": 2, "wenzday": 2, "wendesday": 2,
+    # Thursday
+    "thursday": 3, "thurs": 3, "thur": 3, "thu": 3, "thursay": 3, "thrusday": 3, "thurday": 3,
+    "thursady": 3, "thuday": 3,
+    # Friday
+    "friday": 4, "fri": 4, "firday": 4, "fridye": 4,
+    # Saturday
+    "saturday": 5, "sat": 5, "satruday": 5, "saturdy": 5, "strday": 5,
+    # Sunday
+    "sunday": 6, "sun": 6, "sundy": 6,
 }
 _NUMW = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
          "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fourteen": 14, "fifteen": 15,
          "twenty": 20, "thirty": 30}
 _MONTH = "(?:" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + ")"
 _WDX = "(?:" + "|".join(sorted(_WD, key=len, reverse=True)) + ")"
-_WD_FULL = "(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+_WD_FULL = "(?:monday|tuesday|wednesday|wednesay|wensday|wednessday|thursday|thursay|thrusday|friday|saturday|sunday)"
 _NUM = r"(?:\d{1,3}|" + "|".join(sorted(_NUMW, key=len, reverse=True)) + ")"
 _ORD = r"(?:st|nd|rd|th)"
 
@@ -231,7 +244,12 @@ def _note(notes: list, msg: str) -> None:
 def _upcoming_weekday(today: dt.date, wd: int, modifier: Optional[str]) -> dt.date:
     if modifier == "next":
         return today - dt.timedelta(days=today.weekday()) + dt.timedelta(days=7 + wd)
-    if modifier == "last":
+    if modifier in ("coming", "upcoming", "this coming"):
+        delta = (wd - today.weekday()) % 7
+        if delta == 0:
+            delta = 7
+        return today + dt.timedelta(days=delta)
+    if modifier in ("last", "previous"):
         delta = (today.weekday() - wd) % 7 or 7
         return today - dt.timedelta(days=delta)
     return today + dt.timedelta(days=(wd - today.weekday()) % 7)
@@ -481,7 +499,18 @@ def _h_mod_monthname(m, t):
 
 
 def _h_weekday(m, t):
-    mod = {"this": "this", "next": "next", "last": "last", "previous": "last"}.get(m.group(1))
+    raw_mod = m.group(1).lower().strip() if m.group(1) else None
+    mod_map = {
+        "this": "this",
+        "this coming": "coming",
+        "coming": "coming",
+        "upcoming": "upcoming",
+        "next": "next",
+        "following": "next",
+        "last": "last",
+        "previous": "last",
+    }
+    mod = mod_map.get(raw_mod)
     return {"kind": "weekday", "weekday": _WD[m.group(2)], "modifier": mod}
 
 
@@ -525,7 +554,7 @@ _DATE_PATTERNS = [
     (re.compile(r"\b(?:(this|next|coming|upcoming|last|previous)\s+)?weekend\b"), _h_weekend),
     (re.compile(r"\b(this|current|next|coming|upcoming|following|last|previous|past)\s+month\b"), _h_rel_month),
     (re.compile(rf"\b(this|next|coming|upcoming|last|previous)\s+({_MONTH})\b"), _h_mod_monthname),
-    (re.compile(rf"\b(?:(this|next|last|coming|upcoming|previous|following)\s+)?({_WDX})\b"), _h_weekday),
+    (re.compile(rf"\b(?:(this\s+coming|this|next|last|coming|upcoming|previous|following)\s+)?({_WDX})(?:\s+day)?\b"), _h_weekday),
     (re.compile(rf"\b(?:month\s+of\s+)?({_MONTH})\b\.?(?:\s*,?\s*(\d{{4}})\b)?"), _h_month_only),
     (re.compile(r"(?<![\d/.\-:])(20\d{2})(?![\d/:])(?!\s*(?:-|to)\s*\d)"), _h_year),
 ]
@@ -1787,12 +1816,16 @@ def answer_calendar_question(db: Session, message: str, user: Any = None, *,
                               "e.g. “classes of Dr. Sharma on 4th October”.")
             else:
                 _note(notes, "I couldn't match your account to a teacher, so the holidays shown are for everyone.")
-        elif not mode_teacher and first_person and not explicit_scope and (set(intents) & {"schedule", "changes", "next_class"}):
-            return _reply("I can't tell who “I/my” is without logging in. Tell me a programme and semester "
-                          "(e.g. “B.Tech 3rd sem”) or a teacher's name, or log in as a teacher.")
+        elif not mode_teacher and first_person and not explicit_scope:
+            if "next_class" in intents and not f.any:
+                return _reply("Whose next class? Tell me your programme and semester (e.g. “B.Tech 3rd sem”) or a teacher's name.")
+            wants_all = bool(re.search(r"\b(?:all|whole|complete|every)\s+classes\b|\ball\b", t))
+            if wants_all:
+                _note(notes, "Showing all scheduled classes.")
+            else:
+                _note(notes, "Showing all classes. Mention your programme and semester (e.g. “B.Tech 3rd sem”) to view your batch's schedule.")
         if "next_class" in intents and not f.any and not f.self_mode:
-            return _reply("Whose next class? Tell me a programme and semester (e.g. “B.Tech 3rd sem”) or a "
-                          "teacher's name — or log in as a teacher and ask “what's my next class?”.")
+            return _reply("Whose next class? Tell me a programme and semester (e.g. “B.Tech 3rd sem”) or a teacher's name.")
 
         # ── 6. build sections ──────────────────────────────────────────────
         parts: list = []

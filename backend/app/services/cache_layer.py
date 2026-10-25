@@ -136,7 +136,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
@@ -332,7 +332,8 @@ class KeyedThrottle:
 
 
 class AsyncSlidingWindow:
-    """Global budget (e.g. Groq requests per minute). Waits for a slot up to max_wait."""
+    """Global budget (e.g. Groq requests per minute). Waits for a slot up to max_wait.
+    `reserve` keeps that many slots free for live traffic (used by warm-up)."""
 
     def __init__(self, max_calls: int, window: float = 60.0) -> None:
         self.max_calls = max(1, max_calls)
@@ -343,13 +344,14 @@ class AsyncSlidingWindow:
         now = time.monotonic()
         return sum(1 for t in self._ts if now - t < self.window)
 
-    async def acquire(self, max_wait: float) -> bool:
+    async def acquire(self, max_wait: float, reserve: int = 0) -> bool:
         deadline = time.monotonic() + max_wait
+        limit = max(1, self.max_calls - max(0, reserve))
         while True:
             now = time.monotonic()
             while self._ts and now - self._ts[0] >= self.window:
                 self._ts.popleft()
-            if len(self._ts) < self.max_calls:
+            if len(self._ts) < limit:
                 self._ts.append(now)  # check-and-take is atomic (no await in between)
                 return True
             wait = self.window - (now - self._ts[0]) + 0.05
@@ -674,10 +676,36 @@ _CTX_CACHE = TTLCache(64, "schedule_context")
 _CTX_TTL = 60.0
 
 
+_INVALIDATION_LISTENERS: List[Callable[[str], None]] = []
+_PURGE_LISTENERS: List[Callable[[], None]] = []
+_STATS_PROVIDERS: Dict[str, Callable[[], Dict[str, Any]]] = {}
+
+
+def register_cache_hooks(
+    *,
+    on_invalidate: Optional[Callable[[str], None]] = None,
+    on_purge: Optional[Callable[[], None]] = None,
+    stats_name: Optional[str] = None,
+    stats_fn: Optional[Callable[[], Dict[str, Any]]] = None,
+) -> None:
+    """Register callbacks from companion cache tiers (e.g. semantic_cache)."""
+    if on_invalidate is not None and on_invalidate not in _INVALIDATION_LISTENERS:
+        _INVALIDATION_LISTENERS.append(on_invalidate)
+    if on_purge is not None and on_purge not in _PURGE_LISTENERS:
+        _PURGE_LISTENERS.append(on_purge)
+    if stats_name and stats_fn is not None:
+        _STATS_PROVIDERS[stats_name] = stats_fn
+
+
 def invalidate_timetable_data(reason: str = "manual") -> None:
-    """Drop snapshot + schedule-context caches. Safe to call from any thread."""
+    """Drop snapshot + schedule-context caches (+ notify companion tiers). Safe from any thread."""
     STORE.invalidate()
     _CTX_CACHE.clear()
+    for fn in tuple(_INVALIDATION_LISTENERS):
+        try:
+            fn(reason)
+        except Exception as exc:
+            logger.debug(f"[cache] invalidation listener error: {exc}")
     METRICS.inc("invalidations")
     logger.debug(f"[cache] timetable caches invalidated ({reason})")
 
@@ -1264,7 +1292,7 @@ def _require_admin(user: User = Depends(get_current_user)) -> User:
 
 def collect_stats() -> Dict[str, Any]:
     snap = STORE.peek()
-    return {
+    out: Dict[str, Any] = {
         "uptime_seconds": int(time.time() - METRICS.started_at),
         "metrics": METRICS.snapshot(),
         "snapshot": None if snap is None else {
@@ -1281,6 +1309,12 @@ def collect_stats() -> Dict[str, Any]:
         "schedule_context_cache": _CTX_CACHE.stats(),
         "config": asdict(CFG),
     }
+    for name, fn in tuple(_STATS_PROVIDERS.items()):
+        try:
+            out[name] = fn()
+        except Exception as exc:
+            logger.debug(f"[cache] stats provider {name} failed: {exc}")
+    return out
 
 
 @admin_router.get("/stats")
@@ -1295,8 +1329,13 @@ async def cache_purge(_: User = Depends(_require_admin)):
 
 
 def purge_all_caches() -> None:
-    """Admin / emergency: clear AI answers and force a snapshot rebuild."""
+    """Admin / emergency: clear AI answers (L1 + companion L2) and force a snapshot rebuild."""
     CHAT_CACHE.clear()
+    for fn in tuple(_PURGE_LISTENERS):
+        try:
+            fn()
+        except Exception as exc:
+            logger.debug(f"[cache] purge listener error: {exc}")
     invalidate_timetable_data("purge")
 
 

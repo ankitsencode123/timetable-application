@@ -22,3 +22,18 @@ def test_teacher_chat_accessible(client, auth_headers):
         )
         assert resp.status_code == 200
         assert "action" in resp.json()["message"].lower()
+
+def test_public_chat_student_queries(client):
+    queries = [
+        "hey AI what classes do i have on this coming wednesay?",
+        "hey AI what classes do i have on this coming wednesay? I want all the classes",
+        "hey AI what classes are there on this coming wednesay?",
+    ]
+    for q in queries:
+        resp = client.post("/api/public/chat", json={"message": q})
+        assert resp.status_code == 200
+        msg = resp.json()["message"]
+        # Ensure it resolves Wednesday and does not return "I can't tell who I/my is without logging in"
+        assert "Wednesday" in msg
+        assert "without logging in" not in msg.lower()
+

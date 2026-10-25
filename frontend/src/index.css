@@ -511,6 +511,211 @@ select.form-control, select.input { cursor: pointer; }
   cursor: pointer; transition: var(--transition);
 }
 .chat-suggestion:hover { color: var(--ink); border-color: var(--ink-soft); }
+
+/* ── Conflict-Free Suggestions Container & Cards ──────── */
+.conflict-suggestions-box {
+  margin-top: var(--sp-3);
+  padding: 14px 16px;
+  background: color-mix(in oklab, var(--card-bg) 95%, var(--accent));
+  border: 1.5px solid color-mix(in oklab, var(--accent) 30%, var(--line));
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.conflict-suggestions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.conflict-suggestions-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.conflict-suggestions-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+}
+
+.conflict-suggestions-subtitle {
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+  line-height: 1.35;
+  margin-top: -4px;
+}
+
+.conflict-suggestions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.suggestion-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.15s ease-in-out;
+}
+
+.suggestion-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.suggestion-card.is-room {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line));
+}
+
+.suggestion-card-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.suggestion-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.suggestion-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.suggestion-type-pill.reschedule {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.suggestion-type-pill.room {
+  background: color-mix(in oklab, var(--amber) 18%, transparent);
+  color: var(--amber);
+}
+
+.suggestion-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.suggestion-slot-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.suggestion-room-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+
+.suggestion-desc {
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
+.suggestion-apply-action {
+  flex-shrink: 0;
+}
+
+.suggestion-apply-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: var(--radius);
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+@media (max-width: 540px) {
+  .conflict-suggestions-box {
+    padding: 10px 12px;
+  }
+  .suggestion-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 11px 12px;
+  }
+  .suggestion-apply-action {
+    width: 100%;
+  }
+  .suggestion-apply-btn {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: var(--fs-sm);
+  }
+  .suggestion-slot-title {
+    font-size: 13.5px;
+  }
+}
+
 .chat-input-row { display: flex; gap: var(--sp-2); align-items: flex-end; }
 .chat-textarea {
   flex: 1; background: var(--card-bg); border: 1px solid var(--line);

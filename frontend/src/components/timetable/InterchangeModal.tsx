@@ -234,15 +234,17 @@ export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
         {/* Error & violations */}
         {error && (
           <div style={{
-            marginTop: 8, padding: '10px 14px', borderRadius: 8,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
-            color: '#f87171', fontSize: 'var(--fs-xs)',
+            marginTop: 'var(--sp-3)', padding: '12px 14px', borderRadius: 8,
+            background: 'var(--violation-soft)', border: '1px solid color-mix(in oklab, var(--violation) 25%, transparent)',
+            color: 'var(--violation)', fontSize: 'var(--fs-xs)', flexShrink: 0, lineHeight: 1.45
           }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-              <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} />
-              <div>
-                <div style={{ fontWeight: 700, marginBottom: 2 }}>{error}</div>
-                {violations.map((v, i) => <div key={i}>{v}</div>)}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <AlertTriangle size={16} style={{ marginTop: 2, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+                <div style={{ fontWeight: 700, marginBottom: violations.length > 0 ? 4 : 0 }}>{error}</div>
+                {violations.map((v, i) => (
+                  <div key={i} style={{ marginTop: 2, opacity: 0.9 }}>• {v}</div>
+                ))}
               </div>
             </div>
           </div>
@@ -250,50 +252,55 @@ export default function InterchangeModal({ entry, onClose, onSuccess }: Props) {
 
         {/* Suggestions */}
         {suggestions.length > 0 && (
-          <div style={{
-            marginTop: 'var(--sp-4)', padding: '12px 14px',
-            background: 'rgba(16, 185, 129, 0.05)',
-            border: '1px solid rgba(16, 185, 129, 0.25)',
-            borderRadius: 8,
-            maxHeight: 220,
-            overflowY: 'auto'
-          }}>
-            <div style={{
-              fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
-              color: '#10b981', marginBottom: 8, textTransform: 'uppercase',
-              letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: 5
-            }}>
-              <CheckCircle2 size={12} /> Conflict-Free Alternative Matches
+          <div className="conflict-suggestions-box" style={{ marginTop: 'var(--sp-4)' }}>
+            <div className="conflict-suggestions-header">
+              <div className="conflict-suggestions-title">
+                <CheckCircle2 size={13} style={{ color: '#10b981' }} />
+                <span>Conflict-Free Alternatives</span>
+              </div>
+              <span className="conflict-suggestions-badge" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.25)' }}>
+                {suggestions.length} {suggestions.length === 1 ? 'match available' : 'matches available'}
+              </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {suggestions.map((s, i) => (
-                <label
-                  key={i}
-                  style={{
-                    display: 'flex', alignItems: 'flex-start', gap: 10,
-                    padding: '8px 10px', borderRadius: 6, cursor: 'pointer',
-                    background: selectedSuggestionIdx === i ? 'rgba(16, 185, 129, 0.12)' : 'var(--paper)',
-                    border: `1.5px solid ${selectedSuggestionIdx === i ? '#10b981' : 'var(--line)'}`,
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="interchange-suggestion"
-                    checked={selectedSuggestionIdx === i}
-                    onChange={() => setSelectedSuggestionIdx(i)}
-                    style={{ marginTop: 3 }}
-                  />
-                  <div style={{ fontSize: 'var(--fs-xs)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#10b981' }}>
-                      <CheckCircle2 size={12} /> {s.title}
+            <div className="conflict-suggestions-subtitle">
+              Select a validated swap or alternative schedule to resolve conflicts:
+            </div>
+            <div className="conflict-suggestions-list">
+              {suggestions.map((s, i) => {
+                const isSelected = selectedSuggestionIdx === i
+                return (
+                  <label
+                    key={i}
+                    className="suggestion-card"
+                    style={{
+                      cursor: 'pointer',
+                      border: isSelected ? '1.5px solid #10b981' : '1.5px solid var(--line)',
+                      background: isSelected ? 'rgba(16, 185, 129, 0.06)' : 'var(--paper)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%' }}>
+                      <input
+                        type="radio"
+                        name="interchange-suggestion"
+                        checked={isSelected}
+                        onChange={() => setSelectedSuggestionIdx(i)}
+                        style={{ marginTop: 3, accentColor: '#10b981' }}
+                      />
+                      <div className="suggestion-card-content">
+                        <div className="suggestion-slot-title" style={{ color: isSelected ? '#047857' : 'var(--ink)' }}>
+                          <CheckCircle2 size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                          <span>{s.title}</span>
+                        </div>
+                        {s.description && (
+                          <div className="suggestion-desc">
+                            {s.description}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {s.description && (
-                      <div style={{ color: 'var(--clr-text-3)', marginTop: 2 }}>{s.description}</div>
-                    )}
-                  </div>
-                </label>
-              ))}
+                  </label>
+                )
+              })}
             </div>
           </div>
         )}

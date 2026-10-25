@@ -8,8 +8,29 @@ import type {
   CatalogTeacher, CatalogSubject, CatalogProgram,
 } from './types';
 
-const envBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL;
-const BASE = envBaseUrl ? `${envBaseUrl.replace(/\/+$/, '')}/api` : '/api';
+function getApiBase(): string {
+  const envBaseUrl = ((import.meta as any).env?.VITE_API_BASE_URL || '') as string;
+  let cleanBase = envBaseUrl ? envBaseUrl.replace(/\/+$/, '') : '';
+
+  // 0.0.0.0 is a server-side bind address (INADDR_ANY).
+  // In web browsers, calling 0.0.0.0 is rejected or blocked with "NetworkError when attempting to fetch resource."
+  // When running locally in dev mode (Vite dev server on port 5173), route through '/api' proxy.
+  if (typeof window !== 'undefined') {
+    if (window.location.port === '5173' || !cleanBase || cleanBase.includes('0.0.0.0') || cleanBase.includes('localhost') || cleanBase.includes('127.0.0.1')) {
+      return '/api';
+    }
+    if (cleanBase.includes('0.0.0.0')) {
+      const host = window.location.hostname && window.location.hostname !== '0.0.0.0'
+        ? window.location.hostname
+        : 'localhost';
+      cleanBase = cleanBase.replace('0.0.0.0', host);
+    }
+  }
+
+  return cleanBase ? (cleanBase.endsWith('/api') ? cleanBase : `${cleanBase}/api`) : '/api';
+}
+
+const BASE = getApiBase();
 
 // ── CSRF helper ──────────────────────────────────────────────────────────────
 // The server sets a readable `csrf_token` cookie (NOT httponly).
@@ -47,9 +68,11 @@ export function formatViolation(v: any): string {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isJson = !init.headers?.toString().includes('urlencoded');
+  const token = localStorage.getItem('access_token');
   const headers: HeadersInit = {
     ...(isJson ? { 'Content-Type': 'application/json' } : {}),
     ...(init.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init.method.toUpperCase()) ? csrfHeaders() : {}),
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(init.headers ?? {}),
   };
 
@@ -125,17 +148,52 @@ export async function login(form: LoginForm): Promise<AuthResponse> {
     throw err;
   }
   const data = await res.json();
+  if (data.access_token) localStorage.setItem('access_token', data.access_token);
+  if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
   if (data.csrf_token) localStorage.setItem('csrf_token', data.csrf_token);
   return data;
 }
 
+// ── Optimistic preload (login page) ──────────────────────────────────────────
+// Fire-and-forget hint to the backend that someone is about to log in: wakes
+// the server, warms DB/crypto and preloads dashboard data into RAM.
+// NEVER include the password. Errors are ignored.
+
+const WARM_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+let _warmLastEmail = '';
+let _warmLastAt = 0;
+
+export function warmBackend(email: string = ''): void {
+  const e = (email || '').trim().toLowerCase();
+  const valid = WARM_EMAIL_RE.test(e);
+  if (valid && e === _warmLastEmail && Date.now() - _warmLastAt < 15000) return;
+  if (valid) { _warmLastEmail = e; _warmLastAt = Date.now(); }
+  try {
+    fetch(`${BASE}/preload/warm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(valid ? { email: e } : {}),
+      credentials: 'omit',
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* best effort */
+  }
+}
+
 export async function logout(): Promise<void> {
   await request('/auth/logout', { method: 'POST' });
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
   localStorage.removeItem('csrf_token');
 }
 
 export async function refreshSession(): Promise<AuthResponse> {
-  const data = await request<AuthResponse>('/auth/refresh', { method: 'POST' });
+  const refreshToken = localStorage.getItem('refresh_token');
+  const headers: HeadersInit = refreshToken ? { 'Authorization': `Bearer ${refreshToken}` } : {};
+  const data = await request<AuthResponse>('/auth/refresh', { method: 'POST', headers });
+  if (data.access_token) localStorage.setItem('access_token', data.access_token);
+  if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
   if (data.csrf_token) localStorage.setItem('csrf_token', data.csrf_token);
   return data;
 }

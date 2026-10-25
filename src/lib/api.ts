@@ -3,7 +3,7 @@
 const ENV_BASE = (import.meta as { env?: Record<string, string | undefined> }).env?.[
   "VITE_API_BASE_URL"
 ];
-export const DEFAULT_API_BASE = ENV_BASE || "http://localhost:8000";
+export const DEFAULT_API_BASE = ENV_BASE || "http://0.0.0.0:8000";
 
 const BASE_KEY = "tt.apiBase";
 const SESSION_KEY = "tt.session";

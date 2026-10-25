@@ -49,6 +49,21 @@ function violationMessage(v: Record<string, string>): string {
 const ROOMS = ['R#205', 'R#207A', 'R#207B', 'R#208', 'R#209', 'R#303', 'R#403']
 const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
 
+function renderFormattedMessage(text: string) {
+  if (!text) return null
+  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={i} style={{ color: 'inherit', fontWeight: 700 }}>{part.slice(2, -2)}</strong>
+        }
+        return <span key={i}>{part}</span>
+      })}
+    </>
+  )
+}
+
 function TargetSelector({ entries, onSelect, label = 'Select Class', selected }: {
   entries: TimetableEntry[], onSelect: (e: TimetableEntry) => void, label?: string, selected?: TimetableEntry | null
 }) {
@@ -379,10 +394,10 @@ export default function ActionForm({ actionType, onClose }: Props) {
               {/* Error reason */}
               <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <AlertCircle size={20} style={{ color: 'var(--clr-error)', flexShrink: 0, marginTop: 2 }} />
-                <div>
+                <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
                   <div style={{ fontWeight: 600, color: 'var(--clr-error)', fontSize: 'var(--fs-sm)' }}>Action blocked by a constraint</div>
-                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)', marginTop: 4 }}>
-                    {failedActionResult?.error || 'Unknown constraint violation.'}
+                  <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)', marginTop: 4, lineHeight: 1.4 }}>
+                    {renderFormattedMessage(failedActionResult?.error || 'Unknown constraint violation.')}
                   </div>
                 </div>
               </div>
@@ -394,35 +409,57 @@ export default function ActionForm({ actionType, onClose }: Props) {
                   <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)', fontWeight: 500 }}>Searching for smart alternatives…</div>
                 </div>
               ) : (s?.rich_suggestions?.length ?? 0) > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--clr-text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
-                    <Lightbulb size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />Smart Suggestions
+                <div className="conflict-suggestions-box" style={{ marginTop: 0 }}>
+                  <div className="conflict-suggestions-header">
+                    <div className="conflict-suggestions-title">
+                      <Lightbulb size={13} />
+                      <span>Smart Suggestions</span>
+                    </div>
+                    <span className="conflict-suggestions-badge">
+                      {(s?.rich_suggestions || []).length} options
+                    </span>
                   </div>
-                  {(s?.rich_suggestions || []).map((rs: any, i: number) => (
-                    <label key={i} style={{
-                      background: 'var(--clr-primary-10)',
-                      border: `1px solid ${selectedIndex === i ? 'var(--clr-primary)' : 'var(--clr-primary-20)'}`,
-                      borderRadius: 'var(--radius)',
-                      padding: '10px 14px',
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'flex-start',
-                      cursor: 'pointer'
-                    }}>
-                      <input type="radio" name="action-rich-suggestion" checked={selectedIndex === i} onChange={() => setSelectedIndex(i)} style={{ marginTop: 3 }} />
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--clr-text)' }}>
-                          Suggestion {i + 1}: {rs.title}
-                        </span>
-                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-2)' }}>
-                          — {rs.description}
-                        </span>
-                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-success)', fontWeight: 600 }}>
-                          {rs.status || 'Conflict-free and validated'}
-                        </span>
-                      </div>
-                    </label>
-                  ))}
+                  <div className="conflict-suggestions-list">
+                    {(s?.rich_suggestions || []).map((rs: any, i: number) => {
+                      const isSelected = selectedIndex === i
+                      return (
+                        <label
+                          key={i}
+                          className="suggestion-card"
+                          style={{
+                            cursor: 'pointer',
+                            border: isSelected ? '1.5px solid var(--accent)' : '1.5px solid var(--line)',
+                            background: isSelected ? 'var(--accent-soft)' : 'var(--paper)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%' }}>
+                            <input
+                              type="radio"
+                              name="action-rich-suggestion"
+                              checked={isSelected}
+                              onChange={() => setSelectedIndex(i)}
+                              style={{ marginTop: 3, accentColor: 'var(--accent)' }}
+                            />
+                            <div className="suggestion-card-content">
+                              <div className="suggestion-slot-title" style={{ fontSize: 'var(--fs-sm)' }}>
+                                <span>{rs.title}</span>
+                              </div>
+                              {rs.description && (
+                                <div className="suggestion-desc">
+                                  {rs.description}
+                                </div>
+                              )}
+                              <div style={{ marginTop: 2 }}>
+                                <span className="suggestion-status-pill">
+                                  <CheckCircle2 size={10} /> {rs.status || 'Conflict-free and validated'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 14px', background: 'var(--clr-bg-3)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)' }}>

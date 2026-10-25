@@ -199,7 +199,7 @@ function SubjectsTab() {
   const [programs, setPrograms] = useState<Program[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ code: '', name: '', program: '', semester: '1st', entry_type: 'Theory', weekly_hours: '2' })
+  const [form, setForm] = useState({ code: '', name: '', program: '', semester: '1st', entry_type: 'Theory' })
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   useEffect(() => {
@@ -216,9 +216,9 @@ function SubjectsTab() {
   async function add() {
     setSaving(true)
     try {
-      const r = await req<Subject>('/catalog/subjects', { method: 'POST', body: JSON.stringify({ ...form, weekly_hours: parseInt(form.weekly_hours) || 2 }) })
+      const r = await req<Subject>('/catalog/subjects', { method: 'POST', body: JSON.stringify({ ...form, weekly_hours: 2 }) })
       setList(l => [...l, r])
-      setForm({ code: '', name: '', program: 'B.Tech', semester: '1st', entry_type: 'Theory', weekly_hours: '2' })
+      setForm({ code: '', name: '', program: 'B.Tech', semester: '1st', entry_type: 'Theory' })
     } catch (e: unknown) { alert((e as Error).message) }
     setSaving(false)
   }
@@ -281,10 +281,6 @@ function SubjectsTab() {
               {ENTRY_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
-          <div className="form-group">
-            <label className="form-label">Weekly Hours</label>
-            <input className="form-control" type="number" min={1} max={10} value={form.weekly_hours} onChange={e => setF('weekly_hours', e.target.value)} />
-          </div>
         </div>
         <button className="btn btn-primary" disabled={!form.code || !form.name || saving} onClick={add} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10 }}>
           {saving ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Plus size={14} />} Add Subject
@@ -301,7 +297,7 @@ function SubjectsTab() {
                   <tr key={s.id} style={{ borderTop: '1px solid var(--clr-border-soft)' }}>
                     <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontWeight: 700, width: 80, color: 'var(--clr-primary)', whiteSpace: 'nowrap' }}>{s.code}</td>
                     <td style={{ padding: '7px 12px' }}>{s.name}</td>
-                    <td style={{ padding: '7px 12px', color: 'var(--clr-text-3)', whiteSpace: 'nowrap' }}>{s.entry_type} · {s.weekly_hours}h/wk</td>
+                    <td style={{ padding: '7px 12px', color: 'var(--clr-text-3)', whiteSpace: 'nowrap' }}>{s.entry_type}</td>
                     <td style={{ padding: '7px 12px', textAlign: 'right' }}>
                       <button className="btn-icon" onClick={() => remove(s.id)}><Trash2 size={13} style={{ color: 'var(--clr-error)' }} /></button>
                     </td>

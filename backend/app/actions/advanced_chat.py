@@ -91,7 +91,7 @@ from app.actions.concurrency import (
     resolve_expected_version,
     current_head,
 )
-from app.services.email_service import notify_teachers_of_changes
+from app.services import notification_service as notif
 from app.scheduler import constraints as C
 from app.scheduler.validator import validate_schedule, validate_schema
 
@@ -2235,7 +2235,7 @@ def _handle(req: AdvancedChatRequest, bg: BackgroundTasks, response: Response, d
     result = guarded.result
     response.headers.update(guarded.response_headers())
     if result.success or result.partial_applied:
-        bg.add_task(notify_teachers_of_changes, result, db)
+        notif.publish_engine_result(result, actor=user)
 
     exec_resp = _to_exec_schema(result)
     verified = None
