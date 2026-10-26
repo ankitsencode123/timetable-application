@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, X, Calendar as CalIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, X, Calendar as CalIcon, ArrowRight } from 'lucide-react'
 import { getCalendarMonth, getCalendarDay, type CalendarMonthDay, type CalendarDayResult } from '../../api'
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -19,15 +19,44 @@ function daysInMonth(y: number, m: number) {
   return new Date(y, m, 0).getDate()
 }
 
-export default function PublicCalendar() {
+interface PublicCalendarProps {
+  initialDate?: string | null
+  onSelectDate?: (date: string) => void
+  onJumpToDay?: (date: string) => void
+}
+
+export default function PublicCalendar({ initialDate, onSelectDate, onJumpToDay }: PublicCalendarProps = {}) {
   const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth()+1)
+  const [year, setYear] = useState(() => {
+    if (initialDate) {
+      const parts = initialDate.split('-')
+      if (parts.length === 3) return parseInt(parts[0], 10)
+    }
+    return now.getFullYear()
+  })
+  const [month, setMonth] = useState(() => {
+    if (initialDate) {
+      const parts = initialDate.split('-')
+      if (parts.length === 3) return parseInt(parts[1], 10)
+    }
+    return now.getMonth() + 1
+  })
   const [monthData, setMonthData] = useState<CalendarMonthDay[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = useState<string | null>(initialDate || null)
   const [dayData, setDayData] = useState<CalendarDayResult | null>(null)
   const [dayLoading, setDayLoading] = useState(false)
+
+  // Sync year and month if initialDate changes
+  useEffect(() => {
+    if (initialDate) {
+      const parts = initialDate.split('-')
+      if (parts.length === 3) {
+        setYear(parseInt(parts[0], 10))
+        setMonth(parseInt(parts[1], 10))
+      }
+    }
+  }, [initialDate])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -40,6 +69,7 @@ export default function PublicCalendar() {
 
   async function selectDay(date: string) {
     setSelectedDate(date); setDayData(null); setDayLoading(true)
+    onSelectDate?.(date)
     try { setDayData(await getCalendarDay(date)) }
     catch { setDayData(null) }
     finally { setDayLoading(false) }
@@ -53,7 +83,7 @@ export default function PublicCalendar() {
   const today = todayStr()
 
   return (
-    <div className="pub-cal-card" style={{ background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+    <div className="pub-cal-card" style={{ background: 'var(--card-bg)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', width: '100%' }}>
       {/* Header */}
       <div className="pub-cal-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -141,12 +171,25 @@ export default function PublicCalendar() {
         {/* Day Detail Drawer */}
         {selectedDate && (
           <div className="pub-cal-drawer" style={{ flex: '1 1 260px', borderLeft: '1px solid var(--line)', padding: 'var(--sp-4)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)', minWidth: 0, maxWidth: 360 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-soft)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>{dayData?.weekday ?? ''}</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-md)', color: 'var(--ink)' }}>{selectedDate}</div>
               </div>
-              <button className="btn-icon" onClick={() => { setSelectedDate(null); setDayData(null) }} id="pub-cal-close-day"><X size={13} /></button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {onJumpToDay && selectedDate && (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => onJumpToDay(selectedDate)}
+                    style={{ fontSize: 11, padding: '3px 8px', height: 26, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    title="Open Day Schedule for this date"
+                  >
+                    <span>Day View</span>
+                    <ArrowRight size={12} />
+                  </button>
+                )}
+                <button className="btn-icon" onClick={() => { setSelectedDate(null); setDayData(null) }} id="pub-cal-close-day" title="Close"><X size={13} /></button>
+              </div>
             </div>
 
             {dayLoading ? (

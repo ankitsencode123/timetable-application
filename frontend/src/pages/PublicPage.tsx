@@ -78,7 +78,16 @@ function getWeekRangeAndDays(selectedDateStr: string) {
 export default function PublicPage() {
   const todayStr = useMemo(() => toISODate(new Date()), [])
   const [selectedDate, setSelectedDate] = useState<string>(todayStr)
-  const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day')
+  const mainContentRef = useRef<HTMLDivElement>(null)
+
+  const handleJumpToDay = (date: string) => {
+    setSelectedDate(date)
+    setViewMode('day')
+    setTimeout(() => {
+      mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }, 50)
+  }
 
   const [baseEntries, setBaseEntries] = useState<TimetableEntry[]>([])
   const [meta, setMeta] = useState<{ version_id: number; published_at: string; change_summary: string } | null>(null)
@@ -319,17 +328,29 @@ export default function PublicPage() {
             <button
               className={`btn btn-sm ${viewMode === 'day' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('day')}
-              style={{ fontSize: 11, padding: '4px 10px', height: 28 }}
+              style={{ fontSize: 11, padding: '4px 8px', height: 28 }}
+              title="Day Schedule"
             >
-              Day Schedule
+              <CalendarIcon size={12} style={{ marginRight: 3 }} />
+              {isMobile ? 'Day' : 'Day Schedule'}
             </button>
             <button
               className={`btn btn-sm ${viewMode === 'week' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('week')}
-              style={{ fontSize: 11, padding: '4px 10px', height: 28 }}
+              style={{ fontSize: 11, padding: '4px 8px', height: 28 }}
+              title="Week Grid"
             >
-              <Layers size={11} style={{ marginRight: 4 }} />
-              Week Grid
+              <Layers size={12} style={{ marginRight: 3 }} />
+              {isMobile ? 'Week' : 'Week Grid'}
+            </button>
+            <button
+              className={`btn btn-sm ${viewMode === 'month' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setViewMode('month')}
+              style={{ fontSize: 11, padding: '4px 8px', height: 28 }}
+              title="Monthly Calendar"
+            >
+              <CalendarDays size={12} style={{ marginRight: 3 }} />
+              {isMobile ? 'Month' : 'Month Overview'}
             </button>
           </div>
 
@@ -354,58 +375,60 @@ export default function PublicPage() {
         </div>
 
         {/* Quick Day Pills for the week */}
-        <div className="date-nav-pills-row">
-          <button
-            className="btn btn-ghost btn-icon btn-sm date-nav-arrow"
-            onClick={prevDay}
-            title="Previous Day"
-          >
-            <ChevronLeft size={15} />
-          </button>
+        {viewMode !== 'month' && (
+          <div className="date-nav-pills-row">
+            <button
+              className="btn btn-ghost btn-icon btn-sm date-nav-arrow"
+              onClick={prevDay}
+              title="Previous Day"
+            >
+              <ChevronLeft size={15} />
+            </button>
 
-          <div className="date-nav-pills-scroller">
-            {weekInfo.days.map(d => {
-              const isToday = d.date === todayStr
-              const isSelected = d.date === selectedDate
-              return (
-                <button
-                  key={d.date}
-                  className={`date-pill-btn ${isSelected ? 'active' : ''} ${isToday ? 'is-today' : ''}`}
-                  onClick={() => setSelectedDate(d.date)}
-                  title={`${d.weekday}, ${d.dayNum} ${d.monthShort}`}
-                >
-                  <span className="date-pill-day">
-                    {d.shortDay}
-                  </span>
-                  <span className="date-pill-num">
-                    {d.dayNum}
-                  </span>
-                  {isToday && (
-                    <span className="date-pill-sub">
-                      Today
+            <div className="date-nav-pills-scroller">
+              {weekInfo.days.map(d => {
+                const isToday = d.date === todayStr
+                const isSelected = d.date === selectedDate
+                return (
+                  <button
+                    key={d.date}
+                    className={`date-pill-btn ${isSelected ? 'active' : ''} ${isToday ? 'is-today' : ''}`}
+                    onClick={() => setSelectedDate(d.date)}
+                    title={`${d.weekday}, ${d.dayNum} ${d.monthShort}`}
+                  >
+                    <span className="date-pill-day">
+                      {d.shortDay}
                     </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+                    <span className="date-pill-num">
+                      {d.dayNum}
+                    </span>
+                    {isToday && (
+                      <span className="date-pill-sub">
+                        Today
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
 
-          <button
-            className="btn btn-ghost btn-icon btn-sm date-nav-arrow"
-            onClick={nextDay}
-            title="Next Day"
-          >
-            <ChevronRight size={15} />
-          </button>
-        </div>
+            <button
+              className="btn btn-ghost btn-icon btn-sm date-nav-arrow"
+              onClick={nextDay}
+              title="Next Day"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Content Area */}
-      <div className="public-main-content">
+      <div ref={mainContentRef} className="public-main-content">
 
         {/* VIEW MODE 1: DAY SCHEDULE (Focused Date View) */}
         {viewMode === 'day' && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+          <div className="public-day-container" style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}>
             {/* Day Header Banner */}
             <div className="public-day-banner" style={{
               background: 'var(--card-bg)',
@@ -497,7 +520,7 @@ export default function PublicPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+              <div className="public-cards-grid">
                 {filteredDayEntries.map((e, idx) => {
                   const isPractical = e.type === 'Practical'
                   const isModified = e.cal_source === 'modified'
@@ -622,12 +645,15 @@ export default function PublicPage() {
                 </div>
               </div>
             )}
+
+            {/* Expandable Monthly Calendar Drawer at bottom of Day Schedule */}
+            <CalendarSection onJumpToDay={handleJumpToDay} />
           </div>
         )}
 
         {/* VIEW MODE 2: WEEK TIMETABLE GRID */}
         {viewMode === 'week' && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, width: '100%' }}>
             {/* Week info header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -653,10 +679,39 @@ export default function PublicPage() {
           </div>
         )}
 
-        {/* Expandable Monthly Calendar Drawer */}
-        <div style={{ marginTop: 16 }}>
-          <CalendarSection />
-        </div>
+        {/* VIEW MODE 3: FULL MONTH CALENDAR */}
+        {viewMode === 'month' && (
+          <div className="public-month-container" style={{ width: '100%', maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="public-day-banner" style={{
+              background: 'var(--card-bg)',
+              border: '1px solid var(--line)',
+              borderRadius: 'var(--radius-lg)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 8
+            }}>
+              <div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, textTransform: 'uppercase', color: 'var(--ink-soft)', letterSpacing: '0.12em', fontWeight: 600, marginBottom: 2 }}>
+                  Academic Calendar
+                </div>
+                <h2 className="public-day-h2" style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--ink)', margin: 0 }}>
+                  Monthly Schedule Overview
+                </h2>
+              </div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)', fontFamily: 'var(--font-mono)' }}>
+                Tap any date to inspect classes
+              </div>
+            </div>
+
+            <PublicCalendar
+              initialDate={selectedDate}
+              onSelectDate={d => setSelectedDate(d)}
+              onJumpToDay={handleJumpToDay}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── AI Chatbot Drawer ── */}
@@ -776,43 +831,40 @@ export default function PublicPage() {
   )
 }
 
-function CalendarSection() {
+function CalendarSection({ onJumpToDay }: { onJumpToDay?: (date: string) => void }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="t-acc" data-open={open ? 'true' : 'false'} style={{ borderTop: '1px solid var(--line)', flexShrink: 0 }}>
+    <div className="public-cal-section-card">
       <button
         id="pub-cal-toggle"
-        className="t-acc-head"
+        className="public-cal-toggle-btn"
         aria-expanded={open}
         onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', padding: 'var(--sp-3) var(--sp-5)',
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: open ? 'var(--accent-soft)' : 'var(--paper)',
-          border: 'none', cursor: 'pointer',
-          borderBottom: open ? '1px solid var(--line)' : 'none',
-          transition: 'background var(--acc-expand) var(--acc-ease), color var(--acc-expand) var(--acc-ease)',
-          color: open ? 'var(--accent)' : 'var(--ink-soft)',
-        }}
       >
-        <CalendarDays size={14} />
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.15em' }}>
-          Monthly Calendar Overview
-        </span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ink-soft)', marginLeft: 4 }}>
-          click to {open ? 'hide' : 'expand full month'}
-        </span>
-        <span className="t-acc-chevron" style={{ marginLeft: 'auto' }}>
-          <ChevronDown size={13} />
-        </span>
-      </button>
-      <div className="t-acc-panel">
-        <div className="t-acc-panel-inner">
-          <div className="pub-cal-wrapper-padding">
-            <PublicCalendar />
+        <div className="public-cal-toggle-left">
+          <div className="public-cal-toggle-icon">
+            <CalendarDays size={16} />
+          </div>
+          <div className="public-cal-toggle-text">
+            <span className="public-cal-toggle-title">Monthly Calendar</span>
+            <span className="public-cal-toggle-sub">
+              {open ? 'Tap to collapse month view' : 'Tap to expand full month overview'}
+            </span>
           </div>
         </div>
-      </div>
+        <div className="public-cal-toggle-right">
+          <span className="public-cal-toggle-badge">{open ? 'Hide' : 'Expand'}</span>
+          <span className={`public-cal-chevron ${open ? 'open' : ''}`}>
+            <ChevronDown size={16} />
+          </span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="public-cal-expand-body">
+          <PublicCalendar initialDate={null} onJumpToDay={onJumpToDay} />
+        </div>
+      )}
     </div>
   )
 }

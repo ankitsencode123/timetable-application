@@ -706,11 +706,12 @@ select.form-control, select.input { cursor: pointer; }
 }
 .public-main-content {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: var(--sp-4);
+  padding: var(--sp-4) var(--sp-4) calc(var(--sp-8) + env(safe-area-inset-bottom, 24px));
   -webkit-overflow-scrolling: touch;
 }
 .public-day-banner {
@@ -718,6 +719,111 @@ select.form-control, select.input { cursor: pointer; }
 }
 .public-day-h2 {
   font-size: var(--fs-xl);
+}
+
+.public-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+/* ── Public Month Calendar Section (Bottom of Day Schedule) ── */
+.public-cal-section-card {
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-top: var(--sp-4);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  width: 100%;
+  box-sizing: border-box;
+}
+.public-cal-toggle-btn {
+  width: 100%;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--paper);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition);
+  box-sizing: border-box;
+}
+.public-cal-toggle-btn:hover {
+  background: color-mix(in oklab, var(--accent) 6%, var(--paper));
+}
+.public-cal-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.public-cal-toggle-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.public-cal-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.public-cal-toggle-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.public-cal-toggle-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.public-cal-toggle-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.public-cal-toggle-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in oklab, var(--accent) 25%, transparent);
+}
+.public-cal-chevron {
+  color: var(--ink-soft);
+  display: grid;
+  place-items: center;
+  transition: transform 200ms ease;
+}
+.public-cal-chevron.open {
+  transform: rotate(180deg);
+}
+.public-cal-expand-body {
+  border-top: 1px solid var(--line);
+  padding: 12px;
+  background: var(--card-bg);
+  box-sizing: border-box;
 }
 
 /* ── Public Calendar Component ───────────────────────────── */
@@ -1341,13 +1447,30 @@ select.form-control, select.input { cursor: pointer; }
     font-size: 9px;
   }
   .public-main-content {
-    padding: 10px 12px;
+    padding: 10px 12px calc(var(--sp-8) + env(safe-area-inset-bottom, 36px)) 12px;
   }
   .public-day-banner {
     padding: 12px 14px;
   }
   .public-day-h2 {
     font-size: 17px;
+  }
+  .public-cards-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* ── Mobile Public Month Calendar Section ── */
+  .public-cal-section-card {
+    margin-top: 14px;
+    margin-bottom: 24px;
+    border-radius: var(--radius-lg);
+  }
+  .public-cal-toggle-btn {
+    padding: 10px 12px;
+  }
+  .public-cal-expand-body {
+    padding: 8px 6px;
   }
 
   /* ── Mobile Public Calendar ── */
@@ -1362,9 +1485,10 @@ select.form-control, select.input { cursor: pointer; }
   .pub-cal-grid-wrap {
     padding: 8px 6px !important;
     flex: 1 1 100% !important;
+    box-sizing: border-box !important;
   }
   .pub-cal-cell-btn {
-    min-height: 38px !important;
+    min-height: 40px !important;
     padding: 2px 1px !important;
   }
   .pub-cal-drawer {
@@ -1373,6 +1497,7 @@ select.form-control, select.input { cursor: pointer; }
     border-left: none !important;
     border-top: 1px solid var(--line) !important;
     padding: 12px 10px !important;
+    box-sizing: border-box !important;
   }
   .pub-cal-wrapper-padding {
     padding: 8px 8px 12px !important;
