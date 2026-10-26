@@ -328,7 +328,7 @@ export default function PublicPage() {
             <button
               className={`btn btn-sm ${viewMode === 'day' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('day')}
-              style={{ fontSize: 11, padding: '4px 8px', height: 28 }}
+              style={{ fontSize: 11, padding: isMobile ? '4px 6px' : '4px 8px', height: 28, flexShrink: 0, whiteSpace: 'nowrap' }}
               title="Day Schedule"
             >
               <CalendarIcon size={12} style={{ marginRight: 3 }} />
@@ -337,7 +337,7 @@ export default function PublicPage() {
             <button
               className={`btn btn-sm ${viewMode === 'week' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('week')}
-              style={{ fontSize: 11, padding: '4px 8px', height: 28 }}
+              style={{ fontSize: 11, padding: isMobile ? '4px 6px' : '4px 8px', height: 28, flexShrink: 0, whiteSpace: 'nowrap' }}
               title="Week Grid"
             >
               <Layers size={12} style={{ marginRight: 3 }} />
@@ -346,7 +346,7 @@ export default function PublicPage() {
             <button
               className={`btn btn-sm ${viewMode === 'month' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setViewMode('month')}
-              style={{ fontSize: 11, padding: '4px 8px', height: 28 }}
+              style={{ fontSize: 11, padding: isMobile ? '4px 6px' : '4px 8px', height: 28, flexShrink: 0, whiteSpace: 'nowrap' }}
               title="Monthly Calendar"
             >
               <CalendarDays size={12} style={{ marginRight: 3 }} />
@@ -358,7 +358,7 @@ export default function PublicPage() {
             <button
               className={`btn btn-sm ${isSelectedToday ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setSelectedDate(todayStr)}
-              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, padding: '4px 9px', height: 28, whiteSpace: 'nowrap' }}
+              style={{ fontFamily: 'var(--font-mono)', fontSize: 11, padding: isMobile ? '4px 7px' : '4px 9px', height: 28, whiteSpace: 'nowrap', flexShrink: 0 }}
               title="Jump to Today"
             >
               Today ({todayStr.slice(8)})
@@ -370,6 +370,7 @@ export default function PublicPage() {
               value={selectedDate}
               onChange={e => e.target.value && setSelectedDate(e.target.value)}
               title="Jump to date"
+              style={{ flexShrink: 0 }}
             />
           </div>
         </div>

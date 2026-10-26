@@ -30,8 +30,20 @@ export default function FilterBar({ filters, onChange, density, onDensityChange 
 
   return (
     <div className="filter-bar">
-      <div className="filter-search-wrap">
-        <Search size={13} className="input-icon" />
+      <div className="filter-search-wrap input-group">
+        <Search
+          size={14}
+          className="input-icon"
+          style={{
+            position: 'absolute',
+            left: 10,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: 'var(--ink-soft)',
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        />
         <input
           className="form-control filter-select filter-search-input"
           placeholder="Search subject, teacher, room…"
