@@ -84,6 +84,16 @@ from sqlalchemy import (
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.exc import IntegrityError
 
+try:
+    import app.models.timetable
+    import app.models.timetable_entry
+    import app.models.audit
+    import app.models.refresh_token
+    import app.models.teacher
+    import app.models.user
+except Exception:
+    pass
+
 from app.core.database import SessionLocal, engine as _default_engine
 from app.api.auth import require_admin
 
@@ -564,6 +574,191 @@ def render_test_email() -> Tuple[str, str, str]:
             "If you can read this, the notification pipeline (queue -> worker -> Brevo) works.")
 
 
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _get_weekday_name(d_val: Any) -> str:
+    if hasattr(d_val, "weekday"):
+        return _WEEKDAYS[d_val.weekday()]
+    if isinstance(d_val, str) and d_val.strip():
+        try:
+            return _WEEKDAYS[datetime.fromisoformat(d_val.strip()[:10]).weekday()]
+        except Exception:
+            pass
+    return ""
+
+
+def render_calendar_teacher_email(
+    name: str,
+    action: str,
+    on_date: str,
+    weekday: str,
+    class_items: List[dict],
+    reason: str = "",
+    actor: str = "",
+) -> Tuple[str, str, str]:
+    """Generate subject, html_body, and text_body for a teacher affected by a calendar event."""
+    action_upper = action.upper()
+    subj_action = {
+        "ADD": "Class scheduled",
+        "CANCEL": "Class cancelled",
+        "MODIFY": "Class rescheduled",
+        "DAY_OFF": "Holiday / Day off",
+        "DELETE": "Override removed / schedule reverted",
+    }.get(action_upper, "Schedule update")
+
+    first_subj = class_items[0].get("subject_code") or class_items[0].get("subject_name") if class_items else ""
+    subject_detail = f": {first_subj}" if first_subj else ""
+    subject = f"[Calendar] {subj_action} on {on_date} ({weekday}){subject_detail}"
+
+    color_map = {
+        "ADD": ("#10b981", "#ecfdf5", "Class Scheduled"),
+        "CANCEL": ("#ef4444", "#fef2f2", "Class Cancelled"),
+        "MODIFY": ("#f59e0b", "#fffbeb", "Class Modified"),
+        "DAY_OFF": ("#3b82f6", "#eff6ff", "Day Off / Holiday"),
+        "DELETE": ("#64748b", "#f8fafc", "Override Reverted"),
+    }
+    border_color, bg_color, badge_label = color_map.get(
+        action_upper, ("#6b7280", "#f9fafb", "Schedule Change")
+    )
+
+    cards_html = []
+    cards_text = []
+    for c in class_items:
+        s_code = html.escape(str(c.get("subject_code") or ""))
+        s_name = html.escape(str(c.get("subject_name") or ""))
+        c_name = f"{s_code} - {s_name}" if (s_code and s_name) else (s_code or s_name or "Lesson")
+        time_str = html.escape(str(c.get("time") or ""))
+        room_str = html.escape(str(c.get("room") or "—"))
+        prog = html.escape(str(c.get("program") or ""))
+        sem = html.escape(str(c.get("semester") or ""))
+        cls_meta = f"{prog} ({sem})" if (prog and sem) else (prog or sem or "")
+        
+        diffs = c.get("diffs") or []
+        diffs_html = ""
+        diffs_text = ""
+        if diffs:
+            d_lis = "".join(f"<li style='margin:2px 0'>{html.escape(d)}</li>" for d in diffs)
+            diffs_html = f"<div style='margin-top:8px;padding-top:8px;border-top:1px dashed #e5e7eb;font-size:13px;color:#b45309'><strong>Changes:</strong><ul style='margin:4px 0 0 16px;padding:0'>{d_lis}</ul></div>"
+            diffs_text = "\n    Changes:\n    " + "\n    ".join(f"- {d}" for d in diffs)
+
+        c_status = c.get("action_label") or badge_label
+        cards_html.append(
+            f'<div style="background:{bg_color};border-left:4px solid {border_color};border-radius:6px;'
+            f'padding:12px 16px;margin-bottom:12px">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+            f'<span style="font-weight:bold;font-size:15px;color:#111827">{c_name}</span>'
+            f'<span style="background:{border_color};color:#ffffff;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px">{html.escape(c_status)}</span>'
+            f'</div>'
+            f'<div style="font-size:13px;color:#4b5563">'
+            f'⏰ <strong>Time:</strong> {time_str} &nbsp;|&nbsp; 📍 <strong>Room:</strong> {room_str} &nbsp;|&nbsp; 🎓 <strong>Class:</strong> {cls_meta}'
+            f'</div>'
+            f'{diffs_html}'
+            f'</div>'
+        )
+        cards_text.append(
+            f"- {c_name} [{c_status}]\n    Time: {time_str} | Room: {room_str} | Class: {cls_meta}{diffs_text}"
+        )
+
+    cards_html_str = "".join(cards_html)
+    cards_text_str = "\n".join(cards_text)
+
+    meta_rows = [f"<strong>📅 Date:</strong> {html.escape(on_date)} ({html.escape(weekday)})"]
+    if reason:
+        meta_rows.append(f"<strong>📝 Reason:</strong> {html.escape(reason)}")
+    if actor:
+        meta_rows.append(f"<strong>👤 Updated by:</strong> {html.escape(actor)}")
+    meta_box = f'<div style="background:#f3f4f6;border-radius:6px;padding:12px 16px;margin:16px 0;font-size:13px;line-height:1.6;color:#374151">{"<br>".join(meta_rows)}</div>'
+
+    meta_text_lines = [f"Date: {on_date} ({weekday})"]
+    if reason:
+        meta_text_lines.append(f"Reason: {reason}")
+    if actor:
+        meta_text_lines.append(f"Updated by: {actor}")
+    meta_text_str = "\n".join(meta_text_lines)
+
+    intro_p = f"<p>Hello {html.escape(name)},</p><p>A date-specific override has been recorded for your schedule:</p>"
+    inner = f"{intro_p}{meta_box}<div style='margin-top:16px'>{cards_html_str}</div>"
+
+    text_body = (
+        f"Hello {name},\n\n"
+        f"A date-specific override has been recorded for your schedule:\n\n"
+        f"{meta_text_str}\n\n"
+        f"Affected classes:\n"
+        f"{cards_text_str}\n\n"
+        + (f"Open the timetable: {Cfg.APP_URL}\n" if Cfg.APP_URL else "")
+    )
+
+    return subject, _shell(f"Schedule Update: {subj_action}", inner), text_body
+
+
+def render_calendar_admin_email(
+    action: str,
+    on_date: str,
+    weekday: str,
+    payload: dict,
+    notified: List[str],
+    unresolved: List[str],
+    reason: str = "",
+    actor: str = "",
+) -> Tuple[str, str, str]:
+    """Generate admin summary email for a calendar override."""
+    subject = f"[Admin] Calendar override: {action} on {on_date} ({weekday}) – {len(notified)} teacher(s) notified"
+    
+    meta_rows = [f"<strong>Action:</strong> {html.escape(action)}"]
+    meta_rows.append(f"<strong>Date:</strong> {html.escape(on_date)} ({html.escape(weekday)})")
+    if reason:
+        meta_rows.append(f"<strong>Reason:</strong> {html.escape(reason)}")
+    if actor:
+        meta_rows.append(f"<strong>Actor:</strong> {html.escape(actor)}")
+    
+    meta_box = f'<div style="background:#f3f4f6;border-radius:6px;padding:12px 16px;margin:16px 0;font-size:13px;line-height:1.6;color:#374151">{"<br>".join(meta_rows)}</div>'
+
+    details_html = ""
+    details_text = ""
+    if action == "ADD" and payload.get("entry"):
+        e = payload["entry"]
+        details_html = f"<p><strong>Added Class:</strong> {html.escape(str(e.get('subject_code')))} ({html.escape(str(e.get('subject_name')))}) at {html.escape(str(e.get('start')))}–{html.escape(str(e.get('end')))} in Room {html.escape(str(e.get('room')))}, Teacher: {html.escape(str(e.get('teacher')))}</p>"
+        details_text = f"Added Class: {e.get('subject_code')} ({e.get('subject_name')}) at {e.get('start')}–{e.get('end')} in Room {e.get('room')}, Teacher: {e.get('teacher')}\n\n"
+    elif action == "CANCEL" and payload.get("target"):
+        t = payload["target"]
+        details_html = f"<p><strong>Cancelled Class:</strong> {html.escape(str(t.get('subject_code')))} ({html.escape(str(t.get('subject_name')))}) at {html.escape(str(t.get('start')))}–{html.escape(str(t.get('end')))} in Room {html.escape(str(t.get('room')))}, Teacher: {html.escape(str(t.get('teacher')))}</p>"
+        details_text = f"Cancelled Class: {t.get('subject_code')} ({t.get('subject_name')}) at {t.get('start')}–{t.get('end')} in Room {t.get('room')}, Teacher: {t.get('teacher')}\n\n"
+    elif action == "MODIFY":
+        t = payload.get("target") or {}
+        ch = payload.get("changes") or {}
+        details_html = f"<p><strong>Modified Class:</strong> {html.escape(str(t.get('subject_code')))}<br><strong>Changes applied:</strong> {html.escape(json.dumps(ch))}</p>"
+        details_text = f"Modified Class: {t.get('subject_code')}\nChanges applied: {json.dumps(ch)}\n\n"
+    elif action == "DAY_OFF":
+        prog = payload.get("program") or "All programs"
+        sem = payload.get("semester") or "All semesters"
+        details_html = f"<p><strong>Day Off declared for:</strong> {html.escape(str(prog))} {html.escape(str(sem))}</p>"
+        details_text = f"Day Off declared for: {prog} {sem}\n\n"
+    elif action == "DELETE":
+        snap = payload.get("override_snap") or {}
+        details_html = f"<p><strong>Override Deleted:</strong> {html.escape(str(snap.get('action')))} override #{html.escape(str(snap.get('id')))} removed; schedule reverted to base.</p>"
+        details_text = f"Override Deleted: {snap.get('action')} override #{snap.get('id')} removed; schedule reverted to base.\n\n"
+
+    notified_str = ", ".join(notified) or "None"
+    notified_html = f"<p><strong>Teachers Notified:</strong> {html.escape(notified_str)}</p>"
+    unres_html = ""
+    if unresolved:
+        unres_html = f'<p style="color:#b45309"><strong>Could not email (no account/email found):</strong> {html.escape(", ".join(unresolved))}</p>'
+
+    inner = f"{meta_box}{details_html}{notified_html}{unres_html}"
+
+    text_body = (
+        f"Calendar override: {action} on {on_date} ({weekday})\n\n"
+        f"Reason: {reason}\n"
+        f"Updated by: {actor}\n\n"
+        f"{details_text}"
+        f"Teachers Notified: {notified_str}\n"
+        + (f"Could NOT email (no account/email found): {', '.join(unresolved)}\n" if unresolved else "")
+    )
+
+    return subject, _shell(f"Admin Calendar Notification: {action}", inner), text_body
+
+
 # =====================================================================
 # 6. EVENT PUBLISHING  (request path: one insert, never raises)
 # =====================================================================
@@ -649,6 +844,115 @@ async def notify_teachers_of_changes(result: Any, db: Any = None, actor: Any = N
     await asyncio.to_thread(publish_engine_result, result, actor=actor)
 
 
+def publish_calendar_override(
+    action: str,
+    on_date: Any,
+    *,
+    payload: Optional[dict] = None,
+    target: Optional[dict] = None,
+    reason: str = "",
+    actor: Any = None,
+    override_id: Optional[int] = None,
+    before_entries: Optional[List[dict]] = None,
+) -> Optional[str]:
+    """Durably record a calendar override event (ADD, CANCEL, MODIFY, DAY_OFF). Never raises."""
+    try:
+        date_str = on_date.isoformat() if hasattr(on_date, "isoformat") else str(on_date)
+        actor_name = getattr(actor, "full_name", None) or getattr(actor, "email", None) or "Administrator"
+        ev_payload = {
+            "action": str(action).upper(),
+            "date": date_str,
+            "entry": (payload or {}).get("entry"),
+            "changes": (payload or {}).get("changes"),
+            "program": (payload or {}).get("program"),
+            "semester": (payload or {}).get("semester"),
+            "target": target or {},
+            "reason": str(reason or "").strip(),
+            "actor_id": getattr(actor, "id", None),
+            "actor_name": actor_name,
+            "override_id": override_id,
+            "before_entries": (before_entries or [])[:200],
+        }
+        dedupe = f"cal_override:{override_id}" if override_id else f"cal_override:{action}:{date_str}:{uuid.uuid4().hex[:8]}"
+        return publish_event("calendar_override", ev_payload, dedupe_key=dedupe, source="calendar")
+    except Exception:
+        logger.exception("publish_calendar_override failed (swallowed)")
+        return None
+
+
+def publish_calendar_override_deleted(
+    override_snap: dict,
+    *,
+    actor: Any = None,
+    before_entries: Optional[List[dict]] = None,
+) -> Optional[str]:
+    """Durably record a calendar override deletion. Never raises."""
+    try:
+        actor_name = getattr(actor, "full_name", None) or getattr(actor, "email", None) or "Administrator"
+        oid = override_snap.get("id")
+        action = str(override_snap.get("action") or "").upper()
+        date_str = str(override_snap.get("date") or "")
+        ev_payload = {
+            "action": "DELETE",
+            "date": date_str,
+            "override_snap": override_snap,
+            "reason": override_snap.get("reason") or "",
+            "actor_id": getattr(actor, "id", None),
+            "actor_name": actor_name,
+            "override_id": oid,
+            "before_entries": (before_entries or [])[:200],
+        }
+        dedupe = f"cal_override_del:{oid}:{uuid.uuid4().hex[:8]}"
+        return publish_event("calendar_override", ev_payload, dedupe_key=dedupe, source="calendar")
+    except Exception:
+        logger.exception("publish_calendar_override_deleted failed (swallowed)")
+        return None
+
+
+def publish_calendar_validity(
+    window: dict,
+    *,
+    actor: Any = None,
+) -> Optional[str]:
+    """Durably record a validity window creation."""
+    try:
+        actor_name = getattr(actor, "full_name", None) or getattr(actor, "email", None) or "Administrator"
+        wid = window.get("id")
+        ev_payload = {
+            "action": "CREATE_VALIDITY",
+            "window": window,
+            "actor_id": getattr(actor, "id", None),
+            "actor_name": actor_name,
+        }
+        dedupe = f"cal_validity:{wid}" if wid else None
+        return publish_event("calendar_validity", ev_payload, dedupe_key=dedupe, source="calendar")
+    except Exception:
+        logger.exception("publish_calendar_validity failed (swallowed)")
+        return None
+
+
+def publish_calendar_validity_deleted(
+    window: dict,
+    *,
+    actor: Any = None,
+) -> Optional[str]:
+    """Durably record a validity window deletion."""
+    try:
+        actor_name = getattr(actor, "full_name", None) or getattr(actor, "email", None) or "Administrator"
+        wid = window.get("id")
+        ev_payload = {
+            "action": "DELETE_VALIDITY",
+            "window": window,
+            "actor_id": getattr(actor, "id", None),
+            "actor_name": actor_name,
+        }
+        dedupe = f"cal_validity_del:{wid}:{uuid.uuid4().hex[:8]}"
+        return publish_event("calendar_validity", ev_payload, dedupe_key=dedupe, source="calendar")
+    except Exception:
+        logger.exception("publish_calendar_validity_deleted failed (swallowed)")
+        return None
+
+
 # =====================================================================
 # 7. EXPANSION  (event -> per-recipient deliveries)
 # =====================================================================
@@ -659,7 +963,7 @@ class Recipient:
 
 
 def _load_directory(session) -> Dict[str, Recipient]:
-    """normalised short_name / full_name -> Recipient (active users only)."""
+    """normalised short_name / full_name / email -> Recipient (active users only)."""
     from app.models.teacher import Teacher
     from app.models.user import User
     out: Dict[str, Recipient] = {}
@@ -668,9 +972,27 @@ def _load_directory(session) -> Dict[str, Recipient]:
         email = _clean_email(u.email)
         if not email:
             continue
-        r = Recipient(email, str(t.full_name or t.short_name))
-        out.setdefault(_n(t.short_name), r)
-        out.setdefault(_n(t.full_name), r)
+        r = Recipient(email, str(t.full_name or t.short_name or u.full_name or email.split('@')[0]))
+        if t.short_name:
+            out.setdefault(_n(t.short_name), r)
+        if t.full_name:
+            out.setdefault(_n(t.full_name), r)
+        out.setdefault(_n(u.email), r)
+        out.setdefault(_n(u.email.split("@")[0]), r)
+        if u.full_name:
+            out.setdefault(_n(u.full_name), r)
+
+    active_users = session.query(User).filter(User.is_active.is_(True)).all()
+    for u in active_users:
+        email = _clean_email(u.email)
+        if not email:
+            continue
+        r = Recipient(email, str(u.full_name or email.split("@")[0]))
+        out.setdefault(_n(u.email), r)
+        out.setdefault(_n(u.email.split("@")[0]), r)
+        if u.full_name:
+            out.setdefault(_n(u.full_name), r)
+
     return out
 
 
@@ -716,6 +1038,271 @@ def _new_delivery(ev: dict, kind: str, email: str, name: str, subject: str, html
             "subject": _clip(subject, 300), "html_body": html_body, "text_body": text_body}
 
 
+def _expand_calendar_event(session, ev: dict, payload: dict) -> Tuple[List[dict], str]:
+    action = str(payload.get("action") or "").upper()
+    on_date = str(payload.get("date") or "")
+    weekday = _get_weekday_name(on_date)
+    reason = str(payload.get("reason") or "").strip()
+    actor_name = str(payload.get("actor_name") or "Administrator")
+    
+    out: List[dict] = []
+    teacher_classes: Dict[str, List[dict]] = defaultdict(list)
+
+    if action == "ADD":
+        entry = payload.get("entry") or {}
+        raw_t = [t.strip() for t in re.split(r"[,/+&]", str(entry.get("teacher") or "")) if t.strip()]
+        c_info = {
+            "action_label": "Class Added",
+            "subject_code": entry.get("subject_code", ""),
+            "subject_name": entry.get("subject_name", ""),
+            "time": f"{entry.get('start', '')}–{entry.get('end', '')}",
+            "room": entry.get("room", ""),
+            "program": entry.get("program", ""),
+            "semester": entry.get("semester", ""),
+            "type": entry.get("type", ""),
+            "diffs": [],
+        }
+        for t in raw_t:
+            teacher_classes[t].append(c_info)
+
+    elif action == "CANCEL":
+        target = payload.get("target") or {}
+        raw_t = [t.strip() for t in re.split(r"[,/+&]", str(target.get("teacher") or "")) if t.strip()]
+        c_info = {
+            "action_label": "Class Cancelled",
+            "subject_code": target.get("subject_code", ""),
+            "subject_name": target.get("subject_name", ""),
+            "time": f"{target.get('start', '')}–{target.get('end', '')}",
+            "room": target.get("room", ""),
+            "program": target.get("program", ""),
+            "semester": target.get("semester", ""),
+            "type": target.get("type", ""),
+            "diffs": [],
+        }
+        for t in raw_t:
+            teacher_classes[t].append(c_info)
+
+    elif action == "MODIFY":
+        target = payload.get("target") or {}
+        changes = payload.get("changes") or {}
+        merged = {**target, **changes}
+        old_teachers = [t.strip() for t in re.split(r"[,/+&]", str(target.get("teacher") or "")) if t.strip()]
+        new_teachers = [t.strip() for t in re.split(r"[,/+&]", str(merged.get("teacher") or "")) if t.strip()]
+        
+        diffs = []
+        if (target.get("start"), target.get("end")) != (merged.get("start"), merged.get("end")):
+            diffs.append(f"Time: {target.get('start')}–{target.get('end')} → {merged.get('start')}–{merged.get('end')}")
+        if _n(target.get("room")) != _n(merged.get("room")):
+            diffs.append(f"Room: {target.get('room') or '—'} → {merged.get('room') or '—'}")
+        if _n(target.get("teacher")) != _n(merged.get("teacher")):
+            diffs.append(f"Teacher: {target.get('teacher') or '—'} → {merged.get('teacher') or '—'}")
+        if _n(target.get("subject_code")) != _n(merged.get("subject_code")):
+            diffs.append(f"Subject: {target.get('subject_code') or '—'} → {merged.get('subject_code') or '—'}")
+        if _n(target.get("type")) != _n(merged.get("type")):
+            diffs.append(f"Type: {target.get('type') or '—'} → {merged.get('type') or '—'}")
+        if not diffs:
+            diffs.append("Class details updated")
+
+        for t in set(old_teachers) - set(new_teachers):
+            teacher_classes[t].append({
+                "action_label": "Class Reassigned",
+                "subject_code": target.get("subject_code", ""),
+                "subject_name": target.get("subject_name", ""),
+                "time": f"{target.get('start', '')}–{target.get('end', '')}",
+                "room": target.get("room", ""),
+                "program": target.get("program", ""),
+                "semester": target.get("semester", ""),
+                "type": target.get("type", ""),
+                "diffs": [f"Reassigned to {merged.get('teacher')}"],
+            })
+
+        for t in set(new_teachers) - set(old_teachers):
+            teacher_classes[t].append({
+                "action_label": "Class Assigned",
+                "subject_code": merged.get("subject_code", ""),
+                "subject_name": merged.get("subject_name", ""),
+                "time": f"{merged.get('start', '')}–{merged.get('end', '')}",
+                "room": merged.get("room", ""),
+                "program": merged.get("program", ""),
+                "semester": merged.get("semester", ""),
+                "type": merged.get("type", ""),
+                "diffs": [f"Assigned from {target.get('teacher')}"] + diffs,
+            })
+
+        for t in set(old_teachers) & set(new_teachers):
+            teacher_classes[t].append({
+                "action_label": "Class Modified",
+                "subject_code": merged.get("subject_code", ""),
+                "subject_name": merged.get("subject_name", ""),
+                "time": f"{merged.get('start', '')}–{merged.get('end', '')}",
+                "room": merged.get("room", ""),
+                "program": merged.get("program", ""),
+                "semester": merged.get("semester", ""),
+                "type": merged.get("type", ""),
+                "diffs": diffs,
+            })
+
+    elif action == "DAY_OFF":
+        prog = payload.get("program")
+        sem = payload.get("semester")
+        before_entries = payload.get("before_entries") or []
+        for e in before_entries:
+            if prog and _n(e.get("program")) != _n(prog):
+                continue
+            if sem and _n(e.get("semester")) != _n(sem):
+                continue
+            raw_t = [t.strip() for t in re.split(r"[,/+&]", str(e.get("teacher") or "")) if t.strip()]
+            c_info = {
+                "action_label": "Day Off / Holiday",
+                "subject_code": e.get("subject_code", ""),
+                "subject_name": e.get("subject_name", ""),
+                "time": f"{e.get('start', '')}–{e.get('end', '')}",
+                "room": e.get("room", ""),
+                "program": e.get("program", ""),
+                "semester": e.get("semester", ""),
+                "type": e.get("type", ""),
+                "diffs": ["Class cancelled due to declared day off / holiday"],
+            }
+            for t in raw_t:
+                teacher_classes[t].append(c_info)
+
+    elif action == "DELETE":
+        snap = payload.get("override_snap") or {}
+        orig_action = str(snap.get("action") or "").upper()
+        if orig_action == "ADD":
+            entry = snap.get("entry") or {}
+            raw_t = [t.strip() for t in re.split(r"[,/+&]", str(entry.get("teacher") or "")) if t.strip()]
+            for t in raw_t:
+                teacher_classes[t].append({
+                    "action_label": "Override Removed (Class Removed)",
+                    "subject_code": entry.get("subject_code", ""),
+                    "subject_name": entry.get("subject_name", ""),
+                    "time": f"{entry.get('start', '')}–{entry.get('end', '')}",
+                    "room": entry.get("room", ""),
+                    "program": entry.get("program", ""),
+                    "semester": entry.get("semester", ""),
+                    "type": entry.get("type", ""),
+                    "diffs": ["The scheduled class addition on this date was deleted."],
+                })
+        elif orig_action == "CANCEL":
+            target = snap.get("target") or {}
+            raw_t = [t.strip() for t in re.split(r"[,/+&]", str(target.get("teacher") or "")) if t.strip()]
+            for t in raw_t:
+                teacher_classes[t].append({
+                    "action_label": "Class Cancellation Revoked",
+                    "subject_code": target.get("subject_code", ""),
+                    "subject_name": target.get("subject_name", ""),
+                    "time": f"{target.get('start', '')}–{target.get('end', '')}",
+                    "room": target.get("room", ""),
+                    "program": target.get("program", ""),
+                    "semester": target.get("semester", ""),
+                    "type": target.get("type", ""),
+                    "diffs": ["The class cancellation was removed; class is restored."],
+                })
+        elif orig_action == "MODIFY":
+            target = snap.get("target") or {}
+            raw_t = [t.strip() for t in re.split(r"[,/+&]", str(target.get("teacher") or "")) if t.strip()]
+            for t in raw_t:
+                teacher_classes[t].append({
+                    "action_label": "Class Modification Reverted",
+                    "subject_code": target.get("subject_code", ""),
+                    "subject_name": target.get("subject_name", ""),
+                    "time": f"{target.get('start', '')}–{target.get('end', '')}",
+                    "room": target.get("room", ""),
+                    "program": target.get("program", ""),
+                    "semester": target.get("semester", ""),
+                    "type": target.get("type", ""),
+                    "diffs": ["Overrides removed; class reverted to regular schedule."],
+                })
+        elif orig_action == "DAY_OFF":
+            prog = snap.get("program")
+            sem = snap.get("semester")
+            before_entries = payload.get("before_entries") or []
+            for e in before_entries:
+                if prog and _n(e.get("program")) != _n(prog):
+                    continue
+                if sem and _n(e.get("semester")) != _n(sem):
+                    continue
+                raw_t = [t.strip() for t in re.split(r"[,/+&]", str(e.get("teacher") or "")) if t.strip()]
+                for t in raw_t:
+                    teacher_classes[t].append({
+                        "action_label": "Holiday Removed (Classes Restored)",
+                        "subject_code": e.get("subject_code", ""),
+                        "subject_name": e.get("subject_name", ""),
+                        "time": f"{e.get('start', '')}–{e.get('end', '')}",
+                        "room": e.get("room", ""),
+                        "program": e.get("program", ""),
+                        "semester": e.get("semester", ""),
+                        "type": e.get("type", ""),
+                        "diffs": ["The declared holiday was removed; classes restored."],
+                    })
+
+    directory = _load_directory(session)
+    notified_names: List[str] = []
+    unresolved: List[str] = []
+    per_email: Dict[str, Tuple[Recipient, List[dict]]] = {}
+
+    if Cfg.NOTIFY_TEACHERS:
+        for raw_tok, c_items in teacher_classes.items():
+            rec = directory.get(_n(raw_tok))
+            if not rec:
+                unresolved.append(raw_tok)
+                continue
+            entry = per_email.setdefault(rec.email, (rec, []))
+            entry[1].extend(c_items)
+
+        for email, (rec, c_items) in per_email.items():
+            s, h, t = render_calendar_teacher_email(rec.name, action, on_date, weekday, c_items, reason, actor_name)
+            out.append(_new_delivery(ev, "teacher", email, rec.name, s, h, t))
+            notified_names.append(rec.name)
+
+    if Cfg.ADMIN_RECIPIENTS:
+        s, h, t = render_calendar_admin_email(action, on_date, weekday, payload, notified_names, unresolved, reason, actor_name)
+        for r in Cfg.ADMIN_RECIPIENTS:
+            out.append(_new_delivery(ev, "admin", r["email"], r["name"], s, h, t))
+
+    if unresolved:
+        logger.warning(f"calendar event {ev['id']}: teachers without resolvable email: {unresolved}")
+
+    return out, ("" if out else "no recipients (no teachers resolved and no admin recipients configured)")
+
+
+def _expand_validity_event(session, ev: dict, payload: dict) -> Tuple[List[dict], str]:
+    action = str(payload.get("action") or "").upper()
+    win = payload.get("window") or {}
+    actor_name = str(payload.get("actor_name") or "Administrator")
+    vid = win.get("version_id")
+    scope = win.get("scope")
+    start_d = win.get("start_date")
+    end_d = win.get("end_date")
+    label = win.get("label") or f"{scope} ({start_d} to {end_d})"
+    
+    out: List[dict] = []
+    if Cfg.ADMIN_RECIPIENTS:
+        subject = f"[Admin] Validity Window {action}: Version #{vid} ({scope}: {start_d} → {end_d})"
+        meta_html = (
+            f"<p>A validity window was <strong>{html.escape(action)}</strong> by {html.escape(actor_name)}.</p>"
+            f"<ul>"
+            f"<li><strong>Version ID:</strong> #{html.escape(str(vid))}</li>"
+            f"<li><strong>Scope:</strong> {html.escape(str(scope))}</li>"
+            f"<li><strong>Date range:</strong> {html.escape(str(start_d))} to {html.escape(str(end_d))}</li>"
+            f"<li><strong>Label:</strong> {html.escape(str(label))}</li>"
+            f"</ul>"
+        )
+        html_body = _shell(f"Validity Window: {action}", meta_html)
+        text_body = (
+            f"Validity Window {action}\n\n"
+            f"Version ID: #{vid}\n"
+            f"Scope: {scope}\n"
+            f"Date range: {start_d} to {end_d}\n"
+            f"Label: {label}\n"
+            f"Updated by: {actor_name}\n"
+        )
+        for r in Cfg.ADMIN_RECIPIENTS:
+            out.append(_new_delivery(ev, "admin", r["email"], r["name"], subject, html_body, text_body))
+    return out, ("" if out else "no admin recipients configured for validity window event")
+
+
 def _expand_event(session, ev: dict) -> Tuple[List[dict], str]:
     payload = ev["payload"] if isinstance(ev["payload"], dict) else json.loads(ev["payload"] or "{}")
     out: List[dict] = []
@@ -727,6 +1314,14 @@ def _expand_event(session, ev: dict) -> Tuple[List[dict], str]:
             return [], "test event without a valid recipient"
         s, h, t = render_test_email()
         out.append(_new_delivery(ev, "test", email, r.get("name") or email, s, h, t))
+    elif ev["event_type"] == "calendar_override":
+        out, reason = _expand_calendar_event(session, ev, payload)
+        if reason and not out:
+            return [], reason
+    elif ev["event_type"] == "calendar_validity":
+        out, reason = _expand_validity_event(session, ev, payload)
+        if reason and not out:
+            return [], reason
     else:
         changes, ctx = _collect_changes(session, payload)
         notified_names: List[str] = []

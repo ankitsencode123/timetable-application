@@ -839,6 +839,22 @@ def create_override(db: Session, user: Any, p: OverrideCreate) -> dict:
         out = _ov_out(row)
 
     day = _resolve_day(_load_ctx(db, d, d), d)
+
+    try:
+        from app.services.notification_service import publish_calendar_override
+        publish_calendar_override(
+            action=cand.action,
+            on_date=d,
+            payload=cand.payload,
+            target=cand.target,
+            reason=cand.reason or "",
+            actor=user,
+            override_id=row.id,
+            before_entries=before_day.get("entries", []),
+        )
+    except Exception as e:
+        log.exception(f"Failed to publish calendar override notification: {e}")
+
     return {"override": out, "forced_violations": accepted, "day": day}
 
 
@@ -855,7 +871,8 @@ def delete_override(db: Session, user: Any, override_id: int, force: bool) -> di
         base_v = _violations(_resolve_day(ctx_base, d)["entries"])
         
         ctx = _load_ctx(db, d, d)
-        before_v = _violations(_resolve_day(ctx, d)["entries"])
+        before_day = _resolve_day(ctx, d)
+        before_v = _violations(before_day["entries"])
         ctx.overrides[d] = [o for o in ctx.overrides.get(d, []) if o.id != override_id]
         after_v = _violations(_resolve_day(ctx, d)["entries"])
         _check_delta(before_v, after_v, force, base_v=base_v)
@@ -863,7 +880,20 @@ def delete_override(db: Session, user: Any, override_id: int, force: bool) -> di
         db.delete(row)
         _audit(db, user, "DELETE", "override", override_id, snap)
         db.commit()
-    return {"deleted": override_id, "day": _resolve_day(_load_ctx(db, d, d), d)}
+
+    day = _resolve_day(_load_ctx(db, d, d), d)
+
+    try:
+        from app.services.notification_service import publish_calendar_override_deleted
+        publish_calendar_override_deleted(
+            override_snap=snap,
+            actor=user,
+            before_entries=before_day.get("entries", []),
+        )
+    except Exception as e:
+        log.exception(f"Failed to publish calendar override deleted notification: {e}")
+
+    return {"deleted": override_id, "day": day}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -948,6 +978,13 @@ def create_validity(db: Session, user: Any, p: ValidityCreate) -> dict:
         db.commit()
         db.refresh(row)
         out = _win_out(row)
+
+    try:
+        from app.services.notification_service import publish_calendar_validity
+        publish_calendar_validity(window=out, actor=user)
+    except Exception as e:
+        log.exception(f"Failed to publish validity created notification: {e}")
+
     return {"window": out, "overlapping_windows": overlaps, "warnings": warnings,
             "note": "Where windows overlap, the highest priority wins, then the narrowest span, then the newest."}
 
@@ -968,6 +1005,13 @@ def delete_validity(db: Session, user: Any, window_id: int, force: bool) -> dict
         db.delete(row)
         _audit(db, user, "DELETE", "validity", window_id, snap)
         db.commit()
+
+    try:
+        from app.services.notification_service import publish_calendar_validity_deleted
+        publish_calendar_validity_deleted(window=snap, actor=user)
+    except Exception as e:
+        log.exception(f"Failed to publish validity deleted notification: {e}")
+
     return {"deleted": window_id, "warnings": warnings}
 
 
