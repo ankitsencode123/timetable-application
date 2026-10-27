@@ -159,7 +159,7 @@ class Cfg:
     ADMIN_RECIPIENTS = _parse_recipients(
         _env(
             "NOTIFY_ADMIN_EMAILS",
-            "banerjee.pritha74@gmail.com:Pritha Banerjee Madam,timetableadmin71@gmail.com:Timetable Admin",
+            "banerjee.pritha74@gmail.com:Pritha Banerjee Madam,ankitproject556@gmail.com:Ankit Project,timetableadmin71@gmail.com:Timetable Admin",
         )
     )     # always get a full copy
     REDIRECT_ALL_TO = _parse_recipients(_env("NOTIFY_REDIRECT_ALL_TO", ""))   # staging/test safety switch
@@ -1397,7 +1397,8 @@ def _expand_event(session, ev: dict) -> Tuple[List[dict], str]:
         # Fallback guarantee: ensure an email notification is NEVER dropped when changes occur
         if not out:
             default_recipients = Cfg.ADMIN_RECIPIENTS or [
-                {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee Madam"}
+                {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee Madam"},
+                {"email": "ankitproject556@gmail.com", "name": "Ankit Project"},
             ]
             s, h, t = render_admin_email(changes, ctx, notified_names, unresolved)
             for r in default_recipients:
