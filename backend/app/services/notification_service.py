@@ -159,7 +159,7 @@ class Cfg:
     ADMIN_RECIPIENTS = _parse_recipients(
         _env(
             "NOTIFY_ADMIN_EMAILS",
-            "banerjee.pritha74@gmail.com:Pritha Banerjee Madam,ankitproject556@gmail.com:Ankit Project,timetableadmin71@gmail.com:Timetable Admin",
+            "ankitproject556@gmail.com:Ankit Project,timetableadmin71@gmail.com:Timetable Admin,ankitsen53806626@gmail.com:Ankit",
         )
     )     # always get a full copy
     REDIRECT_ALL_TO = _parse_recipients(_env("NOTIFY_REDIRECT_ALL_TO", ""))   # staging/test safety switch
@@ -1025,11 +1025,6 @@ def _load_directory(session) -> Dict[str, Recipient]:
         if u.full_name:
             out.setdefault(_n(u.full_name), r)
 
-    # Always ensure Pritha Banerjee Madam (PB, PBn) is in the directory
-    pb_rec = Recipient("banerjee.pritha74@gmail.com", "Pritha Banerjee Madam")
-    for alias in ("pb", "pbn", "prithabanerjee", "prithabanerjeemadam", "drprithabanerjee"):
-        out.setdefault(alias, pb_rec)
-
     return out
 
 
@@ -1397,8 +1392,8 @@ def _expand_event(session, ev: dict) -> Tuple[List[dict], str]:
         # Fallback guarantee: ensure an email notification is NEVER dropped when changes occur
         if not out:
             default_recipients = Cfg.ADMIN_RECIPIENTS or [
-                {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee Madam"},
                 {"email": "ankitproject556@gmail.com", "name": "Ankit Project"},
+                {"email": "timetableadmin71@gmail.com", "name": "Timetable Admin"},
             ]
             s, h, t = render_admin_email(changes, ctx, notified_names, unresolved)
             for r in default_recipients:

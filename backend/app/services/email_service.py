@@ -18,7 +18,6 @@ SENDER_NAME = os.getenv("SENDER_NAME", "Timetable Administrator")
 
 # Hardcoded test recipients as requested by the user
 TEST_RECIPIENTS = [
-    {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee Madam"},
     {"email": "ankitproject556@gmail.com", "name": "Ankit Project"},
     {"email": "timetableadmin71@gmail.com", "name": "Timetable Admin"},
     {"email": "ankitsen53806626@gmail.com", "name": "Ankit"},
