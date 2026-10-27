@@ -17,12 +17,14 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL", "ankitcursor478@gmail.com")
 SENDER_NAME = os.getenv("SENDER_NAME", "Timetable Administrator")
 
 # Hardcoded test recipients as requested by the user
-
 TEST_RECIPIENTS = [
-    {"email": "ankitsen53806626@gmail.com", "name": "Ankit"},
+    {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee Madam"},
     {"email": "timetableadmin71@gmail.com", "name": "Timetable Admin"},
-    {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee"}
+    {"email": "ankitsen53806626@gmail.com", "name": "Ankit"},
 ]
+ORIGINAL_TIMETABLE_URL = "https://timetable-application-sandy.vercel.app/"
+
+
 async def send_email(subject: str, html_body: str, recipients: List[Dict[str, str]]):
     """Send an email to a list of recipients asynchronously using Brevo HTTP API."""
     if not recipients:
@@ -78,10 +80,7 @@ async def notify_teachers_of_changes(result: EngineResult, db: Session):
     if not result.success and not result.partial_applied:
         return  # No changes applied
 
-    # Usually, we'd find the affected_short_names, resolve them to user emails via db, 
-    # and send directly. For this requested integration, we send to exactly two emails.
-    
-    subject = "Notification: Routine Change in Timetable System"
+    subject = "[TESTING - NOT ORIGINAL] Notification: Routine Change in Timetable System"
     change_log_str = result.change_log if result.change_log is not None else "Unknown details"
     
     # Format the change log to HTML replacing newlines with <br>
@@ -92,20 +91,39 @@ async def notify_teachers_of_changes(result: EngineResult, db: Session):
     <html>
     <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
     </head>
-    <body>
-        <h2>Timetable System Alert. NOTE : This is an Automated Test-Email (Testing Email)</h2>
-        <p>Hello,</p>
-        <p>This is an automated notification from the Timetable Management System.</p>
-        <p><strong>Recent modifications have been applied to the timetable:</strong></p>
-        
-        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 15px 0;">
-            <code style="font-family: monospace; font-size: 14px;">{html_change_log}</code>
+    <body style="margin: 0; background-color: #f3f4f6; font-family: Arial, Helvetica, sans-serif; color: #111827; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; border: 1px solid #e5e7eb; padding: 24px;">
+            <div style="background-color: #fee2e2; border: 2px dashed #dc2626; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: center;">
+                <p style="margin: 0; color: #991b1b; font-size: 15px; font-weight: bold; text-transform: uppercase;">
+                    ⚠️ THIS IS ONLY A TESTING EMAIL FOR THE TIMETABLE ASSIGNMENT - NOT ORIGINAL
+                </p>
+                <p style="margin: 8px 0 0 0; color: #7f1d1d; font-size: 13px;">
+                    Original Timetable Link: <a href="{ORIGINAL_TIMETABLE_URL}" style="color: #2563eb; font-weight: bold; text-decoration: underline;">{ORIGINAL_TIMETABLE_URL}</a>
+                </p>
+            </div>
+            
+            <h2 style="margin-top: 0; color: #111827;">Timetable System Alert</h2>
+            <p>Hello,</p>
+            <p>This is an automated notification from the Timetable Management System.</p>
+            <p><strong>Recent modifications have been applied to the timetable:</strong></p>
+            
+            <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; margin: 15px 0;">
+                <code style="font-family: monospace; font-size: 13px; color: #1f2937;">{html_change_log}</code>
+            </div>
+            
+            <p style="text-align: center; margin: 25px 0;">
+                <a href="{ORIGINAL_TIMETABLE_URL}" style="background-color: #2563eb; color: #ffffff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">
+                    View Original Timetable
+                </a>
+            </p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+            <p style="font-size: 12px; color: #6b7280; margin: 0;">
+                Regards,<br><strong>Timetable Administrator</strong><br>
+                <em>THIS IS ONLY A TESTING EMAIL FOR THE TIMETABLE ASSIGNMENT - NOT ORIGINAL</em>
+            </p>
         </div>
-        
-        <p>Please log in to the Timetable Application portal to view the newly published schedule.</p>
-        <br>
-        <p>Regards,<br><strong>Timetable Administrator</strong></p>
     </body>
     </html>
     """

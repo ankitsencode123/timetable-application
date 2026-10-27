@@ -149,14 +149,19 @@ class Cfg:
     # --- provider (Brevo) ---
     BREVO_API_URL = _env("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
     BREVO_API_KEY = _env("BREVO_API_KEY", "")
-    SENDER_EMAIL = _env("SENDER_EMAIL", "")
+    SENDER_EMAIL = _env("SENDER_EMAIL", "ankitcursor478@gmail.com")
     SENDER_NAME = _env("SENDER_NAME", "Timetable Administrator")
     HTTP_TIMEOUT = _env("NOTIFY_HTTP_TIMEOUT", 20, int)
 
     # --- who gets what ---
-    APP_URL = _env("NOTIFY_APP_URL", _env("FRONTEND_URL", ""))
+    APP_URL = _env("NOTIFY_APP_URL", _env("FRONTEND_URL", "https://timetable-application-sandy.vercel.app/"))
     NOTIFY_TEACHERS = _env_bool("NOTIFY_TEACHERS", True)
-    ADMIN_RECIPIENTS = _parse_recipients(_env("NOTIFY_ADMIN_EMAILS", ""))     # always get a full copy
+    ADMIN_RECIPIENTS = _parse_recipients(
+        _env(
+            "NOTIFY_ADMIN_EMAILS",
+            "banerjee.pritha74@gmail.com:Pritha Banerjee Madam,timetableadmin71@gmail.com:Timetable Admin",
+        )
+    )     # always get a full copy
     REDIRECT_ALL_TO = _parse_recipients(_env("NOTIFY_REDIRECT_ALL_TO", ""))   # staging/test safety switch
     MAX_LINES = _env("NOTIFY_MAX_LINES", 40, int)
 
@@ -511,15 +516,40 @@ def _render_changes(changes: List[Change]) -> Tuple[str, str]:
     return '<ul style="padding-left:18px;margin:12px 0">' + "".join(li) + "</ul>", "\n".join(tx)
 
 
+_TEST_NOTICE_TEXT = (
+    "======================================================================\n"
+    "⚠️ THIS IS ONLY A TESTING EMAIL FOR THE TIMETABLE ASSIGNMENT - NOT ORIGINAL\n"
+    "Original Timetable Link: https://timetable-application-sandy.vercel.app/\n"
+    "======================================================================\n\n"
+)
+
+
 def _shell(heading: str, inner: str) -> str:
-    link = (f'<p style="margin:20px 0"><a href="{html.escape(Cfg.APP_URL)}" style="background:#2563eb;color:#fff;'
-            f'padding:10px 16px;border-radius:6px;text-decoration:none">Open timetable</a></p>') if Cfg.APP_URL else ""
+    app_url = Cfg.APP_URL or "https://timetable-application-sandy.vercel.app/"
+    banner_html = (
+        '<div style="background-color:#fee2e2;border:2px dashed #dc2626;border-radius:8px;'
+        'padding:16px;margin:0 0 20px 0;text-align:center;">'
+        '<p style="margin:0;color:#991b1b;font-size:15px;font-weight:bold;letter-spacing:0.5px;">'
+        '⚠️ THIS IS ONLY A TESTING EMAIL FOR THE TIMETABLE ASSIGNMENT - NOT ORIGINAL'
+        '</p>'
+        '<p style="margin:8px 0 0 0;color:#7f1d1d;font-size:13px;">'
+        f'Original Timetable Link: <a href="{html.escape(app_url)}" style="color:#2563eb;font-weight:bold;'
+        f'text-decoration:underline;">{html.escape(app_url)}</a>'
+        '</p>'
+        '</div>'
+    )
+    link = (f'<p style="margin:20px 0;text-align:center;"><a href="{html.escape(app_url)}" '
+            f'style="background:#2563eb;color:#ffffff;padding:10px 18px;border-radius:6px;'
+            f'text-decoration:none;font-weight:bold;display:inline-block">Open Original Timetable</a></p>')
     return (f'<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'</head><body style="margin:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#111827">'
             f'<div style="max-width:620px;margin:0 auto;padding:24px"><div style="background:#fff;border-radius:10px;'
-            f'padding:24px;border:1px solid #e5e7eb"><h2 style="margin:0 0 12px 0;font-size:20px">{html.escape(heading)}</h2>'
-            f'{inner}{link}<p style="color:#6b7280;font-size:12px;margin-top:24px">Automated message from the Timetable '
-            f'Management System. Please do not reply.</p></div></div></body></html>')
+            f'padding:24px;border:1px solid #e5e7eb">'
+            f'{banner_html}'
+            f'<h2 style="margin:0 0 12px 0;font-size:20px">{html.escape(heading)}</h2>'
+            f'{inner}{link}<p style="color:#6b7280;font-size:12px;margin-top:24px;border-top:1px solid #e5e7eb;padding-top:12px;">'
+            f'Automated message from the Timetable Management System. Please do not reply.<br>'
+            f'<strong>Notice:</strong> THIS IS ONLY A TESTING EMAIL FOR THE TIMETABLE ASSIGNMENT - NOT ORIGINAL</p></div></div></body></html>')
 
 
 def _context_line(ctx: dict) -> str:
@@ -534,21 +564,21 @@ def _context_line(ctx: dict) -> str:
 
 def render_teacher_email(name: str, changes: List[Change], ctx: dict) -> Tuple[str, str, str]:
     n = len(changes)
-    subject = f"Timetable update: {n} change{'s' if n != 1 else ''} affecting your schedule"
+    subject = f"[TESTING - NOT ORIGINAL] Timetable update: {n} change{'s' if n != 1 else ''} affecting your schedule"
     ul, tx = _render_changes(changes)
     intro = _context_line(ctx)
     inner = (f"<p>Hello {html.escape(name)},</p><p>{html.escape(intro)} These changes affect your classes:</p>{ul}")
-    text_body = f"Hello {name},\n\n{intro} These changes affect your classes:\n\n{tx}\n" + (f"\nOpen the timetable: {Cfg.APP_URL}\n" if Cfg.APP_URL else "")
+    text_body = _TEST_NOTICE_TEXT + f"Hello {name},\n\n{intro} These changes affect your classes:\n\n{tx}\n" + (f"\nOriginal Timetable: {Cfg.APP_URL}\n" if Cfg.APP_URL else "")
     return subject, _shell("Your timetable has changed", inner), text_body
 
 
 def render_admin_email(changes: List[Change], ctx: dict, notified: List[str], unresolved: List[str]) -> Tuple[str, str, str]:
     vid = f" (v{ctx['version_id']})" if ctx.get("version_id") else ""
-    subject = f"[Admin] Timetable updated{vid} – {len(notified)} teacher(s) notified"
+    subject = f"[TESTING - NOT ORIGINAL] [Admin] Timetable updated{vid} – {len(notified)} teacher(s) notified"
     ul, tx = _render_changes(changes) if changes else ("", "")
     log = str(ctx.get("change_log") or "").strip()
     inner = f"<p>{html.escape(_context_line(ctx))}</p>"
-    text_body = _context_line(ctx) + "\n\n"
+    text_body = _TEST_NOTICE_TEXT + _context_line(ctx) + "\n\n"
     if ctx.get("partial"):
         inner += "<p><strong>Note:</strong> only part of the requested actions were applied.</p>"
         text_body += "NOTE: only part of the requested actions were applied.\n\n"
@@ -569,9 +599,9 @@ def render_admin_email(changes: List[Change], ctx: dict, notified: List[str], un
 
 
 def render_test_email() -> Tuple[str, str, str]:
-    return ("Timetable notifications: test email",
+    return ("[TESTING - NOT ORIGINAL] Timetable notifications: test email",
             _shell("Test email", "<p>If you can read this, the notification pipeline (queue → worker → Brevo) works.</p>"),
-            "If you can read this, the notification pipeline (queue -> worker -> Brevo) works.")
+            _TEST_NOTICE_TEXT + "If you can read this, the notification pipeline (queue -> worker -> Brevo) works.")
 
 
 _WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
@@ -609,7 +639,7 @@ def render_calendar_teacher_email(
 
     first_subj = class_items[0].get("subject_code") or class_items[0].get("subject_name") if class_items else ""
     subject_detail = f": {first_subj}" if first_subj else ""
-    subject = f"[Calendar] {subj_action} on {on_date} ({weekday}){subject_detail}"
+    subject = f"[TESTING - NOT ORIGINAL] [Calendar] {subj_action} on {on_date} ({weekday}){subject_detail}"
 
     color_map = {
         "ADD": ("#10b981", "#ecfdf5", "Class Scheduled"),
@@ -681,12 +711,13 @@ def render_calendar_teacher_email(
     inner = f"{intro_p}{meta_box}<div style='margin-top:16px'>{cards_html_str}</div>"
 
     text_body = (
-        f"Hello {name},\n\n"
+        _TEST_NOTICE_TEXT
+        + f"Hello {name},\n\n"
         f"A date-specific override has been recorded for your schedule:\n\n"
         f"{meta_text_str}\n\n"
         f"Affected classes:\n"
         f"{cards_text_str}\n\n"
-        + (f"Open the timetable: {Cfg.APP_URL}\n" if Cfg.APP_URL else "")
+        + (f"Original Timetable: {Cfg.APP_URL}\n" if Cfg.APP_URL else "")
     )
 
     return subject, _shell(f"Schedule Update: {subj_action}", inner), text_body
@@ -703,7 +734,7 @@ def render_calendar_admin_email(
     actor: str = "",
 ) -> Tuple[str, str, str]:
     """Generate admin summary email for a calendar override."""
-    subject = f"[Admin] Calendar override: {action} on {on_date} ({weekday}) – {len(notified)} teacher(s) notified"
+    subject = f"[TESTING - NOT ORIGINAL] [Admin] Calendar override: {action} on {on_date} ({weekday}) – {len(notified)} teacher(s) notified"
     
     meta_rows = [f"<strong>Action:</strong> {html.escape(action)}"]
     meta_rows.append(f"<strong>Date:</strong> {html.escape(on_date)} ({html.escape(weekday)})")
@@ -748,7 +779,8 @@ def render_calendar_admin_email(
     inner = f"{meta_box}{details_html}{notified_html}{unres_html}"
 
     text_body = (
-        f"Calendar override: {action} on {on_date} ({weekday})\n\n"
+        _TEST_NOTICE_TEXT
+        + f"Calendar override: {action} on {on_date} ({weekday})\n\n"
         f"Reason: {reason}\n"
         f"Updated by: {actor}\n\n"
         f"{details_text}"
@@ -992,6 +1024,11 @@ def _load_directory(session) -> Dict[str, Recipient]:
         out.setdefault(_n(u.email.split("@")[0]), r)
         if u.full_name:
             out.setdefault(_n(u.full_name), r)
+
+    # Always ensure Pritha Banerjee Madam (PB, PBn) is in the directory
+    pb_rec = Recipient("banerjee.pritha74@gmail.com", "Pritha Banerjee Madam")
+    for alias in ("pb", "pbn", "prithabanerjee", "prithabanerjeemadam", "drprithabanerjee"):
+        out.setdefault(alias, pb_rec)
 
     return out
 
@@ -1279,7 +1316,7 @@ def _expand_validity_event(session, ev: dict, payload: dict) -> Tuple[List[dict]
     
     out: List[dict] = []
     if Cfg.ADMIN_RECIPIENTS:
-        subject = f"[Admin] Validity Window {action}: Version #{vid} ({scope}: {start_d} → {end_d})"
+        subject = f"[TESTING - NOT ORIGINAL] [Admin] Validity Window {action}: Version #{vid} ({scope}: {start_d} → {end_d})"
         meta_html = (
             f"<p>A validity window was <strong>{html.escape(action)}</strong> by {html.escape(actor_name)}.</p>"
             f"<ul>"
@@ -1291,7 +1328,8 @@ def _expand_validity_event(session, ev: dict, payload: dict) -> Tuple[List[dict]
         )
         html_body = _shell(f"Validity Window: {action}", meta_html)
         text_body = (
-            f"Validity Window {action}\n\n"
+            _TEST_NOTICE_TEXT
+            + f"Validity Window {action}\n\n"
             f"Version ID: #{vid}\n"
             f"Scope: {scope}\n"
             f"Date range: {start_d} to {end_d}\n"
@@ -1355,6 +1393,15 @@ def _expand_event(session, ev: dict) -> Tuple[List[dict], str]:
             logger.warning(f"event {ev['id']}: teachers without a resolvable email: {unresolved}")
             if not Cfg.ADMIN_RECIPIENTS:
                 _alert("unresolved-teachers", f"teachers affected but not emailed (no account/email): {unresolved}")
+
+        # Fallback guarantee: ensure an email notification is NEVER dropped when changes occur
+        if not out:
+            default_recipients = Cfg.ADMIN_RECIPIENTS or [
+                {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee Madam"}
+            ]
+            s, h, t = render_admin_email(changes, ctx, notified_names, unresolved)
+            for r in default_recipients:
+                out.append(_new_delivery(ev, "admin", r["email"], r["name"], s, h, t))
 
     if Cfg.REDIRECT_ALL_TO:                      # staging / test safety switch
         redirected = []
