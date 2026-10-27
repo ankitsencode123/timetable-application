@@ -69,3 +69,20 @@
 ### 5. Chained Deterministic Fallback & Legacy Engine Fail-Safe
 - **Decision**: Chained `SemanticChatService._deterministic_answer` (slot-filtered schedule formatting) with `cache_layer._fallback_answer` when Groq is unavailable, rate-limited, or circuit-broken, and added an automatic exception fallback to `cache_layer.CHAT.answer` (`SEM_LEGACY_FALLBACK=1`) plus a `CHAT_ENGINE=legacy` kill switch.
 - **Reasoning**: Ensures high availability and graceful degradation. Even if an unexpected error occurs in the semantic pipeline or external LLM provider, students still receive an accurate, deterministic schedule response backed by the existing cache layer.
+
+## Date: 2026-10-27
+
+### 1. Fix Replace Class Payload Structure & Schema Aliasing
+- **Decision**: 
+  1. Updated `frontend/src/components/actions/ActionForm.tsx` so `REPLACE_CLASS` correctly constructs and submits `base.new_spec` instead of `base.spec`. Enhanced `TargetSelector.onSelect` to prefill `subject_code`, `subject_name`, and `teacher` from the target class, and added fallbacks to target slot properties so partial edits retain existing values.
+  2. Added `@model_validator(mode='before')` to `ReplaceClassAction` in `backend/app/actions/types.py` to transparently map `'spec'` to `'new_spec'`. Added alias validators on `ClassTarget` and `ClassSpec` to seamlessly normalize `start` -> `start_time`, `end` -> `end_time`, and `type` -> `entry_type`.
+- **Reasoning**: The modal threw a Pydantic 422 error (`1 validation error for ReplaceClassAction new_spec Field required`) because the frontend previously assigned `base.spec` (the key required by `ADD_CLASS`) instead of `base.new_spec`. Fixing the frontend key and adding defensive alias mappings in Pydantic guarantees full compatibility across both button forms and NLP chat parser outputs.
+
+### 2. Optimistic Preloading for Admin Dashboard Teachers View (`GET /api/users`)
+- **Decision**:
+  1. Extended `Bundle` in `backend/app/services/preload.py` to preload the `User` accounts list (`users_blob`) in server RAM alongside timetable versions. Added `User` table change detection to `_probe(db)` (`func.count(User.id)`, `func.max(User.id)`, `func.max(User.last_login)`).
+  2. Added shadow route support for `users_path="/api/users"` in `install_preload` (mounted in `backend/app/main.py`), guarded by `require_admin`. When any email is typed on `LoginPage.tsx`, the debounced `POST /api/preload/warm` request wakes the instance, warms the DB pool and crypto stack, and preloads the user table into RAM.
+  3. Integrated `invalidate_preload("user_mutation")` calls into all user mutation endpoints in `backend/app/api/users.py` (`create_user`, `update_user`, `enable_user`, `disable_user`, `reset_password`).
+  4. Enhanced `frontend/src/pages/AdminPanel.tsx` with instant SWR/sessionStorage caching to eliminate blank spinner flickers when navigating to the Teachers tab.
+- **Reasoning**: Cold starts on Render free instances and Postgres connection setups previously delayed the admin dashboard. Warming when typing the email pre-computes the users JSON in RAM before the admin even clicks login. Sensitive data remains secure because unauthenticated warm requests never return user data; only authenticated requests with an Admin JWT can access the preloaded shadow route.
+

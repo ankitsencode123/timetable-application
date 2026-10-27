@@ -16,6 +16,7 @@ from app.models.audit import AuditLog
 from app.schemas.user import UserOut, UserCreate, UserUpdateAdmin
 from app.schemas.auth import AdminResetPasswordRequest
 from app.services import auth_service
+from app.services.preload import invalidate_preload
 
 router = APIRouter()
 
@@ -44,10 +45,12 @@ def create_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-    return auth_service.create_user(
+    created = auth_service.create_user(
         db, email=req.email, password=req.password,
         full_name=req.full_name, role=req.role,
     )
+    invalidate_preload("create_user")
+    return created
 
 
 # ── Single user operations ─────────────────────────────────────────────────────
@@ -90,6 +93,7 @@ def update_user(
         user.role = req.role
     db.commit()
     db.refresh(user)
+    invalidate_preload("update_user")
     return user
 
 
@@ -101,7 +105,9 @@ def enable_user(
     
 ):
     try:
-        return auth_service.enable_user(db, user_id)
+        res = auth_service.enable_user(db, user_id)
+        invalidate_preload("enable_user")
+        return res
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -116,7 +122,9 @@ def disable_user(
     if user_id == admin.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot disable your own account")
     try:
-        return auth_service.disable_user(db, user_id)
+        res = auth_service.disable_user(db, user_id)
+        invalidate_preload("disable_user")
+        return res
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
@@ -135,6 +143,7 @@ def reset_password(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     try:
         auth_service.admin_reset_password(db, user, req.new_password)
+        invalidate_preload("reset_password")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"message": f"Password reset for {user.email}"}

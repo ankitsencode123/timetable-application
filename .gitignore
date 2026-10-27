@@ -7,8 +7,10 @@ backend/**/__pycache__/
 backend/*.db
 backend/dev.db
 backend/timetable.db
-.env
-backend/.env
+.env*
+*.env*
+*.backup
+backend/.env*
 backend/.pytest_cache/
 backend/alembic/__pycache__/
 

@@ -79,6 +79,7 @@ install_preload(
     app,
     versions_prefix="/api/versions",        # GET /api/versions, GET /api/versions/{id}
     draft_path="/api/timetable/draft",      # GET /api/timetable/draft
+    users_path="/api/users",                # GET /api/users (Admin Panel users list)
 )
 
 _cors_origins = settings.cors_origin_list

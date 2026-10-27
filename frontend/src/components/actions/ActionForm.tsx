@@ -146,12 +146,26 @@ export default function ActionForm({ actionType, onClose }: Props) {
     if (fields.new_start) base.new_start_time = fields.new_start
     if (fields.new_end)   base.new_end_time   = fields.new_end
 
-    if (actionType === 'ADD_CLASS' || actionType === 'REPLACE_CLASS') {
+    if (actionType === 'ADD_CLASS') {
       base.spec = {
-        program: fields.program, semester: fields.semester, day: fields.day,
-        start_time: fields.start_time, end_time: fields.end_time,
-        subject_code: fields.subject_code, subject_name: fields.subject_name,
-        teacher: fields.teacher, entry_type: fields.entry_type || 'Theory', room: fields.room,
+        program: fields.program || '', semester: fields.semester || '', day: fields.day || '',
+        start_time: fields.start_time || '', end_time: fields.end_time || '',
+        subject_code: fields.subject_code || '', subject_name: fields.subject_name || '',
+        teacher: fields.teacher || '', entry_type: fields.entry_type || 'Theory', room: fields.room || '',
+      }
+    }
+    if (actionType === 'REPLACE_CLASS') {
+      base.new_spec = {
+        program: fields.program || target?.program || '',
+        semester: fields.semester || target?.semester || '',
+        day: fields.day || target?.day || '',
+        start_time: fields.start_time || target?.start || '',
+        end_time: fields.end_time || target?.end || '',
+        subject_code: fields.subject_code || target?.subject_code || '',
+        subject_name: fields.subject_name || target?.subject_name || '',
+        teacher: fields.teacher || target?.teacher || '',
+        entry_type: fields.entry_type || target?.type || 'Theory',
+        room: fields.room || target?.room || '',
       }
     }
     if (actionType === 'VALIDATE_TIMETABLE') base.version_id = currentVersionId
@@ -243,7 +257,10 @@ export default function ActionForm({ actionType, onClose }: Props) {
                       start_time: t.start,
                       end_time: t.end,
                       entry_type: t.type || 'Theory',
-                      room: t.room || f.room
+                      room: t.room || f.room,
+                      subject_code: t.subject_code || f.subject_code || '',
+                      subject_name: t.subject_name || f.subject_name || '',
+                      teacher: t.teacher || f.teacher || '',
                     }))
                   }
                 }} selected={target} />

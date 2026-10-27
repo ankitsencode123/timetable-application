@@ -58,6 +58,18 @@ class ClassTarget(BaseModel):
     room: Optional[str] = None           # e.g. "R#207B"
     entry_type: Optional[str] = None     # "Theory" | "Practical"
 
+    @model_validator(mode='before')
+    @classmethod
+    def check_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if 'start' in data and 'start_time' not in data:
+                data['start_time'] = data.get('start')
+            if 'end' in data and 'end_time' not in data:
+                data['end_time'] = data.get('end')
+            if 'type' in data and 'entry_type' not in data:
+                data['entry_type'] = data.get('type')
+        return data
+
 
 class ClassSpec(BaseModel):
     """Full specification for creating or replacing a class slot."""
@@ -69,8 +81,20 @@ class ClassSpec(BaseModel):
     subject_code: str
     subject_name: str
     teacher: str
-    entry_type: str    # "Theory" | "Practical"
+    entry_type: str = "Theory"    # "Theory" | "Practical"
     room: str
+
+    @model_validator(mode='before')
+    @classmethod
+    def check_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if 'start' in data and 'start_time' not in data:
+                data['start_time'] = data.get('start')
+            if 'end' in data and 'end_time' not in data:
+                data['end_time'] = data.get('end')
+            if 'type' in data and 'entry_type' not in data:
+                data['entry_type'] = data.get('type')
+        return data
 
     def to_schedule_dict(self) -> dict:
         return {
@@ -205,6 +229,14 @@ class ReplaceClassAction(BaseModel):
     action: Literal[ActionType.REPLACE_CLASS] = ActionType.REPLACE_CLASS
     target: ClassTarget
     new_spec: ClassSpec
+
+    @model_validator(mode='before')
+    @classmethod
+    def check_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if 'spec' in data and 'new_spec' not in data:
+                data['new_spec'] = data.pop('spec')
+        return data
 
 
 class GenerateTimetableAction(BaseModel):

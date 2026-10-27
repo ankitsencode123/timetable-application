@@ -19,9 +19,22 @@ export default function AdminPanel() {
   const { user } = useAuthStore()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('users')
-  const [users, setUsers] = useState<AdminUser[]>([])
+  const [users, setUsers] = useState<AdminUser[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('admin_users_cache')
+      return cached ? JSON.parse(cached) : []
+    } catch {
+      return []
+    }
+  })
   const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !sessionStorage.getItem('admin_users_cache')
+    } catch {
+      return true
+    }
+  })
   const [error, setError] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [activityUserId, setActivityUserId] = useState<number | null>(null)
@@ -34,10 +47,17 @@ export default function AdminPanel() {
   useEffect(() => { fetchUsers() }, [])
 
   async function fetchUsers() {
-    setLoading(true); setError(null)
-    try { setUsers(await adminListUsers()) }
-    catch (e: any) { setError(e.message) }
-    finally { setLoading(false) }
+    if (users.length === 0) setLoading(true)
+    setError(null)
+    try {
+      const data = await adminListUsers()
+      setUsers(data)
+      try { sessionStorage.setItem('admin_users_cache', JSON.stringify(data)) } catch {}
+    } catch (e: any) {
+      if (users.length === 0) setError(e.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function viewActivity(userId: number) {

@@ -168,11 +168,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, text
 from concurrent.futures import ThreadPoolExecutor
 
-from app.api.auth import require_teacher_or_admin
+from app.api.auth import require_teacher_or_admin, require_admin
 from app.models.timetable import TimetableVersion
 from app.models.timetable_entry import TimetableEntry
 from app.models.user import User
+import app.models.audit  # noqa: F401
+import app.models.refresh_token  # noqa: F401
+import app.models.teacher  # noqa: F401
 from app.schemas.timetable import VersionDetail, VersionOut
+from app.schemas.user import UserOut
 from app.services import timetable_service
 
 # Building blocks shared with the existing cache layer (same process, same
@@ -343,11 +347,12 @@ class Bundle:
     draft: Optional[PBlob]          # == GET draft (VersionOut of newest version)
     details: Dict[int, PBlob]       # == GET versions/{id} for preloaded ids
     combined: PBlob                 # == GET /api/preload/bundle
+    users: Optional[PBlob]          # == GET /api/users for Admin Panel
     total_bytes: int
 
 
 def _probe(db) -> tuple:
-    """Cheap change-fingerprint of everything the dashboard shows (3 tiny queries)."""
+    """Cheap change-fingerprint of everything the dashboard shows (4 tiny queries)."""
     cols = [func.count(TimetableVersion.id), func.max(TimetableVersion.id)]
     for name in ("published_at", "archived_at", "updated_at"):
         col = getattr(TimetableVersion, name, None)
@@ -372,7 +377,10 @@ def _probe(db) -> tuple:
         row = db.query(*ecols).filter(TimetableEntry.version_id == latest_id).one()
         entry_sig = tuple(str(x) for x in row)
 
-    return (tuple(str(x) for x in head), status_sig, entry_sig)
+    user_cols = [func.count(User.id), func.max(User.id), func.max(User.last_login)]
+    user_sig = tuple(str(x) for x in db.query(*user_cols).one())
+
+    return (tuple(str(x) for x in head), status_sig, entry_sig, user_sig)
 
 
 def _build_bundle(db, fingerprint: tuple, cfg: PreloadConfig) -> Bundle:
@@ -388,6 +396,10 @@ def _build_bundle(db, fingerprint: tuple, cfg: PreloadConfig) -> Bundle:
 
     draft_blob = _blob_from_obj(_dump(VersionOut, latest, from_attributes=True)) if latest is not None else None
 
+    # Preload users (teachers and admins list for Admin Panel)
+    users_raw = db.query(User).order_by(User.created_at.desc()).all()
+    users_blob = _blob_from_obj([_dump(UserOut, u, from_attributes=True) for u in users_raw])
+
     # Which versions get their full entry list preloaded (latest + published
     # always; a few more recent ones while the memory budget allows).
     wanted: List[int] = []
@@ -400,7 +412,7 @@ def _build_bundle(db, fingerprint: tuple, cfg: PreloadConfig) -> Bundle:
             wanted.append(v.id)
 
     details: Dict[int, PBlob] = {}
-    total = len(versions_blob.raw) + (len(draft_blob.raw) if draft_blob else 0)
+    total = len(versions_blob.raw) + (len(draft_blob.raw) if draft_blob else 0) + len(users_blob.raw)
     for idx, vid in enumerate(wanted):
         if idx >= mandatory and total >= cfg.max_bundle_bytes:
             break
@@ -437,7 +449,7 @@ def _build_bundle(db, fingerprint: tuple, cfg: PreloadConfig) -> Bundle:
 
     logger.info(
         f"[preload] bundle built in {(time.monotonic() - t0) * 1000:.0f} ms: "
-        f"{len(versions)} versions, {len(details)} detailed, "
+        f"{len(versions)} versions, {len(details)} detailed, {len(users_raw)} users, "
         f"{(total + len(combined.raw)) / 1024:.0f} KB in RAM"
     )
     return Bundle(
@@ -451,6 +463,7 @@ def _build_bundle(db, fingerprint: tuple, cfg: PreloadConfig) -> Bundle:
         draft=draft_blob,
         details=details,
         combined=combined,
+        users=users_blob,
         total_bytes=total + len(combined.raw),
     )
 
@@ -946,7 +959,12 @@ async def preload_bundle(request: Request, user: User = Depends(require_teacher_
     return _private_response(request, bundle.combined, bundle)
 
 
-def _register_shadow_routes(app: FastAPI, versions_prefix: Optional[str], draft_path: Optional[str]) -> None:
+def _register_shadow_routes(
+    app: FastAPI,
+    versions_prefix: Optional[str],
+    draft_path: Optional[str],
+    users_path: Optional[str] = None,
+) -> None:
     """Serve the EXISTING authenticated GET endpoints from RAM (same JSON shape).
     Registered before your routers so they take priority."""
 
@@ -988,6 +1006,19 @@ def _register_shadow_routes(app: FastAPI, versions_prefix: Optional[str], draft_
         app.add_api_route(path, draft_cached, methods=["GET"], include_in_schema=False)
         logger.info(f"[preload] shadow route active: GET {path}")
 
+    if users_path:
+        upath = "/" + users_path.strip("/")
+
+        async def users_cached(request: Request, admin: User = Depends(require_admin)):
+            BUNDLES.touch()
+            bundle = await _bundle_or_503()
+            if bundle.users is None:
+                raise HTTPException(status_code=503, detail="Users data temporarily unavailable. Please retry shortly.")
+            return _private_response(request, bundle.users, bundle)
+
+        app.add_api_route(upath, users_cached, methods=["GET"], include_in_schema=False)
+        logger.info(f"[preload] shadow route active: GET {upath}")
+
 
 # ============================================================================
 # 8. STATS + INSTALLER
@@ -1000,6 +1031,7 @@ def collect_preload_stats() -> Dict[str, Any]:
             "version_id_published": b.published_id,
             "versions": b.versions_count,
             "detailed_versions": sorted(b.details.keys()),
+            "users_preloaded": b.users is not None,
             "age_seconds": round(time.monotonic() - b.built_at, 1),
             "bytes_in_ram": b.total_bytes,
             "combined_gzip_bytes": len(b.combined.gz),
@@ -1017,6 +1049,7 @@ def install_preload(
     *,
     versions_prefix: Optional[str] = None,
     draft_path: Optional[str] = None,
+    users_path: Optional[str] = None,
 ) -> None:
     """
     Call once, after install_cache(app) and BEFORE including your routers.
@@ -1025,6 +1058,8 @@ def install_preload(
                      -> GET <prefix> and GET <prefix>/{id} are served from RAM.
     draft_path:      full path of the "current draft" endpoint
                      (e.g. "/api/timetable/draft") -> served from RAM.
+    users_path:      full path of the users list endpoint
+                     (e.g. "/api/users") -> served from RAM for Admin Panel.
     Both are optional; GET /api/preload/bundle works without them.
     """
     if not PCFG.enabled:
@@ -1040,8 +1075,8 @@ def install_preload(
     )
 
     app.include_router(router, prefix="/api/preload", tags=["preload"])
-    if versions_prefix or draft_path:
-        _register_shadow_routes(app, versions_prefix, draft_path)
+    if versions_prefix or draft_path or users_path:
+        _register_shadow_routes(app, versions_prefix, draft_path, users_path)
 
     original_lifespan = app.router.lifespan_context
 

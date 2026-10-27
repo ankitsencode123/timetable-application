@@ -32,7 +32,7 @@ class UserOut(BaseModel):
     is_active: bool
     created_at: datetime
     last_login: Optional[datetime] = None
-    failed_attempts: int = 0
+    failed_attempts: Optional[int] = 0
     locked_until: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
