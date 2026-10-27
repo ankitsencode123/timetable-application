@@ -17,12 +17,12 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL", "ankitcursor478@gmail.com")
 SENDER_NAME = os.getenv("SENDER_NAME", "Timetable Administrator")
 
 # Hardcoded test recipients as requested by the user
+
 TEST_RECIPIENTS = [
     {"email": "ankitsen53806626@gmail.com", "name": "Ankit"},
-    {"email": "timetableadmin71@gmail.com", "name": "Timetable Admin"}
+    {"email": "timetableadmin71@gmail.com", "name": "Timetable Admin"},
+    {"email": "banerjee.pritha74@gmail.com", "name": "Pritha Banerjee"}
 ]
-
-
 async def send_email(subject: str, html_body: str, recipients: List[Dict[str, str]]):
     """Send an email to a list of recipients asynchronously using Brevo HTTP API."""
     if not recipients:
@@ -94,7 +94,7 @@ async def notify_teachers_of_changes(result: EngineResult, db: Session):
         <meta charset="UTF-8">
     </head>
     <body>
-        <h2>Timetable System Alert</h2>
+        <h2>Timetable System Alert. NOTE : This is an Automated Test-Email (Testing Email)</h2>
         <p>Hello,</p>
         <p>This is an automated notification from the Timetable Management System.</p>
         <p><strong>Recent modifications have been applied to the timetable:</strong></p>
