@@ -105,3 +105,23 @@
      - Generated admin summary notifications for `Cfg.ADMIN_RECIPIENTS` detailing all affected entries, notified teachers, and any unresolved faculty tokens.
   4. **Durable Asynchronous Pipeline**: All calendar notifications publish asynchronously via persistent outbox table `notification_events` with deduplication keys, background queue claiming, Brevo API dispatching, circuit breakers, and staging safe redirection via `Cfg.REDIRECT_ALL_TO`.
 - **Reasoning**: Previously, calendar overrides committed to the database and logged to the audit table, but never integrated with the notification engine (which only received events from the timetable version action engine). Faculty were not alerted when classes were added, moved, cancelled, or declared off on specific calendar dates. Integrating calendar mutations with the durable outbox ensures immediate, reliable, and auditable email delivery to both affected teachers and administrators.
+
+### 6. Comprehensive Availability Checking in Calendar System (Busy Slots & Theory Limits)
+- **Decision**: Overhauled `computeAvailability()` in `frontend/src/components/calendar/CalendarManager.tsx` to evaluate day-level constraints in addition to time-slot overlaps:
+  1. **Day-Level Leave & Unavailable Slots**: Checks `busySlots` declarations (both temporary specific dates and recurring weekdays). If a teacher is on leave or unavailable, they are immediately marked as busy on that date with their reason (e.g., `marked busy on this day (Conference)`), even before the admin enters a time slot.
+  2. **Hard Constraint H5 (Max 1 Theory Class per Day)**: If the class being added or modified is `Theory`, `computeAvailability()` counts all existing Theory classes taught by each teacher on that date (excluding the class being modified). Any teacher who already has a Theory class is marked busy with `max 1 theory/day reached (already teaching {subject} at {time})`.
+  3. **Hard Constraint H5b (Max 1 Practical Class per Day)**: If the class is `Practical`, any teacher who already has a Practical class on that date is marked busy with `max 1 practical/day reached`.
+  4. **Time-Slot Overlap Clashes (H2 & H3)**: When a valid `start` and `end` time are entered, it checks for direct class overlaps, tagging busy teachers with `time clash with {class}` and busy rooms with `room occupied by {class}`.
+  5. **Pre-Time Guidance**: Even when `start`/`end` times are not yet chosen, day-level constraints are displayed immediately, preventing admins from picking unavailable teachers only to have the backend reject the change upon submission.
+- **Reasoning**: Previously, `computeAvailability()` only checked for overlapping time windows. It completely ignored whether a teacher was on leave or had already reached the 1-theory-class-per-day limit. This caused the dropdown to show teachers with a green "free" status even when scheduling another Theory class would trigger a backend hard constraint error (`H5_multiple_theory_same_day`). Evaluating full day constraints upfront guarantees that the UI indicators match the backend validator rules.
+
+### 7. Suggestion Dropdowns for Subject Name and Subject Code in Scheduling Modals
+- **Decision**: Replaced plain HTML `<input>` fields for Subject Name and Subject Code in `frontend/src/components/actions/WeeklyScheduleTab.tsx` ("Weekly Routine Planner") and `frontend/src/components/actions/SmartScheduleModal.tsx` ("Single Class Slot") with `SuggestInput`:
+  1. Connected both modals to `catalogSubjects` from `useWorkspaceStore`, ensuring catalog data is fetched on demand.
+  2. Options are dynamically filtered by the selected `program` and `semester`, falling back to all catalog subjects if none are selected.
+  3. Bidirectional Auto-Population:
+     - Selecting a Subject Name automatically fills the corresponding Subject Code, and auto-derives the Class Type (`Theory` vs `Practical`) along with `program` and `semester` if not yet specified.
+     - Selecting a Subject Code automatically fills the Subject Name, Class Type, and program/semester.
+  4. Enhanced `onPick` in `frontend/src/components/calendar/CalendarManager.tsx` so selecting Subject Name similarly auto-derives Subject Code, Class Type, Program, and Semester.
+- **Reasoning**: Plain inputs forced users to memorize and manually type exact subject titles and codes, increasing the risk of typographical errors that caused scheduler validation failures. Providing type-ahead comboboxes with automatic derivation streamlines form completion and ensures exact alignment with catalog subjects.
+

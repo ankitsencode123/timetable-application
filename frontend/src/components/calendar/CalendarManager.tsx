@@ -40,40 +40,107 @@ function normRoom(r: string): string {
   return (r || '').replace(/\s+/g, '').toUpperCase()
 }
 
+interface AvailabilityResult {
+  teachers: Map<string, string>
+  rooms: Map<string, string>
+  hasTimeWindow: boolean
+}
+
 /**
- * Who / what is already occupied on `date` between start–end.
+ * Who / what is already occupied on `date` between start–end or constrained on that day.
  * Uses the effective day schedule (base + overrides, cancelled classes already
- * removed) plus the teachers' busy-slot declarations. Returns null when the
- * window is not yet valid. Pure + cheap: O(classes on that day).
+ * removed) plus the teachers' busy-slot declarations and H5/H5b max theory/practical limits.
  */
 function computeAvailability(
   entries: CalendarDayEntry[], start: string, end: string, excludeKey: string,
-  busySlots: BusySlotLite[], date: string, weekday?: string,
-): { teachers: Map<string, string>; rooms: Map<string, string> } | null {
-  const s = toMin(start), e = toMin(end)
-  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null
+  busySlots: BusySlotLite[], date: string, weekday?: string, entryType: string = 'Theory',
+): AvailabilityResult {
   const teachers = new Map<string, string>()
   const rooms = new Map<string, string>()
 
-  for (const c of entries) {
-    if (excludeKey && c.cal_key === excludeKey) continue        // the class being modified
-    const cs = toMin(c.start), ce = toMin(c.end)
-    if (!(cs < e && s < ce)) continue                             // no overlap
-    const what = `${c.program} ${c.semester} · ${c.subject_code || c.subject_name} ${c.start}–${c.end}`
-    splitTeachers(c.teacher).forEach(t => { if (!teachers.has(t)) teachers.set(t, what) })
-    if (c.room?.trim()) { const k = normRoom(c.room); if (!rooms.has(k)) rooms.set(k, what) }
-  }
-
   const wd = weekday || WEEKDAYS[new Date(date + 'T00:00:00').getDay()]
+  const isTargetTheory = (entryType || 'Theory').toLowerCase() === 'theory'
+  const isTargetPractical = (entryType || 'Theory').toLowerCase() === 'practical'
+
+  // 1. Teacher Busy Slots (Faculty unavailable/leave on this day or date)
   for (const b of busySlots) {
     const hit = b.scope === 'temporary'
       ? (b.specific_date || '').slice(0, 10) === date
       : (b.day_of_week || '').toLowerCase() === wd.toLowerCase()
-    if (hit && !teachers.has(b.teacher_short_name)) {
-      teachers.set(b.teacher_short_name, `marked busy${b.reason ? ` (${b.reason})` : ''}`)
+    if (hit && b.teacher_short_name && !teachers.has(b.teacher_short_name)) {
+      teachers.set(b.teacher_short_name, `marked busy on this day${b.reason ? ` (${b.reason})` : ''}`)
     }
   }
-  return { teachers, rooms }
+
+  // 2. Count existing Theory and Practical classes for each teacher today (Hard constraint H5 / H5b)
+  const teacherTheoryClasses = new Map<string, CalendarDayEntry[]>()
+  const teacherPracticalClasses = new Map<string, CalendarDayEntry[]>()
+
+  for (const c of entries) {
+    if (excludeKey && c.cal_key === excludeKey) continue // exclude class being modified
+    const cType = (c.type || 'Theory').trim().toLowerCase()
+    const tList = splitTeachers(c.teacher)
+    for (const t of tList) {
+      if (cType === 'theory') {
+        const arr = teacherTheoryClasses.get(t) || []
+        arr.push(c)
+        teacherTheoryClasses.set(t, arr)
+      } else if (cType === 'practical') {
+        const arr = teacherPracticalClasses.get(t) || []
+        arr.push(c)
+        teacherPracticalClasses.set(t, arr)
+      }
+    }
+  }
+
+  // H5: Max 1 theory class per teacher per day
+  if (isTargetTheory) {
+    for (const [t, clsList] of teacherTheoryClasses.entries()) {
+      if (!teachers.has(t) && clsList.length >= 1) {
+        const first = clsList[0]
+        const sub = first.subject_code || first.subject_name || 'Theory'
+        teachers.set(t, `max 1 theory/day reached (already teaching ${sub} at ${first.start}–${first.end})`)
+      }
+    }
+  }
+
+  // H5b: Max 1 practical class per teacher per day
+  if (isTargetPractical) {
+    for (const [t, clsList] of teacherPracticalClasses.entries()) {
+      if (!teachers.has(t) && clsList.length >= 1) {
+        const first = clsList[0]
+        const sub = first.subject_code || first.subject_name || 'Practical'
+        teachers.set(t, `max 1 practical/day reached (already teaching ${sub} at ${first.start}–${first.end})`)
+      }
+    }
+  }
+
+  // 3. Time-window overlap clashes (H2 teacher clash & H3 room clash)
+  const s = toMin(start), e = toMin(end)
+  const hasTimeWindow = Number.isFinite(s) && Number.isFinite(e) && e > s
+
+  if (hasTimeWindow) {
+    for (const c of entries) {
+      if (excludeKey && c.cal_key === excludeKey) continue
+      const cs = toMin(c.start), ce = toMin(c.end)
+      if (!(cs < e && s < ce)) continue // no overlap
+
+      const what = `${c.program} ${c.semester} · ${c.subject_code || c.subject_name} ${c.start}–${c.end}`
+      splitTeachers(c.teacher).forEach(t => {
+        if (!teachers.has(t)) {
+          teachers.set(t, `time clash with ${what}`)
+        }
+      })
+      if (c.room?.trim()) {
+        const k = normRoom(c.room)
+        if (!rooms.has(k)) {
+          rooms.set(k, `room occupied by ${what}`)
+        }
+      }
+    }
+  }
+
+  return { teachers, rooms, hasTimeWindow }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -532,11 +599,22 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
   const slotEnd   = action === 'ADD' ? addEntry.end   : action === 'MODIFY' ? (modChanges.end   || targetEntry?.end   || '') : ''
   const subjectForHint = action === 'ADD' ? addEntry.subject_code : (modChanges.subject_code || targetEntry?.subject_code || '')
 
-  // Recomputed only when the window / day data / busy slots change — so by the
+  const currentEntryType = action === 'ADD' ? (addEntry.type || 'Theory') : (targetEntry?.type || 'Theory')
+
+  // Recomputed only when the window / day data / busy slots / class type change — so by the
   // time the user opens the Teacher or Room dropdown the answer is ready.
   const availability = useMemo(
-    () => computeAvailability(entries, slotStart, slotEnd, action === 'MODIFY' ? targetKey : '', busySlots, date, dayData?.weekday),
-    [entries, slotStart, slotEnd, action, targetKey, busySlots, date, dayData?.weekday],
+    () => computeAvailability(
+      entries,
+      slotStart,
+      slotEnd,
+      action === 'MODIFY' ? targetKey : '',
+      busySlots,
+      date,
+      dayData?.weekday,
+      currentEntryType,
+    ),
+    [entries, slotStart, slotEnd, action, targetKey, busySlots, date, dayData?.weekday, currentEntryType],
   )
 
   const teacherNames = useMemo(() => {
@@ -557,19 +635,21 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
       return Array.from(teacherNames.entries()).map(([short, full]): SuggestOption => {
         const teaches = subjectForHint && catalogTeachers.find(t => t.short_name === short)?.subjects_csv
           ?.toLowerCase().split(',').map(x => x.trim()).includes(subjectForHint.toLowerCase())
-        const reason = availability?.teachers.get(short)
+        const reason = availability.teachers.get(short)
+        const status = reason ? 'busy' : (availability.hasTimeWindow ? 'free' : undefined)
         return {
           value: short,
           label: [full, teaches ? `teaches ${subjectForHint}` : ''].filter(Boolean).join(' · '),
-          status: availability ? (reason ? 'busy' : 'free') : undefined,
+          status,
           reason,
         }
       })
     }
     if (field === 'room') {
       return roomNames.map((r): SuggestOption => {
-        const reason = availability?.rooms.get(normRoom(r))
-        return { value: r, status: availability ? (reason ? 'busy' : 'free') : undefined, reason }
+        const reason = availability.rooms.get(normRoom(r))
+        const status = availability.hasTimeWindow ? (reason ? 'busy' : 'free') : undefined
+        return { value: r, status, reason }
       })
     }
     if (field === 'program') {
@@ -577,11 +657,11 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
     }
     if (field === 'semester') return SEMESTERS.map(v => ({ value: v }))
     if (field === 'subject_code' || field === 'subject_name') {
-      let subs = catalogSubjects.filter(s => (!prog || s.program === prog) && (!sem || s.semester === sem))
+      let subs = catalogSubjects.filter(s => (!prog || s.program.toLowerCase() === prog.toLowerCase()) && (!sem || s.semester.toLowerCase() === sem.toLowerCase()))
       if (subs.length === 0) subs = catalogSubjects
       const seen = new Set<string>()
       return subs.flatMap(s => {
-        const key = field === 'subject_code' ? s.code : s.name
+        const key = (field === 'subject_code' ? s.code : s.name).trim().toLowerCase()
         if (seen.has(key)) return []
         seen.add(key)
         return [field === 'subject_code'
@@ -593,11 +673,19 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
   }
 
   function headerFor(field: string): string | undefined {
-    if ((field === 'teacher' || field === 'room') && availability) return `Availability ${slotStart}–${slotEnd}`
+    if (field === 'teacher') {
+      if (availability.hasTimeWindow) return `Teacher Availability ${slotStart}–${slotEnd} (Checked clashes, theory limits & leave)`
+      return 'Teacher Day Status (Checked leave & theory limits)'
+    }
+    if (field === 'room') {
+      if (availability.hasTimeWindow) return `Room Availability ${slotStart}–${slotEnd}`
+      return undefined
+    }
     return undefined
   }
   function hintFor(field: string): string | undefined {
-    if ((field === 'teacher' || field === 'room') && !availability) return 'Pick start & end time to see free / busy'
+    if (field === 'teacher' && !availability.hasTimeWindow) return 'Pick start & end time to also check time-slot clashes'
+    if (field === 'room' && !availability.hasTimeWindow) return 'Pick start & end time to see room availability'
     return undefined
   }
 
@@ -811,7 +899,7 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
                       hintWhenNoStatus={hintFor(field)}
                       onPick={o => {
                         if (field === 'subject_code') {
-                          const s = catalogSubjects.find(x => x.code === o.value)
+                          const s = catalogSubjects.find(x => x.code.toLowerCase() === o.value.toLowerCase())
                           setAddEntry(c => ({
                             ...c,
                             subject_name: o.label || c.subject_name,
@@ -820,7 +908,16 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
                             semester: c.semester || s?.semester || '',
                           }))
                         }
-                        if (field === 'subject_name' && o.label) setAddEntry(c => ({ ...c, subject_code: o.label! }))
+                        if (field === 'subject_name') {
+                          const s = catalogSubjects.find(x => x.name.toLowerCase() === o.value.toLowerCase() || x.code.toLowerCase() === (o.label || '').toLowerCase())
+                          setAddEntry(c => ({
+                            ...c,
+                            subject_code: o.label || c.subject_code,
+                            type: s && (s.entry_type === 'Theory' || s.entry_type === 'Practical') ? s.entry_type : c.type,
+                            program: c.program || s?.program || '',
+                            semester: c.semester || s?.semester || '',
+                          }))
+                        }
                       }}
                     />
                   )}

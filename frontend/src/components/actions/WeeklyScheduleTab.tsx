@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Sparkles, Loader2, CheckCircle2, AlertCircle, AlertTriangle,
   ArrowRight, Calendar, Clock, ChevronRight, Layers, Sliders, Check
 } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
+import SuggestInput, { SuggestOption } from '../common/SuggestInput'
 import {
   getVersion, req, weeklySmartSchedule,
   WeeklyScheduleRequest, WeeklyScheduleResponse, WeeklyProposalItem, DayReportItem
@@ -20,7 +21,7 @@ interface Props {
 }
 
 export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, onClose }: Props) {
-  const { currentVersionId, setCurrentVersion } = useWorkspaceStore()
+  const { currentVersionId, setCurrentVersion, catalogSubjects, loadCatalog } = useWorkspaceStore()
 
   // Form State
   const [program, setProgram] = useState('')
@@ -48,6 +49,38 @@ export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, on
   const [applying, setApplying] = useState(false)
   const [doneMessage, setDoneMessage] = useState('')
   const [doneSuccess, setDoneSuccess] = useState(false)
+
+  useEffect(() => {
+    if (!catalogSubjects.length) {
+      loadCatalog()
+    }
+  }, [catalogSubjects.length, loadCatalog])
+
+  const subjectNameOptions = useMemo((): SuggestOption[] => {
+    let subs = catalogSubjects
+    if (program) subs = subs.filter(s => s.program.toLowerCase() === program.toLowerCase())
+    if (semester) subs = subs.filter(s => s.semester.toLowerCase() === semester.toLowerCase())
+    const seen = new Set<string>()
+    return subs.flatMap(s => {
+      const k = s.name.trim().toLowerCase()
+      if (seen.has(k)) return []
+      seen.add(k)
+      return [{ value: s.name, label: s.code }]
+    })
+  }, [catalogSubjects, program, semester])
+
+  const subjectCodeOptions = useMemo((): SuggestOption[] => {
+    let subs = catalogSubjects
+    if (program) subs = subs.filter(s => s.program.toLowerCase() === program.toLowerCase())
+    if (semester) subs = subs.filter(s => s.semester.toLowerCase() === semester.toLowerCase())
+    const seen = new Set<string>()
+    return subs.flatMap(s => {
+      const k = s.code.trim().toLowerCase()
+      if (seen.has(k)) return []
+      seen.add(k)
+      return [{ value: s.code, label: s.name }]
+    })
+  }, [catalogSubjects, program, semester])
 
   const effectiveTeacher = teacher === 'Other…' ? customTeacher : teacher
   const canSubmit = program && semester && subjectName && effectiveTeacher && weeklyHours > 0 && selectedDays.length > 0
@@ -188,21 +221,43 @@ export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, on
 
             <div className="form-group">
               <label className="form-label">Subject Name *</label>
-              <input
-                className="form-control"
+              <SuggestInput
+                id="weekly-subject-name"
                 placeholder="e.g. Data Structures"
                 value={subjectName}
-                onChange={e => setSubjectName(e.target.value)}
+                onChange={setSubjectName}
+                options={subjectNameOptions}
+                onPick={o => {
+                  setSubjectName(o.value)
+                  if (o.label) setSubjectCode(o.label)
+                  const s = catalogSubjects.find(x => x.name.toLowerCase() === o.value.toLowerCase() || x.code.toLowerCase() === (o.label || '').toLowerCase())
+                  if (s) {
+                    if (s.entry_type === 'Theory' || s.entry_type === 'Practical') setEntryType(s.entry_type)
+                    if (!program && s.program) setProgram(s.program)
+                    if (!semester && s.semester) setSemester(s.semester)
+                  }
+                }}
               />
             </div>
 
             <div className="form-group">
               <label className="form-label">Subject Code <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
-              <input
-                className="form-control"
+              <SuggestInput
+                id="weekly-subject-code"
                 placeholder="e.g. ds (auto-derived)"
                 value={subjectCode}
-                onChange={e => setSubjectCode(e.target.value)}
+                onChange={setSubjectCode}
+                options={subjectCodeOptions}
+                onPick={o => {
+                  setSubjectCode(o.value)
+                  if (o.label) setSubjectName(o.label)
+                  const s = catalogSubjects.find(x => x.code.toLowerCase() === o.value.toLowerCase())
+                  if (s) {
+                    if (s.entry_type === 'Theory' || s.entry_type === 'Practical') setEntryType(s.entry_type)
+                    if (!program && s.program) setProgram(s.program)
+                    if (!semester && s.semester) setSemester(s.semester)
+                  }
+                }}
               />
             </div>
 

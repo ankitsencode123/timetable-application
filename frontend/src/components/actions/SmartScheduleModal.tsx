@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, Sparkles, Loader2, CheckCircle2, AlertCircle, CalendarClock, Zap, ArrowRight, ChevronRight, AlertTriangle, Calendar } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
+import SuggestInput, { SuggestOption } from '../common/SuggestInput'
 import { getVersion, req } from '../../api'
 import WeeklyScheduleTab from './WeeklyScheduleTab'
 
@@ -42,7 +43,7 @@ interface AdvancedResult {
 interface Props { onClose: () => void }
 
 export default function SmartScheduleModal({ onClose }: Props) {
-  const { currentVersionId, setCurrentVersion } = useWorkspaceStore()
+  const { currentVersionId, setCurrentVersion, catalogSubjects, loadCatalog } = useWorkspaceStore()
   const [activeTab, setActiveTab] = useState<'weekly' | 'single'>('weekly')
   const [fields, setFields] = useState<Record<string, string>>({
     program: '', semester: '', subject_code: '', subject_name: '',
@@ -80,6 +81,38 @@ export default function SmartScheduleModal({ onClose }: Props) {
       setDynamicTeachers(Array.from(new Set([...dbTechs, ...staticTechs])))
     }).catch(() => setDynamicTeachers(["AK","SC","RS","DG","DK","SN","NK","VK","HS","RB","SD","SG","SH"]))
   }, [])
+
+  useEffect(() => {
+    if (!catalogSubjects.length) {
+      loadCatalog()
+    }
+  }, [catalogSubjects.length, loadCatalog])
+
+  const subjectNameOptions = useMemo((): SuggestOption[] => {
+    let subs = catalogSubjects
+    if (fields.program) subs = subs.filter(s => s.program.toLowerCase() === fields.program.toLowerCase())
+    if (fields.semester) subs = subs.filter(s => s.semester.toLowerCase() === fields.semester.toLowerCase())
+    const seen = new Set<string>()
+    return subs.flatMap(s => {
+      const k = s.name.trim().toLowerCase()
+      if (seen.has(k)) return []
+      seen.add(k)
+      return [{ value: s.name, label: s.code }]
+    })
+  }, [catalogSubjects, fields.program, fields.semester])
+
+  const subjectCodeOptions = useMemo((): SuggestOption[] => {
+    let subs = catalogSubjects
+    if (fields.program) subs = subs.filter(s => s.program.toLowerCase() === fields.program.toLowerCase())
+    if (fields.semester) subs = subs.filter(s => s.semester.toLowerCase() === fields.semester.toLowerCase())
+    const seen = new Set<string>()
+    return subs.flatMap(s => {
+      const k = s.code.trim().toLowerCase()
+      if (seen.has(k)) return []
+      seen.add(k)
+      return [{ value: s.code, label: s.name }]
+    })
+  }, [catalogSubjects, fields.program, fields.semester])
 
   const setF = (k: string, v: string) => setFields(f => ({ ...f, [k]: v }))
   const teacher = fields.teacher === 'Other…' ? fields.custom_teacher : fields.teacher
@@ -319,12 +352,44 @@ export default function SmartScheduleModal({ onClose }: Props) {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Subject Name</label>
-                    <input className="form-control" placeholder="e.g. Computer Networks" value={fields.subject_name} onChange={e => setF('subject_name', e.target.value)} />
+                    <label className="form-label">Subject Name *</label>
+                    <SuggestInput
+                      id="single-subject-name"
+                      placeholder="e.g. Computer Networks"
+                      value={fields.subject_name}
+                      onChange={v => setF('subject_name', v)}
+                      options={subjectNameOptions}
+                      onPick={o => {
+                        setF('subject_name', o.value)
+                        if (o.label) setF('subject_code', o.label)
+                        const s = catalogSubjects.find(x => x.name.toLowerCase() === o.value.toLowerCase() || x.code.toLowerCase() === (o.label || '').toLowerCase())
+                        if (s) {
+                          if (s.entry_type === 'Theory' || s.entry_type === 'Practical') setF('entry_type', s.entry_type)
+                          if (!fields.program && s.program) setF('program', s.program)
+                          if (!fields.semester && s.semester) setF('semester', s.semester)
+                        }
+                      }}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Subject Code <span style={{ color: 'var(--clr-text-3)', fontWeight: 400 }}>(optional)</span></label>
-                    <input className="form-control" placeholder="e.g. cn (auto-derived)" value={fields.subject_code} onChange={e => setF('subject_code', e.target.value)} />
+                    <SuggestInput
+                      id="single-subject-code"
+                      placeholder="e.g. cn (auto-derived)"
+                      value={fields.subject_code}
+                      onChange={v => setF('subject_code', v)}
+                      options={subjectCodeOptions}
+                      onPick={o => {
+                        setF('subject_code', o.value)
+                        if (o.label) setF('subject_name', o.label)
+                        const s = catalogSubjects.find(x => x.code.toLowerCase() === o.value.toLowerCase())
+                        if (s) {
+                          if (s.entry_type === 'Theory' || s.entry_type === 'Practical') setF('entry_type', s.entry_type)
+                          if (!fields.program && s.program) setF('program', s.program)
+                          if (!fields.semester && s.semester) setF('semester', s.semester)
+                        }
+                      }}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Teacher</label>
