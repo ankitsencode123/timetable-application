@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, AlertCircle,
   Calendar, Shield, ClipboardList, X, RefreshCw, Info, Lightbulb, Home,
@@ -7,11 +7,74 @@ import {
   getCalendarMonth, adminGetCalendarDay, adminListOverrides,
   adminCreateOverride, adminDeleteOverride, adminListValidity,
   adminCreateValidity, adminDeleteValidity, adminCalendarAudit,
-  listVersions, executeActions, adminCalendarSuggest, formatViolation,
-  type CalendarMonthDay, type CalendarDayResult,
+  listVersions, executeActions, adminCalendarSuggest, formatViolation, req,
+  type CalendarMonthDay, type CalendarDayResult, type CalendarDayEntry,
   type CalendarOverrideRecord, type CalendarValidityRecord,
 } from '../../api'
 import type { TimetableVersion } from '../../types'
+import { useWorkspaceStore } from '../../store'
+import SuggestInput, { type SuggestOption } from '../common/SuggestInput'
+
+// ── availability helpers (teacher / room free-busy for a time window) ────────
+
+const DEFAULT_ROOMS = ['R#205', 'R#207A', 'R#207B', 'R#208', 'R#209', 'R#303', 'R#403']
+const SEMESTERS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+interface BusySlotLite {
+  teacher_short_name: string
+  scope: string
+  day_of_week?: string | null
+  specific_date?: string | null
+  reason?: string | null
+}
+
+function toMin(t: string): number {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t || '')
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN
+}
+function splitTeachers(t: string): string[] {
+  return (t || '').split(/[,/&]+/).map(x => x.trim()).filter(Boolean)
+}
+function normRoom(r: string): string {
+  return (r || '').replace(/\s+/g, '').toUpperCase()
+}
+
+/**
+ * Who / what is already occupied on `date` between start–end.
+ * Uses the effective day schedule (base + overrides, cancelled classes already
+ * removed) plus the teachers' busy-slot declarations. Returns null when the
+ * window is not yet valid. Pure + cheap: O(classes on that day).
+ */
+function computeAvailability(
+  entries: CalendarDayEntry[], start: string, end: string, excludeKey: string,
+  busySlots: BusySlotLite[], date: string, weekday?: string,
+): { teachers: Map<string, string>; rooms: Map<string, string> } | null {
+  const s = toMin(start), e = toMin(end)
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null
+  const teachers = new Map<string, string>()
+  const rooms = new Map<string, string>()
+
+  for (const c of entries) {
+    if (excludeKey && c.cal_key === excludeKey) continue        // the class being modified
+    const cs = toMin(c.start), ce = toMin(c.end)
+    if (!(cs < e && s < ce)) continue                             // no overlap
+    const what = `${c.program} ${c.semester} · ${c.subject_code || c.subject_name} ${c.start}–${c.end}`
+    splitTeachers(c.teacher).forEach(t => { if (!teachers.has(t)) teachers.set(t, what) })
+    if (c.room?.trim()) { const k = normRoom(c.room); if (!rooms.has(k)) rooms.set(k, what) }
+  }
+
+  const wd = weekday || WEEKDAYS[new Date(date + 'T00:00:00').getDay()]
+  for (const b of busySlots) {
+    const hit = b.scope === 'temporary'
+      ? (b.specific_date || '').slice(0, 10) === date
+      : (b.day_of_week || '').toLowerCase() === wd.toLowerCase()
+    if (hit && !teachers.has(b.teacher_short_name)) {
+      teachers.set(b.teacher_short_name, `marked busy${b.reason ? ` (${b.reason})` : ''}`)
+    }
+  }
+  return { teachers, rooms }
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function toISO(y: number, m: number, d: number) {
@@ -449,6 +512,95 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
 
   const entries = dayData?.entries ?? []
 
+  // ── Suggestions + availability (computed in the background) ─────────────────
+  const { catalogTeachers, catalogPrograms, catalogSubjects, loadCatalog } = useWorkspaceStore()
+  const [busySlots, setBusySlots] = useState<BusySlotLite[]>([])
+  useEffect(() => {
+    if (!catalogTeachers.length || !catalogSubjects.length) loadCatalog()
+    req<BusySlotLite[]>('/busy-slots').then(s => setBusySlots(Array.isArray(s) ? s : [])).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const targetEntry = useMemo(
+    () => (targetKey ? entries.find(e => e.cal_key === targetKey) ?? null : null),
+    [entries, targetKey],
+  )
+
+  // The time window being scheduled: ADD uses the form, MODIFY falls back to the
+  // original class times for anything left blank.
+  const slotStart = action === 'ADD' ? addEntry.start : action === 'MODIFY' ? (modChanges.start || targetEntry?.start || '') : ''
+  const slotEnd   = action === 'ADD' ? addEntry.end   : action === 'MODIFY' ? (modChanges.end   || targetEntry?.end   || '') : ''
+  const subjectForHint = action === 'ADD' ? addEntry.subject_code : (modChanges.subject_code || targetEntry?.subject_code || '')
+
+  // Recomputed only when the window / day data / busy slots change — so by the
+  // time the user opens the Teacher or Room dropdown the answer is ready.
+  const availability = useMemo(
+    () => computeAvailability(entries, slotStart, slotEnd, action === 'MODIFY' ? targetKey : '', busySlots, date, dayData?.weekday),
+    [entries, slotStart, slotEnd, action, targetKey, busySlots, date, dayData?.weekday],
+  )
+
+  const teacherNames = useMemo(() => {
+    const m = new Map<string, string>()
+    catalogTeachers.forEach(t => m.set(t.short_name, t.full_name))
+    entries.forEach(e => splitTeachers(e.teacher).forEach(t => { if (!m.has(t)) m.set(t, '') }))
+    return m
+  }, [catalogTeachers, entries])
+
+  const roomNames = useMemo(() => {
+    const s = new Set<string>(DEFAULT_ROOMS)
+    entries.forEach(e => { if (e.room?.trim()) s.add(e.room.trim()) })
+    return Array.from(s)
+  }, [entries])
+
+  function optionsFor(field: string, prog: string, sem: string): SuggestOption[] {
+    if (field === 'teacher') {
+      return Array.from(teacherNames.entries()).map(([short, full]): SuggestOption => {
+        const teaches = subjectForHint && catalogTeachers.find(t => t.short_name === short)?.subjects_csv
+          ?.toLowerCase().split(',').map(x => x.trim()).includes(subjectForHint.toLowerCase())
+        const reason = availability?.teachers.get(short)
+        return {
+          value: short,
+          label: [full, teaches ? `teaches ${subjectForHint}` : ''].filter(Boolean).join(' · '),
+          status: availability ? (reason ? 'busy' : 'free') : undefined,
+          reason,
+        }
+      })
+    }
+    if (field === 'room') {
+      return roomNames.map((r): SuggestOption => {
+        const reason = availability?.rooms.get(normRoom(r))
+        return { value: r, status: availability ? (reason ? 'busy' : 'free') : undefined, reason }
+      })
+    }
+    if (field === 'program') {
+      return Array.from(new Set([...catalogPrograms.map(p => p.name), 'B.Tech', 'M.Tech', 'M.Sc'])).map(v => ({ value: v }))
+    }
+    if (field === 'semester') return SEMESTERS.map(v => ({ value: v }))
+    if (field === 'subject_code' || field === 'subject_name') {
+      let subs = catalogSubjects.filter(s => (!prog || s.program === prog) && (!sem || s.semester === sem))
+      if (subs.length === 0) subs = catalogSubjects
+      const seen = new Set<string>()
+      return subs.flatMap(s => {
+        const key = field === 'subject_code' ? s.code : s.name
+        if (seen.has(key)) return []
+        seen.add(key)
+        return [field === 'subject_code'
+          ? { value: s.code, label: s.name }
+          : { value: s.name, label: s.code }]
+      })
+    }
+    return []
+  }
+
+  function headerFor(field: string): string | undefined {
+    if ((field === 'teacher' || field === 'room') && availability) return `Availability ${slotStart}–${slotEnd}`
+    return undefined
+  }
+  function hintFor(field: string): string | undefined {
+    if ((field === 'teacher' || field === 'room') && !availability) return 'Pick start & end time to see free / busy'
+    return undefined
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose} id="override-modal-overlay">
       <div className="modal modal-lg" onClick={e => e.stopPropagation()} id="override-modal">
@@ -600,14 +752,27 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
               ].map(({ field, label, type }) => (
                 <div key={field} className="form-group">
                   <label className="form-label">{label} (optional)</label>
-                  <input
-                    className="input" type={type}
-                    min={type === 'time' ? '10:00' : undefined}
-                    max={type === 'time' ? '17:30' : undefined}
-                    placeholder={type === 'time' ? '' : 'leave blank to keep'}
-                    value={(modChanges as any)[field]}
-                    onChange={e => setModChanges(c => ({ ...c, [field]: e.target.value }))}
-                  />
+                  {type === 'time' ? (
+                    <input
+                      className="input" type="time" min="10:00" max="17:30"
+                      value={(modChanges as any)[field]}
+                      onChange={e => setModChanges(c => ({ ...c, [field]: e.target.value }))}
+                    />
+                  ) : (
+                    <SuggestInput
+                      id={`modify-${field}`}
+                      placeholder={(targetEntry as any)?.[field] ? `keep: ${(targetEntry as any)[field]}` : 'leave blank to keep'}
+                      value={(modChanges as any)[field]}
+                      onChange={v => setModChanges(c => ({ ...c, [field]: v }))}
+                      options={optionsFor(field, targetEntry?.program ?? '', targetEntry?.semester ?? '')}
+                      header={headerFor(field)}
+                      hintWhenNoStatus={hintFor(field)}
+                      onPick={o => {
+                        if (field === 'subject_code' && o.label) setModChanges(c => ({ ...c, subject_name: o.label! }))
+                        if (field === 'subject_name' && o.label) setModChanges(c => ({ ...c, subject_code: o.label! }))
+                      }}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -624,18 +789,41 @@ function OverrideModal({ date, dayData, onClose, onDone }: {
                 { field: 'subject_code', label: 'Subject Code', placeholder: 'CS301', type: 'text' },
                 { field: 'subject_name', label: 'Subject Name', placeholder: 'Algorithms', type: 'text' },
                 { field: 'teacher', label: 'Teacher', placeholder: 'SK', type: 'text' },
-                { field: 'room', label: 'Room', placeholder: 'LH-1', type: 'text' },
+                { field: 'room', label: 'Room', placeholder: 'R#205', type: 'text' },
               ].map(({ field, label, placeholder, type }) => (
                 <div key={field} className="form-group">
                   <label className="form-label">{label}</label>
-                  <input
-                    className="input" type={type}
-                    min={type === 'time' ? '10:00' : undefined}
-                    max={type === 'time' ? '17:30' : undefined}
-                    placeholder={placeholder}
-                    value={(addEntry as any)[field]}
-                    onChange={e => setAddEntry(c => ({ ...c, [field]: e.target.value }))}
-                  />
+                  {type === 'time' ? (
+                    <input
+                      className="input" type="time" min="10:00" max="17:30"
+                      placeholder={placeholder}
+                      value={(addEntry as any)[field]}
+                      onChange={e => setAddEntry(c => ({ ...c, [field]: e.target.value }))}
+                    />
+                  ) : (
+                    <SuggestInput
+                      id={`add-${field}`}
+                      placeholder={placeholder}
+                      value={(addEntry as any)[field]}
+                      onChange={v => setAddEntry(c => ({ ...c, [field]: v }))}
+                      options={optionsFor(field, addEntry.program, addEntry.semester)}
+                      header={headerFor(field)}
+                      hintWhenNoStatus={hintFor(field)}
+                      onPick={o => {
+                        if (field === 'subject_code') {
+                          const s = catalogSubjects.find(x => x.code === o.value)
+                          setAddEntry(c => ({
+                            ...c,
+                            subject_name: o.label || c.subject_name,
+                            type: s && (s.entry_type === 'Theory' || s.entry_type === 'Practical') ? s.entry_type : c.type,
+                            program: c.program || s?.program || '',
+                            semester: c.semester || s?.semester || '',
+                          }))
+                        }
+                        if (field === 'subject_name' && o.label) setAddEntry(c => ({ ...c, subject_code: o.label! }))
+                      }}
+                    />
+                  )}
                 </div>
               ))}
               <div className="form-group">
