@@ -80,6 +80,16 @@ export default function PublicPage() {
   const [selectedDate, setSelectedDate] = useState<string>(todayStr)
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day')
   const mainContentRef = useRef<HTMLDivElement>(null)
+  const pillsScrollerRef = useRef<HTMLDivElement>(null)
+
+  // Auto-center active pill when selectedDate changes
+  useEffect(() => {
+    if (!pillsScrollerRef.current) return
+    const activeEl = pillsScrollerRef.current.querySelector('.date-pill-btn.active') as HTMLElement | null
+    if (activeEl) {
+      activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+    }
+  }, [selectedDate])
 
   const handleJumpToDay = (date: string) => {
     setSelectedDate(date)
@@ -228,12 +238,14 @@ export default function PublicPage() {
     const d = new Date(selectedDate + 'T00:00:00')
     d.setDate(d.getDate() - 1)
     setSelectedDate(toISODate(d))
+    pillsScrollerRef.current?.scrollBy({ left: -100, behavior: 'smooth' })
   }
 
   function nextDay() {
     const d = new Date(selectedDate + 'T00:00:00')
     d.setDate(d.getDate() + 1)
     setSelectedDate(toISODate(d))
+    pillsScrollerRef.current?.scrollBy({ left: 100, behavior: 'smooth' })
   }
 
   function selectTomorrow() {
@@ -427,7 +439,7 @@ export default function PublicPage() {
               <ChevronLeft size={15} />
             </button>
 
-            <div className="date-nav-pills-scroller">
+            <div ref={pillsScrollerRef} className="date-nav-pills-scroller">
               {weekInfo.days.map(d => {
                 const isToday = d.date === todayStr
                 const isSelected = d.date === selectedDate

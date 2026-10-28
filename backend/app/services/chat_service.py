@@ -49,6 +49,82 @@ def _build_schedule_context(db: Session, version_id: int | None = None) -> str:
         return ""
 
 
+def _parse_timetable_entries(timetable_text: str) -> list[dict]:
+    entries = []
+    lines = [l.strip() for l in timetable_text.splitlines() if l.strip().startswith('|') and not l.strip().startswith('|---') and 'Program' not in l]
+    for line in lines:
+        parts = [p.strip() for p in line.split('|')[1:-1]]
+        if len(parts) >= 10:
+            day, prog, sem, start, end, code, subj, teacher, room, etype = parts[:10]
+            entries.append({
+                "day": day, "program": prog, "semester": sem, "time": f"{start}-{end}",
+                "teacher": teacher, "subject": subj or code, "is_practical": etype.lower() == "practical" or "-p" in (subj + code).lower()
+            })
+        elif len(parts) >= 5:
+            day, prog, sem, time_slot, sfr = parts[0], parts[1], parts[2], parts[3], parts[4]
+            teacher_subj = sfr.split(':')[0]
+            if '(' in teacher_subj:
+                t = teacher_subj[:teacher_subj.find('(')].strip()
+                subj = teacher_subj[teacher_subj.find('(')+1:teacher_subj.rfind(')')].strip()
+            else:
+                t = teacher_subj
+                subj = ''
+            is_practical = '-P' in subj or ':P' in subj or 'practical' in subj.lower()
+            entries.append({
+                "day": day, "program": prog, "semester": sem, "time": time_slot,
+                "teacher": t, "subject": subj, "is_practical": is_practical
+            })
+    return entries
+
+
+def _check_teachers_more_than_one_theory(timetable_text: str) -> str:
+    entries = _parse_timetable_entries(timetable_text)
+    days_data: dict[str, dict[str, list[dict]]] = {}
+    for e in entries:
+        if not e["is_practical"] and e["teacher"]:
+            days_data.setdefault(e["day"], {}).setdefault(e["teacher"], []).append(e)
+
+    violations = []
+    day_order = {"Monday": 1, "Tuesday": 2, "Wednesday": 3, "Thursday": 4, "Friday": 5, "Saturday": 6}
+    sorted_days = sorted(days_data.keys(), key=lambda d: day_order.get(d, 99))
+    for day in sorted_days:
+        for teacher in sorted(days_data[day].keys()):
+            classes = days_data[day][teacher]
+            if len(classes) > 1:
+                violations.append((day, teacher, classes))
+
+    if not violations:
+        return "I checked the timetable: **No teacher** takes more than one theory class in a single day."
+
+    out = ["Yes, here are the teachers who take more than one theory class in a single day:\n"]
+    for day, teacher, classes in violations:
+        out.append(f"• **{teacher}** on **{day}** ({len(classes)} theory classes):")
+        for c in classes:
+            out.append(f"   - {c['subject']} ({c['time']}, {c['program']} {c['semester']})")
+    out.append("\n_Note: Under Rule H5, each teacher is supposed to take at most 1 theory class per day across all programmes._")
+    return "\n".join(out)
+
+
+def _check_internal_teacher_free_days(timetable_text: str, internal_teachers: set[str]) -> str:
+    entries = _parse_timetable_entries(timetable_text)
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    teacher_days: dict[str, set[str]] = {t: set() for t in internal_teachers}
+    for e in entries:
+        t = e["teacher"]
+        if t in teacher_days and e["day"] in weekdays:
+            teacher_days[t].add(e["day"])
+
+    out = ["**Free Day Status for Internal Teachers (Mon-Fri):**\n"]
+    for t in sorted(internal_teachers):
+        busy = teacher_days.get(t, set())
+        free = [d for d in weekdays if d not in busy]
+        if free:
+            out.append(f"• **{t}**: Free on {', '.join(free)}")
+        else:
+            out.append(f"• **{t}**: ⚠️ No free teaching day (teaches on all 5 days)")
+    return "\n".join(out)
+
+
 def handle_public_chat(message: str, db: Session | None = None) -> dict:
     """Read-only factual/conversational chat for unauthenticated users.
     
@@ -96,7 +172,7 @@ def handle_public_chat(message: str, db: Session | None = None) -> dict:
         current_date = datetime.now(tz).strftime('%A, %B %d, %Y')
 
         system_prompt = f"""You are a helpful timetable assistant for a university.
-Answer ONLY from the timetable data provided below. Be concise and precise.
+Answer ONLY from the timetable data provided below. Be concise, precise, and analytical.
 If you cannot find the information, say so clearly.
 
 CURRENT DATE:
@@ -109,32 +185,64 @@ FACULTY:
 {FACULTY_MASTER_MD}
 Note: The following short names correspond to INTERNAL teachers: {internal_teachers_str}. Any others are visiting/external.
 
-
 ROOMS:
 {ROOM_EXAMPLE_MD}
 
-Rules:
-- Only answer questions about the timetable (schedules, rooms, teachers, subjects, programs, semesters, days, times).
-- Do NOT make up any information not in the data.
-- When referencing teacher short names, use the faculty master to resolve full names if helpful.
-- Format answers clearly, use bullet points or tables when listing multiple classes.
+Timetable Structure & Rules:
+- Theory vs Practical:
+  * Practical sessions have '-P' or ':P' in the subject code or name (e.g. DL-P, AIML-P, AA-P, CG-P, ADBMS-P, CN-P, AGT-P, SC-P) or are explicitly labeled Practical.
+  * All other classes are Theory classes.
+- Rule H5 (Max 1 theory class per day per teacher):
+  * Teachers are supposed to take at most 1 theory class per day across all programmes.
+  * When asked if any teacher takes more than one theory class in a single day, check every day and every teacher across all programmes.
+  * List all teacher(s) who take more than 1 theory class on any day, stating the Day, Teacher, Theory subjects, times, and programs. If no teacher takes >1 theory class per day, state that clearly.
+- Rule H6 (One free day for internal teachers):
+  * Internal teachers must have at least one teaching day (Mon-Fri) with no classes scheduled.
+- General Rules:
+  * Only answer questions about the timetable (schedules, rooms, teachers, subjects, programs, semesters, days, times, rules).
+  * Do NOT make up any information not in the data.
+  * When referencing teacher short names, use the faculty master to resolve full names if helpful.
+  * Format answers clearly, use bullet points or tables when listing classes.
 """
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": message},
         ]
 
-        content, _ = call_groq(messages, expect_json=False)
-
-        return {
-            "message": content.strip(),
-            "schedule_updated": False,
-            "response_data": {},
-            "parsed_actions": [],
-        }
+        try:
+            content, _ = call_groq(messages, expect_json=False)
+            return {
+                "message": content.strip(),
+                "schedule_updated": False,
+                "response_data": {},
+                "parsed_actions": [],
+            }
+        except Exception as llm_err:
+            logger.warning(f"Public chat LLM call failed: {llm_err}")
+            # Factual fallback for analytical checks
+            lowered = message.lower()
+            if any(k in lowered for k in ["theory class", "more than one", "single day", "more than 1", "theory"]):
+                fb = _check_teachers_more_than_one_theory(timetable_context)
+                if fb:
+                    return {
+                        "message": fb,
+                        "schedule_updated": False,
+                        "response_data": {},
+                        "parsed_actions": [],
+                    }
+            if any(k in lowered for k in ["free day", "one free day", "day off"]):
+                fb = _check_internal_teacher_free_days(timetable_context, INTERNAL_TEACHERS)
+                if fb:
+                    return {
+                        "message": fb,
+                        "schedule_updated": False,
+                        "response_data": {},
+                        "parsed_actions": [],
+                    }
+            raise llm_err
 
     except Exception as e:
-        logger.warning(f"Public chat LLM error: {e}")
+        logger.warning(f"Public chat error: {e}")
         return {
             "message": (
                 "I couldn't answer that right now. "

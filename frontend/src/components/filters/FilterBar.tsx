@@ -1,4 +1,4 @@
-import { Search, X } from 'lucide-react'
+import { useMemo, useEffect } from 'react'
 import type { TimetableFilters } from '../../types'
 import { SEMESTERS, DAYS } from '../../types'
 import { useWorkspaceStore } from '../../store'
@@ -11,17 +11,59 @@ interface Props {
 }
 
 export default function FilterBar({ filters, onChange, density, onDensityChange }: Props) {
-  const { catalogPrograms, catalogTeachers } = useWorkspaceStore()
-  const PROGRAMS = Array.from(new Set(['All', ...catalogPrograms.map(p => p.name), 'B.Tech', 'M.Tech', 'M.Sc']))
-  const TEACHERS = Array.from(new Set(catalogTeachers.map(t => t.short_name)))
+  const { catalogPrograms, catalogTeachers, loadCatalog } = useWorkspaceStore()
+
+  useEffect(() => {
+    if (!catalogTeachers.length || !catalogPrograms.length) {
+      loadCatalog()
+    }
+  }, [catalogTeachers.length, catalogPrograms.length, loadCatalog])
+
+  const PROGRAMS = useMemo(() => {
+    return Array.from(new Set(['All', ...catalogPrograms.map(p => p.name), 'B.Tech', 'M.Tech', 'M.Sc']))
+  }, [catalogPrograms])
+
+  const TEACHERS = useMemo(() => {
+    const list: { short_name: string; full_name?: string }[] = []
+    const seen = new Set<string>()
+
+    const defaults: Record<string, string> = {
+      'SKS': 'Sanjit Kumar Setua',
+      'RKP': 'Rajat Kumar Pal',
+      'SC': 'Sankhayan Choudhury',
+      'NC': 'Nabendu Chaki',
+      'RD': 'Rajib Kumar Das',
+      'PB': 'Pritha Banerjee',
+      'SK': 'Sunirmal Khatua',
+      'SR': 'Somnath Roy',
+      'RS': 'Rajesh Sharma',
+      'DC': 'Debasish Chakraborty',
+      'SGC': 'Subhashis Gangopadhyay',
+      'VP': 'Visiting Professor',
+    }
+
+    for (const t of catalogTeachers) {
+      if (t.short_name && !seen.has(t.short_name)) {
+        seen.add(t.short_name)
+        list.push({ short_name: t.short_name, full_name: t.full_name })
+      }
+    }
+
+    for (const [short, full] of Object.entries(defaults)) {
+      if (!seen.has(short)) {
+        seen.add(short)
+        list.push({ short_name: short, full_name: full })
+      }
+    }
+
+    return list.sort((a, b) => a.short_name.localeCompare(b.short_name))
+  }, [catalogTeachers])
 
   const hasActiveFilters = Boolean(
-    filters.search ||
     (filters.program && filters.program !== 'All') ||
     (filters.semester && filters.semester !== 'All') ||
     filters.day ||
-    filters.teacher ||
-    filters.room
+    filters.teacher
   )
 
   const clearFilters = () => {
@@ -30,38 +72,6 @@ export default function FilterBar({ filters, onChange, density, onDensityChange 
 
   return (
     <div className="filter-bar">
-      <div className="filter-search-wrap input-group">
-        <Search
-          size={14}
-          className="input-icon"
-          style={{
-            position: 'absolute',
-            left: 10,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            color: 'var(--ink-soft)',
-            pointerEvents: 'none',
-            zIndex: 2,
-          }}
-        />
-        <input
-          className="form-control filter-select filter-search-input"
-          placeholder="Search subject, teacher, room…"
-          value={filters.search}
-          onChange={e => onChange({ search: e.target.value })}
-        />
-        {filters.search && (
-          <button
-            type="button"
-            className="filter-clear-search-btn"
-            onClick={() => onChange({ search: '' })}
-            title="Clear search"
-          >
-            <X size={12} />
-          </button>
-        )}
-      </div>
-
       <div className="filter-controls-group">
         <select
           className="filter-select"
@@ -83,6 +93,20 @@ export default function FilterBar({ filters, onChange, density, onDensityChange 
 
         <select
           className="filter-select"
+          value={filters.teacher}
+          onChange={e => onChange({ teacher: e.target.value })}
+          title="Filter by Teacher"
+        >
+          <option value="">All Teachers</option>
+          {TEACHERS.map(t => (
+            <option key={t.short_name} value={t.short_name}>
+              {t.full_name ? `${t.short_name} (${t.full_name})` : t.short_name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="filter-select"
           value={filters.day}
           onChange={e => onChange({ day: e.target.value })}
           title="Filter by Day"
@@ -90,24 +114,6 @@ export default function FilterBar({ filters, onChange, density, onDensityChange 
           <option value="">All Days</option>
           {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-
-        <input
-          className="filter-select"
-          list="filter-teachers"
-          placeholder="Teacher…"
-          value={filters.teacher}
-          onChange={e => onChange({ teacher: e.target.value })}
-        />
-        <datalist id="filter-teachers">
-          {TEACHERS.map(t => <option key={t} value={t} />)}
-        </datalist>
-
-        <input
-          className="filter-select"
-          placeholder="Room…"
-          value={filters.room}
-          onChange={e => onChange({ room: e.target.value })}
-        />
 
         {hasActiveFilters && (
           <button

@@ -666,6 +666,20 @@ _ACTION_RE = re.compile(
     r"delete|remove|postpone|prepone|extend|create|update|modify|book|declare|publish|generate)\b"
     r"|^\s*(?:please\s+)?schedule\s+(?:a|an|the|one|another|extra)\b")
 
+_ANALYTICAL_RE = re.compile(
+    r"\b(?:"
+    r"check(?:\s+if|\s+whether)?|verify|validate|is\s+there\s+any|are\s+there\s+any|does\s+any|do\s+any|did\s+any|has\s+any|have\s+any|"
+    r"who\s+(?:takes?|teaches?|handles?)|which\s+(?:teacher|faculty|professor|room|course|subject)|"
+    r"how\s+many|count\s+of|total\s+number|"
+    r"more\s+than|less\s+than|greater\s+than|at\s+most|at\s+least|only\s+one|single\s+day|"
+    r"theory\s+class(?:es)?|practical\s+class(?:es)?|"
+    r"free\s+day|day\s+off\s+for|off\s+day\s+for|workload|overload|"
+    r"conflict|clash|violation|violating|constraint|rule|hard\s+rule|soft\s+rule|"
+    r"why|explain|reason\s+for"
+    r")\b",
+    re.IGNORECASE,
+)
+
 
 def _detect_intents(t: str, has_time: bool, force: bool) -> list:
     holiday = any(p.search(t) for p in _HOLIDAY_PATS)
@@ -1678,6 +1692,9 @@ def answer_calendar_question(db: Session, message: str, user: Any = None, *,
     if not raw:
         return _reply(HELP_TEXT) if force else None
     t = _norm(raw)
+
+    if not force and _ANALYTICAL_RE.search(raw):
+        return None
     
     if re.fullmatch(r"\b(?:hi|hello|hey|greetings|morning|afternoon|evening|good\s*(?:morning|afternoon|evening|day)|howdy|sup)\b[!.?\s]*", t):
         msg = ("Hello! I'm your calendar assistant.\n\n" + HELP_TEXT)
@@ -1700,8 +1717,12 @@ def answer_calendar_question(db: Session, message: str, user: Any = None, *,
     residual = _residual(t2, t_left)
     plural_next = bool(_PLURAL_NEXT_RE.search(t))
 
-    if not intents and not force:
-        return None
+    if not force:
+        if not intents:
+            return None
+        # Generic schedule query without dates should not default to a calendar dump
+        if not specs and intents == ["schedule"]:
+            return None
 
     # ── 2. LLM fallback (only when the parser is unsure) ───────────────────
     plan = None

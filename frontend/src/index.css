@@ -612,14 +612,26 @@ select.form-control, select.input { cursor: pointer; }
   align-items: center;
   gap: 6px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  overflow-y: hidden;
+  padding-bottom: 3px;
   flex: 1 1 auto;
   min-width: 0;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  touch-action: pan-x;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--ink) 25%, transparent) transparent;
 }
 .date-nav-pills-scroller::-webkit-scrollbar {
-  display: none;
+  height: 3px;
+  display: block;
+}
+.date-nav-pills-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+.date-nav-pills-scroller::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--ink) 25%, transparent);
+  border-radius: 3px;
 }
 .date-pill-btn {
   display: flex;
@@ -634,6 +646,9 @@ select.form-control, select.input { cursor: pointer; }
   transition: var(--transition);
   min-width: 60px;
   flex-shrink: 0;
+  touch-action: pan-x;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .date-pill-day {
   font-family: var(--font-mono);
@@ -1407,9 +1422,9 @@ select.form-control, select.input { cursor: pointer; }
     width: 100%;
     box-sizing: border-box;
   }
-  @media (min-width: 480px) and (max-width: 768px) {
+  @media (min-width: 520px) and (max-width: 768px) {
     .filter-controls-group {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
     }
   }
   .filter-controls-group .filter-select {
@@ -1430,6 +1445,12 @@ select.form-control, select.input { cursor: pointer; }
     justify-content: center;
     width: 100% !important;
     box-sizing: border-box !important;
+    grid-column: span 2;
+  }
+  @media (min-width: 520px) and (max-width: 768px) {
+    .filter-reset-btn {
+      grid-column: span 4;
+    }
   }
   .filter-density-tabs {
     display: none !important;
@@ -1491,11 +1512,41 @@ select.form-control, select.input { cursor: pointer; }
   }
   .date-nav-pills-row {
     width: 100%;
+    max-width: 100%;
     gap: 4px;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .date-nav-pills-scroller {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--ink) 30%, transparent) transparent;
+  }
+  .date-nav-pills-scroller::-webkit-scrollbar {
+    height: 3px;
+    display: block;
+  }
+  .date-nav-pills-scroller::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--ink) 30%, transparent);
+    border-radius: 3px;
   }
   .date-pill-btn {
     min-width: 52px;
+    flex-shrink: 0 !important;
     padding: 5px 6px;
+    touch-action: pan-x;
+    user-select: none;
   }
   .date-pill-day {
     font-size: 8px;
