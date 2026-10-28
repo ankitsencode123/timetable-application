@@ -112,11 +112,38 @@ export default function PublicPage() {
   ])
   const chatEndRef = useRef<HTMLDivElement>(null)
 
+  const containerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Lock horizontal scroll to 0 to prevent mobile viewport shifting during search typing
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const clampScroll = () => {
+      if (el.scrollLeft !== 0) el.scrollLeft = 0
+    }
+    el.addEventListener('scroll', clampScroll, { passive: true })
+    return () => el.removeEventListener('scroll', clampScroll)
+  }, [])
+
+  useEffect(() => {
+    const clampWindowScroll = () => {
+      if (window.scrollX !== 0) window.scrollTo(0, window.scrollY)
+    }
+    window.addEventListener('scroll', clampWindowScroll, { passive: true })
+    return () => window.removeEventListener('scroll', clampWindowScroll)
+  }, [])
+
+  useEffect(() => {
+    if (containerRef.current && containerRef.current.scrollLeft !== 0) {
+      containerRef.current.scrollLeft = 0
+    }
+  }, [filters.search])
 
   // Load initial base timetable + metadata
   useEffect(() => {
@@ -270,7 +297,21 @@ export default function PublicPage() {
   const todayDayName = getDayName(todayStr)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', minHeight: '-webkit-fill-available', overflow: 'hidden', background: 'var(--paper)' }}>
+    <div
+      ref={containerRef}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100dvh',
+        minHeight: '-webkit-fill-available',
+        width: '100%',
+        maxWidth: '100vw',
+        overflow: 'hidden',
+        overflowX: 'hidden',
+        boxSizing: 'border-box',
+        background: 'var(--paper)',
+      }}
+    >
 
       {/* Header */}
       <header className="public-header" style={{ justifyContent: 'space-between' }}>

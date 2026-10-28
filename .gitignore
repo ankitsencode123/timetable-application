@@ -36,3 +36,4 @@ frontend/tsconfig.tsbuildinfo
 Thumbs.db
 *.log
 code_good_contents*.txt
+HEY_*.txt

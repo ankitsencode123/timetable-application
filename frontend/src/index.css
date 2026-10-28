@@ -90,9 +90,12 @@
 
 /* ── Reset ──────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100%; font-size: 16px; }
+html { height: 100%; width: 100%; max-width: 100vw; overflow-x: hidden; font-size: 16px; }
 body {
   height: 100%;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   font-family: var(--font);
   font-size: var(--fs-base);
   color: var(--ink);
@@ -100,7 +103,7 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
-#root { height: 100%; display: flex; flex-direction: column; }
+#root { height: 100%; width: 100%; max-width: 100vw; overflow-x: hidden; display: flex; flex-direction: column; }
 img, svg { display: block; }
 button { cursor: pointer; font-family: inherit; }
 input, textarea, select { font-family: inherit; }
@@ -1184,6 +1187,9 @@ select.form-control, select.input { cursor: pointer; }
   background: color-mix(in oklab, var(--paper) 90%, transparent);
   backdrop-filter: blur(8px);
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 .filter-search-wrap {
   position: relative;
@@ -1351,7 +1357,7 @@ select.form-control, select.input { cursor: pointer; }
   .tt-grid { min-width: 580px; }
   .tt-cell { min-height: 52px; }
   .tt-day-header, .tt-time-col { font-size: 9px; padding: 6px 8px; }
-  .app-header, .public-header { padding: 0 12px; height: 48px; }
+  .app-header, .public-header { padding: 0 12px; height: 48px; width: 100%; max-width: 100vw; box-sizing: border-box; }
   .modal { padding: var(--sp-4); max-width: calc(100vw - 24px); }
   .modal-lg { max-width: calc(100vw - 12px); }
   .public-hero { padding: var(--sp-5) var(--sp-4) var(--sp-4); }
@@ -1364,6 +1370,9 @@ select.form-control, select.input { cursor: pointer; }
     gap: 8px;
     flex-direction: column;
     align-items: stretch;
+    width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
   }
   .filter-search-wrap {
     position: relative;
@@ -1372,6 +1381,7 @@ select.form-control, select.input { cursor: pointer; }
     flex: 1 1 100%;
     max-width: 100%;
     width: 100%;
+    box-sizing: border-box;
   }
   .filter-search-wrap .input-icon {
     position: absolute;
@@ -1383,32 +1393,43 @@ select.form-control, select.input { cursor: pointer; }
     z-index: 2;
   }
   .filter-search-input {
-    height: 36px !important;
+    height: 38px !important;
     padding-left: 32px !important;
     padding-right: 28px !important;
-    font-size: 13px;
-    width: 100%;
+    font-size: 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
   .filter-controls-group {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 6px;
     width: 100%;
+    box-sizing: border-box;
+  }
+  @media (min-width: 480px) and (max-width: 768px) {
+    .filter-controls-group {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
   .filter-controls-group .filter-select {
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
-    height: 32px;
-    font-size: 11px;
+    height: 34px;
+    font-size: 12px;
     padding: 2px 6px;
+    box-sizing: border-box !important;
+    text-overflow: ellipsis;
   }
   .filter-reset-btn {
-    height: 32px;
+    height: 34px;
     font-size: 11px;
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
   .filter-density-tabs {
     display: none !important;
@@ -1491,6 +1512,9 @@ select.form-control, select.input { cursor: pointer; }
     padding: 8px 12px 6px;
     gap: 6px;
     align-items: center;
+    width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
   }
   .public-title-h1 {
     font-size: 18px;
@@ -1501,6 +1525,10 @@ select.form-control, select.input { cursor: pointer; }
   }
   .public-main-content {
     padding: 10px 12px calc(var(--sp-8) + env(safe-area-inset-bottom, 36px)) 12px;
+    width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
+    overflow-x: hidden;
   }
   .public-day-banner {
     padding: 12px 14px;

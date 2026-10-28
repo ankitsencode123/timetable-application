@@ -125,3 +125,14 @@
   4. Enhanced `onPick` in `frontend/src/components/calendar/CalendarManager.tsx` so selecting Subject Name similarly auto-derives Subject Code, Class Type, Program, and Semester.
 - **Reasoning**: Plain inputs forced users to memorize and manually type exact subject titles and codes, increasing the risk of typographical errors that caused scheduler validation failures. Providing type-ahead comboboxes with automatic derivation streamlines form completion and ensures exact alignment with catalog subjects.
 
+## 2026-10-28
+
+### 8. Mobile Viewport Horizontal Overflow & Input Focus Shift Fix
+- **Decision**: Resolved mobile UI breakage where typing into the search box caused the screen to scroll horizontally off-screen and lock up:
+  1. **Root Viewport Clamping**: Enforced `width: 100%`, `max-width: 100vw`, and `overflow-x: hidden` across `html`, `body`, `#root`, and the `PublicPage` main container.
+  2. **Mobile Font Size (Auto-Zoom Prevention)**: Increased search input font-size to `16px` on mobile screens (`max-width: 768px`). In mobile WebKit/Blink (iOS Safari and Android Chrome), focusing inputs with font sizes below 16px triggers an automatic zoom and horizontal viewport pan toward the caret, which displaced the layout.
+  3. **Adaptive 2-Column Mobile Filter Grid**: Changed `.filter-controls-group` from a rigid 3-column grid (`repeat(3, 1fr)`) to an adaptive 2-column grid (`repeat(2, 1fr)`) for phone viewports (`< 480px`), and 3 columns on tablets/landscape (`480px - 768px`). In 3 columns on narrow screens (~360px), native `<select>` dropdown text ("All Programs", "All Semesters") forced intrinsic minimum widths exceeding the viewport, expanding container `scrollWidth`.
+  4. **Active Horizontal Scroll Clamping**: Attached a ref to the `PublicPage` container with scroll event listeners on both the element and `window` to lock `scrollLeft` strictly to `0`, preventing any accidental programmatic or touch-driven horizontal offset.
+- **Reasoning**: When users searched (e.g. typing "M.Tech"), the combination of input sub-16px focus zoom and overflowing filter dropdowns caused mobile browsers to scroll the ancestor container horizontally. Because `PublicPage` used `overflow: hidden`, the user was unable to scroll back, leaving the left side of the UI permanently clipped. Constraining dimensions, adjusting input font size, and fixing the filter grid guarantees a rock-solid, non-scrolling mobile viewport.
+
+
