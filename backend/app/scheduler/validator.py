@@ -114,14 +114,31 @@ def validate_schedule(schedule: list) -> list[dict]:
             s_a = str(a.get("semester", "")).strip().lower()
             s_b = str(b.get("semester", "")).strip().lower()
             if p_a == p_b and s_a == s_b:
-                violations.append({"rule": "H1_semester_clash", "a": _entry_id(a), "b": _entry_id(b)})
+                desc_a = f"'{a.get('subject_code') or a.get('subject_name')}' ({a.get('start')}–{a.get('end')}, Room {a.get('room')})"
+                desc_b = f"'{b.get('subject_code') or b.get('subject_name')}' ({b.get('start')}–{b.get('end')}, Room {b.get('room')})"
+                violations.append({
+                    "rule": "H1_semester_clash",
+                    "a": _entry_id(a), "b": _entry_id(b),
+                    "note": f"Semester overlap in {a.get('program')} {a.get('semester')} on {a.get('day')}: {desc_a} overlaps with {desc_b}."
+                })
             shared = teacher_set(a) & teacher_set(b)
             if shared:
-                violations.append({"rule": "H2_teacher_clash", "teachers": sorted(shared),
-                                   "a": _entry_id(a), "b": _entry_id(b)})
+                tech_str = ", ".join(sorted(shared))
+                desc_a = f"'{a.get('subject_code') or a.get('subject_name')}' ({a.get('program')} {a.get('semester')}, {a.get('start')}–{a.get('end')}, Room {a.get('room')})"
+                desc_b = f"'{b.get('subject_code') or b.get('subject_name')}' ({b.get('program')} {b.get('semester')}, {b.get('start')}–{b.get('end')}, Room {b.get('room')})"
+                violations.append({
+                    "rule": "H2_teacher_clash", "teachers": sorted(shared),
+                    "a": _entry_id(a), "b": _entry_id(b),
+                    "note": f"Teacher {tech_str} double-booked on {a.get('day')}: {desc_a} overlaps with {desc_b}."
+                })
             if a.get("room") and a.get("room") == b.get("room"):
-                violations.append({"rule": "H3_room_clash", "room": a.get("room"),
-                                   "a": _entry_id(a), "b": _entry_id(b)})
+                desc_a = f"'{a.get('subject_code') or a.get('subject_name')}' ({a.get('program')} {a.get('semester')}, {a.get('start')}–{a.get('end')})"
+                desc_b = f"'{b.get('subject_code') or b.get('subject_name')}' ({b.get('program')} {b.get('semester')}, {b.get('start')}–{b.get('end')})"
+                violations.append({
+                    "rule": "H3_room_clash", "room": a.get("room"),
+                    "a": _entry_id(a), "b": _entry_id(b),
+                    "note": f"Room {a.get('room')} double-booked on {a.get('day')}: {desc_a} overlaps with {desc_b}."
+                })
 
     # --- Single-entry checks: H4, H5, H6 ---
     theory_days: dict = {}
@@ -137,12 +154,13 @@ def validate_schedule(schedule: list) -> list[dict]:
         # H12: Teacher busy slots
         for t in teachers:
             if t in global_busy_days and day in global_busy_days[t]:
+                cls_desc = f"'{c.get('subject_code') or c.get('subject_name', '')}' ({c.get('program', '')} {c.get('semester', '')}) at {c.get('start', '')}–{c.get('end', '')} in {c.get('room', 'unassigned')}"
                 violations.append({
                     "rule": "H12_teacher_busy",
                     "teacher": t,
                     "day": day,
                     "entry": _entry_id(c),
-                    "note": f"Teacher {t} is unavailable on {day} due to a busy slot."
+                    "note": f"Teacher {t} is unavailable on {day} due to a busy slot. Affected class: {cls_desc}."
                 })
 
         # H4 constraint removed per user request.
@@ -208,6 +226,53 @@ def validate_schedule(schedule: list) -> list[dict]:
             violations.append({"rule": "H6_no_free_day", "teacher": teacher})
 
     return violations
+
+
+def format_violation_detailed(v: dict) -> str:
+    """Format any constraint violation into a clear, elaborate, human-readable sentence."""
+    if not v:
+        return "Unknown constraint violation."
+    rule = v.get("rule", "unknown")
+    note = v.get("note") or v.get("message")
+    if note and len(note) > 15:
+        return note
+    entry = v.get("entry") or v.get("a") or {}
+    b = v.get("b") or {}
+
+    subj_a = entry.get("subject") or entry.get("subject_code") or entry.get("subject_name") or "?"
+    prog_a = entry.get("program", "")
+    sem_a = entry.get("semester", "")
+    day_a = entry.get("day", v.get("day", "?"))
+    start_a = entry.get("start", "")
+    end_a = entry.get("end", "")
+    room_a = entry.get("room", v.get("room", ""))
+
+    if rule == "H12_teacher_busy":
+        t = v.get("teacher") or entry.get("teacher", "?")
+        return f"Teacher {t} is unavailable on {day_a} due to a designated busy slot. Affected class: '{subj_a}' ({prog_a} {sem_a}) at {start_a}–{end_a} in {room_a}."
+    if rule == "H1_semester_clash":
+        subj_b = b.get("subject") or b.get("subject_code") or b.get("subject_name") or "?"
+        return f"Semester overlap: Program {prog_a} {sem_a} on {day_a} has overlapping classes: '{subj_a}' ({start_a}–{end_a}, Room {room_a}) and '{subj_b}' ({b.get('start')}–{b.get('end')}, Room {b.get('room')})."
+    if rule == "H2_teacher_clash":
+        teachers = ", ".join(v.get("teachers", [])) or v.get("teacher") or entry.get("teacher", "?")
+        subj_b = b.get("subject") or b.get("subject_code") or b.get("subject_name") or "?"
+        return f"Teacher double-booking: Teacher(s) {teachers} scheduled simultaneously on {day_a}: '{subj_a}' ({start_a}–{end_a}, Room {room_a}) and '{subj_b}' ({b.get('start')}–{b.get('end')}, Room {b.get('room')})."
+    if rule == "H3_room_clash":
+        subj_b = b.get("subject") or b.get("subject_code") or b.get("subject_name") or "?"
+        return f"Room double-booking: Room {room_a} is occupied simultaneously on {day_a} by '{subj_a}' ({start_a}–{end_a}) and '{subj_b}' ({b.get('start')}–{b.get('end')})."
+    if rule == "H5_multiple_theory_same_day":
+        t = v.get("teacher") or entry.get("teacher", "?")
+        return f"Teacher {t} exceeds the daily limit: multiple theory classes scheduled on {day_a} (max 1 theory class/day)."
+    if rule == "H5_multiple_practical_same_day":
+        t = v.get("teacher") or entry.get("teacher", "?")
+        return f"Teacher {t} exceeds the daily limit: multiple practical sessions scheduled on {day_a} (max 1 practical session/day)."
+    if rule == "H6_no_free_day":
+        t = v.get("teacher") or entry.get("teacher", "?")
+        return f"Teacher {t} has classes scheduled on all working days without a designated free day."
+    if rule == "H11_wrong_semester_subject":
+        return f"Subject '{v.get('subject_code', subj_a)}' is not part of the {prog_a} {sem_a} curriculum."
+
+    return f"Constraint {rule}: {v.get('detail', 'Violation detected')} on class '{subj_a}'."
 
 
 def regenerate_tables_from_schedule(schedule: list) -> dict:

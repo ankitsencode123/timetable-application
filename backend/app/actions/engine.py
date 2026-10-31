@@ -803,6 +803,11 @@ def _violation_message(v: Dict[str, Any]) -> str:
     rule = v.get("rule", "unknown")
     entry = v.get("entry") or v.get("a") or {}
 
+    tech_busy_desc = f"**Teacher {v.get('teacher', entry.get('teacher', '?'))} is unavailable on {v.get('day', entry.get('day', '?'))} due to a designated busy slot.**"
+    if entry:
+        subj = entry.get('subject') or entry.get('subject_name') or entry.get('subject_code') or '?'
+        tech_busy_desc += f" Conflicting class: **'{subj}'** ({entry.get('program', '')} {entry.get('semester', '')}, {entry.get('start', '')}–{entry.get('end', '')}, Room {entry.get('room', '')})."
+
     msgs = {
         "schema_missing_keys":     f"Missing required fields: {', '.join(v.get('missing', []))}.",
         "schema_invalid_program":  f"Invalid program: {v.get('program', '?')}.",
@@ -812,10 +817,11 @@ def _violation_message(v: Dict[str, Any]) -> str:
         "H3_room_clash":           f"**{v.get('room','?')} double-booked:** Room is scheduled for multiple classes on **{entry.get('day', '?')}, {entry.get('start', '?')}–{entry.get('end', '?')}**.",
         "H4_room_not_lab":         f"**{entry.get('subject', '?')} requires lab:** **{entry.get('room','?')}** does not have laboratory facilities.",
         "H4_unknown_room":         f"**Unknown room:** **{entry.get('room','?')}** is not in the authoritative room list.",
-        "H5_multiple_theory_same_day": f"**{v.get('teacher','?')} theory limit exceeded:** Teacher has multiple theory classes scheduled on **{v.get('day','?')}**.",
-        "H5_multiple_practical_same_day": f"**{v.get('teacher','?')} practical limit exceeded:** Teacher has multiple practical sessions scheduled on **{v.get('day','?')}**.",
+        "H5_multiple_theory_same_day": f"**{v.get('teacher','?')} theory limit exceeded:** Teacher has multiple theory classes scheduled on **{v.get('day','?')}** (max 1 theory class/day).",
+        "H5_multiple_practical_same_day": f"**{v.get('teacher','?')} practical limit exceeded:** Teacher has multiple practical sessions scheduled on **{v.get('day','?')}** (max 1 practical session/day).",
         "H6_no_free_day":          f"**{v.get('teacher','?')} has no free day:** Schedule violates continuous working constraints.",
         "H11_wrong_semester_subject": f"**{v.get('subject_code','?')} invalid:** Subject does not belong to **{entry.get('program','?')} {entry.get('semester','?')}**.",
+        "H12_teacher_busy":        tech_busy_desc,
         "start_not_before_end":    "**Invalid duration:** Start time must be before end time.",
     }
     msg_body = msgs.get(rule, v.get("note", rule))

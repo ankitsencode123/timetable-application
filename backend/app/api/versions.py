@@ -53,12 +53,13 @@ def get_version(
 @router.post("/{version_id}/publish", response_model=VersionOut)
 def publish_version(
     version_id: int,
+    allow_hard_constraints: bool = True,
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin)
 ):
     """Publish a validated version (ADMIN only)."""
     try:
-        v = publication_service.publish_version(db, version_id)
+        v = publication_service.publish_version(db, version_id, allow_hard_constraints=allow_hard_constraints)
         audit_service.log(db, action="PUBLISH", user_id=admin.id, version_id=v.id)
         return v
     except ValueError as e:

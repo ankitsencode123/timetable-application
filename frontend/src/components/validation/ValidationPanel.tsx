@@ -17,6 +17,7 @@ const RULES = [
   { key: 'H5',  label: 'Max 1 theory/practical per teacher per day', fn: (v: Violation[]) => v.filter(x => x.rule === 'H5_multiple_theory_same_day' || x.rule === 'H5_multiple_practical_same_day') },
   { key: 'H6',  label: 'Internal teachers must have ≥ 1 free day', fn: (v: Violation[]) => v.filter(x => x.rule === 'H6_no_free_day') },
   { key: 'H11', label: 'Subjects assigned to correct semester',   fn: (v: Violation[]) => v.filter(x => x.rule === 'H11_wrong_semester_subject') },
+  { key: 'H12', label: 'Teacher busy slot availability',          fn: (v: Violation[]) => v.filter(x => x.rule === 'H12_teacher_busy') },
 ]
 
 interface Props { versionId?: number | null }
@@ -108,7 +109,8 @@ export default function ValidationPanel({ versionId }: Props) {
                         {v.rule.startsWith('H5') && <span>Teacher <strong>{v.teacher}</strong> has multiple {v.rule.includes('theory') ? 'theory' : 'practical'} classes on {v.day}.</span>}
                         {v.rule === 'H6_no_free_day' && <span>Internal teacher <strong>{v.teacher}</strong> has no free working day.</span>}
                         {v.rule === 'H11_wrong_semester_subject' && <span>{v.note} {fmtEntry(v.entry)}</span>}
-                        {!['H1_semester_clash', 'H2_teacher_clash', 'H3_room_clash', 'H4_room_not_lab', 'H4_unknown_room', 'H5_multiple_theory_same_day', 'H5_multiple_practical_same_day', 'H6_no_free_day', 'H11_wrong_semester_subject'].includes(v.rule) && (
+                        {v.rule === 'H12_teacher_busy' && <span>Teacher <strong>{v.teacher}</strong> is unavailable on <strong>{v.day}</strong> due to a busy slot. {v.entry ? `Affected class: ${fmtEntry(v.entry)}` : (v.note ?? '')}</span>}
+                        {!['H1_semester_clash', 'H2_teacher_clash', 'H3_room_clash', 'H4_room_not_lab', 'H4_unknown_room', 'H5_multiple_theory_same_day', 'H5_multiple_practical_same_day', 'H6_no_free_day', 'H11_wrong_semester_subject', 'H12_teacher_busy'].includes(v.rule) && (
                           <span>{v.note ?? v.rule} {v.teacher && <span className="badge badge-red">{v.teacher}</span>} {v.day && <span>on {v.day}</span>}</span>
                         )}
                       </div>

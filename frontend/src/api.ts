@@ -333,8 +333,8 @@ export async function getVersion(id: number): Promise<VersionDetail> {
   return request<VersionDetail>(`/versions/${id}`);
 }
 
-export async function publishVersion(id: number): Promise<TimetableVersion> {
-  return request<TimetableVersion>(`/versions/${id}/publish`, { method: 'POST' });
+export async function publishVersion(id: number, allowHardConstraints: boolean = true): Promise<TimetableVersion> {
+  return request<TimetableVersion>(`/versions/${id}/publish?allow_hard_constraints=${allowHardConstraints}`, { method: 'POST' });
 }
 
 // ── Timetable (authenticated) ─────────────────────────────────────────────────

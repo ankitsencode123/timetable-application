@@ -104,17 +104,17 @@ function PublishDialog({ version, onClose, onPublished }: {
             </div>
           </div>
           {hasViolations && (
-            <div style={{ background: 'var(--violation-soft)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', fontSize: 'var(--fs-xs)', color: 'var(--violation)' }}>
-              This version has constraint violations. Publishing is blocked unless overridden by an Admin. Please fix violations first.
+            <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid var(--amber, #f59e0b)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', fontSize: 'var(--fs-xs)', color: 'var(--ink)' }}>
+              <strong>Notice:</strong> This version has constraint warnings ({version.validation_result?.violation_count} detected). As an Admin, you may publish this timetable with warnings.
             </div>
           )}
-          {err && <div style={{ color: 'var(--violation)', fontSize: 'var(--fs-sm)' }}>{err}</div>}
+          {err && <div style={{ color: 'var(--violation)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>{err}</div>}
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button className="btn btn-success" disabled={loading} onClick={doPublish}>
             {loading ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Rocket size={14} />}
-            Publish
+            {hasViolations ? 'Publish Anyway' : 'Publish'}
           </button>
         </div>
       </div>

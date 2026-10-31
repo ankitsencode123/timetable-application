@@ -6,15 +6,20 @@ from sqlalchemy.orm import Session
 from app.models.timetable import TimetableVersion, VersionStatus
 
 
-def publish_version(db: Session, version_id: int) -> TimetableVersion:
+def publish_version(db: Session, version_id: int, allow_hard_constraints: bool = True) -> TimetableVersion:
     target = db.query(TimetableVersion).filter(TimetableVersion.id == version_id).first()
     if not target:
         raise ValueError("Version not found")
     if target.status not in (VersionStatus.VALIDATED, VersionStatus.DRAFT, VersionStatus.ARCHIVED):
         raise ValueError("Only DRAFT, VALIDATED, or ARCHIVED versions can be published")
     
-    # Refuse to publish if any hard constraints are violated
-    from app.scheduler.validator import validate_schedule, validate_schema
+    # Check constraints and format elaborate violation details
+    from app.scheduler.validator import validate_schedule, validate_schema, format_violation_detailed
+    import json
+    import logging
+
+    _log = logging.getLogger(__name__)
+
     schedule = [
         {
             "day": e.day,
@@ -41,11 +46,21 @@ def publish_version(db: Session, version_id: int) -> TimetableVersion:
     violations = validate_schedule(schedule) + validate_schema(schedule)
     hard_violations = [v for v in violations if v.get("rule") in HARD_RULES]
     if hard_violations:
-        details = "; ".join(
-            f"{v.get('rule')}: {v.get('message', v.get('detail', 'Constraint violation'))}"
-            for v in hard_violations[:3]
+        detailed_list = [format_violation_detailed(v) for v in hard_violations]
+        details = "; ".join(detailed_list[:3])
+        if not allow_hard_constraints:
+            raise ValueError(f"Cannot publish timetable with hard constraint violations: {details}")
+        _log.warning(
+            "Version %d published with hard constraint warnings: %s",
+            version_id, details
         )
-        raise ValueError(f"Cannot publish timetable with hard constraint violations: {details}")
+        # Store validation results so they remain visible in audit logs / report
+        target.validation_result_json = json.dumps({
+            "violation_count": len(violations),
+            "hard_violation_count": len(hard_violations),
+            "violations": violations,
+            "warnings": detailed_list,
+        })
 
     # Archive the currently published version(s)
     current_pubs = db.query(TimetableVersion).filter(TimetableVersion.status == VersionStatus.PUBLISHED).all()
