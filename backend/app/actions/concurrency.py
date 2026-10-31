@@ -709,29 +709,54 @@ class ScopeLock:
         finally:
             if conn is not None:
                 try:
-                    if acquired and unlock_sql is not None:
-                        res = conn.execute(unlock_sql, params).scalar()
-                        if not res:
-                            _log.warning("lock {} was not held at release time; invalidating connection", self.scope)
-                            with contextlib.suppress(Exception):
-                                conn.invalidate()
+                    if dialect == "postgresql":
+                        with contextlib.suppress(Exception):
+                            conn.execute(text("SELECT pg_advisory_unlock_all()"))
+                    elif acquired and unlock_sql is not None:
+                        with contextlib.suppress(Exception):
+                            conn.execute(unlock_sql, params)
                 except Exception:  # noqa: BLE001
                     _log.exception("failed to release lock {}; invalidating connection", self.scope)
-                    with contextlib.suppress(Exception):
-                        conn.invalidate()  # closing the DBAPI connection drops the lock
                 finally:
                     with contextlib.suppress(Exception):
-                        conn.close()
+                        if dialect == "postgresql":
+                            conn.invalidate()  # Drops physical socket so no lock/state ever leaks into the pool!
+                        else:
+                            conn.close()
             local.release()
 
     @staticmethod
     def _poll(conn: Any, stmt: Any, params: Dict[str, Any], deadline: float) -> None:
         delay = 0.01
+        dialect = getattr(getattr(conn, "dialect", None), "name", None)
         while True:
             if conn.execute(stmt, params).scalar():
                 return
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                # If PostgreSQL, check if the lock is held by an idle/abandoned zombie backend
+                if dialect == "postgresql":
+                    try:
+                        k = params.get("k")
+                        if k is not None:
+                            u64 = k if k >= 0 else k + (1 << 64)
+                            hi = u64 >> 32
+                            lo = u64 & 0xFFFFFFFF
+                            holder = conn.execute(text("""
+                                SELECT l.pid, a.state, (now() - a.state_change) as idle_duration
+                                FROM pg_locks l
+                                JOIN pg_stat_activity a ON l.pid = a.pid
+                                WHERE l.locktype = 'advisory' AND l.classid = :hi AND l.objid = :lo
+                            """), {"hi": hi, "lo": lo}).mappings().first()
+                            if holder and holder["state"] == "idle":
+                                _log.warning("Detected abandoned advisory lock on idle Postgres backend pid={}; terminating", holder["pid"])
+                                conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": holder["pid"]})
+                                time.sleep(0.05)
+                                if conn.execute(stmt, params).scalar():
+                                    _log.info("Successfully acquired lock after clearing abandoned zombie backend pid={}", holder["pid"])
+                                    return
+                    except Exception as exc:
+                        _log.debug("Zombie lock recovery check skipped: {}", exc)
                 raise LockTimeoutError("Another timetable change is in progress. Please retry.")
             time.sleep(min(delay + random.uniform(0, delay / 2), remaining))
             delay = min(delay * 2, 0.25)
@@ -895,7 +920,9 @@ class SafeActionEngine:
                 waited = time.monotonic() - t0
                 # End any open transaction so the reads below see everything committed
                 # before we took the lock (matters for MySQL REPEATABLE READ snapshots).
-                self.db.rollback()
+                dialect_name = getattr(getattr(getattr(self.db, "bind", None), "dialect", None), "name", "")
+                if dialect_name and dialect_name != "sqlite":
+                    self.db.rollback()
 
                 replay = self._lookup_replay(user_id, request_hash)
                 if replay is not None:

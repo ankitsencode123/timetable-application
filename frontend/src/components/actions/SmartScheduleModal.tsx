@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { X, Sparkles, Loader2, CheckCircle2, AlertCircle, CalendarClock, Zap, ArrowRight, ChevronRight, AlertTriangle, Calendar } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
 import SuggestInput, { SuggestOption } from '../common/SuggestInput'
-import { getVersion, req } from '../../api'
+import { getVersion, listVersions, req } from '../../api'
 import WeeklyScheduleTab from './WeeklyScheduleTab'
 
 const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
@@ -43,7 +43,7 @@ interface AdvancedResult {
 interface Props { onClose: () => void }
 
 export default function SmartScheduleModal({ onClose }: Props) {
-  const { currentVersionId, setCurrentVersion, catalogTeachers, catalogPrograms, catalogSubjects, loadCatalog } = useWorkspaceStore()
+  const { currentVersionId, setCurrentVersion, setVersions, catalogTeachers, catalogPrograms, catalogSubjects, loadCatalog } = useWorkspaceStore()
   const [activeTab, setActiveTab] = useState<'weekly' | 'single'>('weekly')
   const [fields, setFields] = useState<Record<string, string>>({
     program: '', semester: '', subject_code: '', subject_name: '',
@@ -155,6 +155,8 @@ export default function SmartScheduleModal({ onClose }: Props) {
       if (data.success && data.new_version_id) {
         const v = await getVersion(data.new_version_id)
         setCurrentVersion(v.id, v.entries)
+        const vList = await listVersions().catch(() => [])
+        if (vList.length > 0) setVersions(vList)
         setDoneSuccess(true)
         setDoneMessage(`Booked! Class added as Version #${data.new_version_id}.`)
       } else {
@@ -165,6 +167,8 @@ export default function SmartScheduleModal({ onClose }: Props) {
     } catch (e: unknown) {
       setDoneSuccess(false)
       setDoneMessage((e as Error).message)
+      const vList = await listVersions().catch(() => [])
+      if (vList.length > 0) setVersions(vList)
       setStep('done')
     } finally {
       setBookingLoading(false)
@@ -220,6 +224,8 @@ export default function SmartScheduleModal({ onClose }: Props) {
       if (data.success && data.new_version_id) {
         const v = await getVersion(data.new_version_id)
         setCurrentVersion(v.id, v.entries)
+        const vList = await listVersions().catch(() => [])
+        if (vList.length > 0) setVersions(vList)
         setDoneSuccess(true)
         setDoneMessage(`Changes applied! Timetable updated to Version #${data.new_version_id}.`)
       } else {
@@ -229,6 +235,8 @@ export default function SmartScheduleModal({ onClose }: Props) {
     } catch (e: unknown) {
       setDoneSuccess(false)
       setDoneMessage((e as Error).message)
+      const vList = await listVersions().catch(() => [])
+      if (vList.length > 0) setVersions(vList)
     } finally {
       setApplyingProposal(false)
       setStep('done')
@@ -546,21 +554,61 @@ export default function SmartScheduleModal({ onClose }: Props) {
         {/* ── Step 6: Done ── */}
         {step === 'done' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 'var(--sp-5)', textAlign: 'center' }}>
-            {doneSuccess
-              ? <><CheckCircle2 size={40} style={{ color: 'var(--clr-success)' }} /><div style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>Done!</div></>
-              : <><AlertCircle size={40} style={{ color: result?.found ? 'var(--clr-warning)' : 'var(--clr-error)' }} /><div style={{ fontWeight: 700 }}>{result?.found ? 'No slot available' : 'Could not apply'}</div></>
-            }
-            <div style={{ color: 'var(--clr-text-2)', fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
+            {doneSuccess ? (
+              <>
+                <CheckCircle2 size={40} style={{ color: 'var(--clr-success)' }} />
+                <div style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>Done!</div>
+              </>
+            ) : doneMessage ? (
+              <>
+                <AlertCircle size={40} style={{ color: 'var(--clr-error)' }} />
+                <div style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>Could Not Apply Slot</div>
+              </>
+            ) : (
+              <>
+                <AlertCircle size={40} style={{ color: 'var(--clr-warning)' }} />
+                <div style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>No Slot Available</div>
+              </>
+            )}
+            <div style={{ color: 'var(--clr-text-2)', fontSize: 'var(--fs-sm)', maxWidth: 380, lineHeight: 1.5 }}>
               {doneMessage || result?.message || advancedResult?.message}
             </div>
             {!doneSuccess && (
-              <button 
-                  className="btn btn-ghost" 
-                  style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 5, color: 'var(--clr-primary)' }} 
-                  onClick={runAdvancedSchedule}
-              >
-                  <Zap size={14} /> Try Advanced Smart Schedule
-              </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+                {result?.found && selectedNormalProposal && (
+                  <button
+                    className="btn btn-secondary"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    onClick={() => {
+                      setDoneMessage('')
+                      setStep('preview')
+                    }}
+                  >
+                    ← Back to Slot Preview
+                  </button>
+                )}
+                {advancedResult?.found && selectedProposal && (
+                  <button
+                    className="btn btn-secondary"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    onClick={() => {
+                      setDoneMessage('')
+                      setStep('confirm')
+                    }}
+                  >
+                    ← Back to Confirmation
+                  </button>
+                )}
+                {(!result?.found || !selectedNormalProposal) && (
+                  <button 
+                    className="btn btn-ghost" 
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--clr-primary)' }} 
+                    onClick={runAdvancedSchedule}
+                  >
+                    <Zap size={14} /> Try Advanced Smart Schedule
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}

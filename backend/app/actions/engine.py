@@ -388,7 +388,7 @@ def _simulate_one(
     except ValueError as e:
         error_str = str(e)
         if "No matching class found for" in error_str:
-            error_str = "Class not found. It may have been recently modified or deleted by another user. Please refresh your timetable."
+            error_str = "No matching class found. It may have been recently modified or deleted by another user. Please refresh your timetable."
         return schedule, ActionResult(
             action_type=atype.value, success=False,
             error=error_str
@@ -530,14 +530,14 @@ class ActionEngine:
             schema_errs = validate_schema(new_sched)
             violations  = validate_schedule(new_sched)
 
-            hard_violations = [v for v in violations if v.get("rule") in HARD_RULES]
             new_schema_errs = _get_new_errors(base_schema_errs, schema_errs)
             new_violations = _get_new_errors(base_violations, violations)
+            new_hard_violations = [v for v in new_violations if v.get("rule") in HARD_RULES]
 
-            if hard_violations or new_violations or new_schema_errs or schema_errs:
+            if new_violations or new_schema_errs:
                 # Build suggestions for first violation
-                blocking_violations = hard_violations if hard_violations else new_violations
-                blocking_schema = schema_errs if schema_errs else new_schema_errs
+                blocking_violations = new_hard_violations if new_hard_violations else new_violations
+                blocking_schema = new_schema_errs
                 first_v = blocking_violations[0] if blocking_violations else (blocking_schema[0] if blocking_schema else {})
                 teacher = getattr(action, "new_teacher", None)
                 need_lab = (
@@ -608,13 +608,13 @@ class ActionEngine:
         final_schema_errs = validate_schema(applied_schedule)
         final_violations  = validate_schedule(applied_schedule)
         
-        final_hard_violations = [v for v in final_violations if v.get("rule") in HARD_RULES]
         overall_new_schema_errs = _get_new_errors(validate_schema(base_schedule), final_schema_errs)
         overall_new_violations = _get_new_errors(validate_schedule(base_schedule), final_violations)
+        overall_new_hard = [v for v in overall_new_violations if v.get("rule") in HARD_RULES]
 
-        if final_hard_violations or final_schema_errs or overall_new_violations or overall_new_schema_errs:
-            blocking_violations = final_hard_violations if final_hard_violations else overall_new_violations
-            blocking_schema = final_schema_errs if final_schema_errs else overall_new_schema_errs
+        if overall_new_violations or overall_new_schema_errs:
+            blocking_violations = overall_new_hard if overall_new_hard else overall_new_violations
+            blocking_schema = overall_new_schema_errs
             first_v = blocking_violations[0] if blocking_violations else (blocking_schema[0] if blocking_schema else {})
             return EngineResult(
                 success=False,
