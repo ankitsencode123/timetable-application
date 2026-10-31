@@ -6,7 +6,7 @@ import {
 import { useWorkspaceStore } from '../../store'
 import SuggestInput, { SuggestOption } from '../common/SuggestInput'
 import {
-  getVersion, req, weeklySmartSchedule,
+  getVersion, req, weeklySmartSchedule, getCurrentDraft, listVersions,
   WeeklyScheduleRequest, WeeklyScheduleResponse, WeeklyProposalItem, DayReportItem
 } from '../../api'
 
@@ -15,13 +15,13 @@ const ALL_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 const QUICK_HOURS = [3, 4, 4.5, 6]
 
 interface Props {
-  dynamicPrograms: string[]
-  dynamicTeachers: string[]
+  dynamicPrograms?: string[]
+  dynamicTeachers?: string[]
   onClose: () => void
 }
 
-export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, onClose }: Props) {
-  const { currentVersionId, setCurrentVersion, catalogSubjects, loadCatalog } = useWorkspaceStore()
+export default function WeeklyScheduleTab({ dynamicPrograms: propPrograms, dynamicTeachers: propTeachers, onClose }: Props) {
+  const { currentVersionId, setCurrentVersion, setVersions, catalogTeachers, catalogPrograms, catalogSubjects, loadCatalog } = useWorkspaceStore()
 
   // Form State
   const [program, setProgram] = useState('')
@@ -51,10 +51,21 @@ export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, on
   const [doneSuccess, setDoneSuccess] = useState(false)
 
   useEffect(() => {
-    if (!catalogSubjects.length) {
-      loadCatalog()
-    }
-  }, [catalogSubjects.length, loadCatalog])
+    loadCatalog()
+  }, [loadCatalog])
+
+  const dynamicPrograms = useMemo(() => {
+    const dbProgs = catalogPrograms.map(p => (p.name || '').replace(/\.+$/, '').trim()).filter(Boolean)
+    const combined = Array.from(new Set([...(propPrograms || []), ...dbProgs, 'B.Tech', 'M.Tech', 'M.Sc']))
+    return combined.sort()
+  }, [propPrograms, catalogPrograms])
+
+  const dynamicTeachers = useMemo(() => {
+    const dbTechs = catalogTeachers.map(t => t.short_name).filter(Boolean)
+    const staticTechs = ["AK","SC","RS","DG","DK","SN","NK","VK","HS","RB","SD","SG","SH"]
+    const combined = Array.from(new Set([...(propTeachers || []), ...dbTechs, ...staticTechs]))
+    return combined.sort()
+  }, [propTeachers, catalogTeachers])
 
   const subjectNameOptions = useMemo((): SuggestOption[] => {
     let subs = catalogSubjects
@@ -116,6 +127,7 @@ export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, on
         include_advanced: includeAdvanced,
         allow_cancel: allowCancel,
         max_proposals: 6,
+        version_id: currentVersionId ?? undefined,
       }
       const data = await weeklySmartSchedule(payload)
       setResult(data)
@@ -140,17 +152,20 @@ export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, on
     if (!selectedProposal) return
     setApplying(true)
     try {
+      const targetVersionId = result?.version_id ?? currentVersionId
       const data = await req<any>('/actions/execute', {
         method: 'POST',
         body: JSON.stringify({
           actions: selectedProposal.actions_to_apply,
-          version_id: currentVersionId,
+          version_id: targetVersionId,
           partial_ok: false,
         }),
       })
       if (data.success && data.new_version_id) {
         const v = await getVersion(data.new_version_id)
         setCurrentVersion(v.id, v.entries)
+        const vList = await listVersions().catch(() => [])
+        if (vList.length > 0) setVersions(vList)
         setDoneSuccess(true)
         setDoneMessage(`Weekly schedule applied! Routine updated to Version #${data.new_version_id} with ${selectedProposal.sessions.length} class slots.`)
       } else {
@@ -158,9 +173,24 @@ export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, on
         const errDetail = data.results?.find((r: any) => !r.success)?.error || data.violations?.[0]?.note || 'Application failed.'
         setDoneMessage(errDetail)
       }
-    } catch (e: unknown) {
+    } catch (e: any) {
       setDoneSuccess(false)
-      setDoneMessage((e as Error).message || 'Execution error')
+      const is409 = e?.status === 409 || e?.error_code === 'stale_version' || e?.error_code === 'diverged_lineage' || e?.error_code === 'entry_conflict' || e?.message?.includes('409') || e?.message?.toLowerCase().includes('reload') || e?.message?.toLowerCase().includes('version')
+      if (is409) {
+        // Automatically sync workspace to head draft
+        try {
+          const draft = await getCurrentDraft()
+          const detail = await getVersion(draft.id)
+          setCurrentVersion(detail.id, detail.entries)
+          const vList = await listVersions().catch(() => [])
+          if (vList.length > 0) setVersions(vList)
+          setDoneMessage(`The timetable was updated to Version #${draft.id} by another change. Your workspace has been synchronized with the latest version. Please re-run Find Weekly Schedule to generate updated slots on the new routine.`)
+        } catch (_) {
+          setDoneMessage(e?.message || 'The timetable has been modified since you opened the planner. Please reload and try again.')
+        }
+      } else {
+        setDoneMessage(e?.message || 'Execution error')
+      }
     } finally {
       setApplying(false)
       setStep('done')
@@ -867,9 +897,24 @@ export default function WeeklyScheduleTab({ dynamicPrograms, dynamicTeachers, on
         )}
 
         {step === 'done' && (
-          <button type="button" className="btn btn-primary" onClick={onClose}>
-            Close
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!doneSuccess && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setStep('form')
+                  handleSearch()
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Sparkles size={14} /> Re-run Routine Search
+              </button>
+            )}
+            <button type="button" className="btn btn-primary" onClick={onClose}>
+              Close
+            </button>
+          </div>
         )}
       </div>
     </div>

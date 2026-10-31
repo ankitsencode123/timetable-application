@@ -124,28 +124,19 @@ def _count_new_violations(base_schedule: List[dict], candidate_schedule: List[di
 
 
 def _is_fully_valid(base_schedule: List[dict], candidate_schedule: List[dict]) -> bool:
-    """Return True only when the candidate introduces zero NEW violations compared to the base."""
+    """Return True only when candidate has zero physical clashes and introduces zero NEW violations compared to base."""
+    cand_v = validate_schedule(candidate_schedule)
+    if any(item.get("rule") in ("H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy") for item in cand_v):
+        return False
     return _count_new_violations(base_schedule, candidate_schedule) == 0
 
 
 def _is_physically_valid(base_schedule: List[dict], candidate_schedule: List[dict], base_physical_fps: Optional[list] = None) -> bool:
-    """Return True if candidate introduces no new physical/overlap violations."""
-    PHYSICAL_RULES = ("H1_semester_clash", "H2_teacher_clash", "H3_room_clash")
-    if base_physical_fps is None:
-        base_v = validate_schedule(base_schedule)
-        base_physical_fps = [_fingerprint(x) for x in base_v if x.get("rule") in PHYSICAL_RULES]
-    else:
-        base_physical_fps = list(base_physical_fps)
-
+    """Return True if candidate introduces no physical/overlap violations."""
+    PHYSICAL_RULES = ("H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy")
     cand_v = validate_schedule(candidate_schedule)
-    for item in cand_v:
-        if item.get("rule") not in PHYSICAL_RULES:
-            continue
-        fp = _fingerprint(item)
-        if fp in base_physical_fps:
-            base_physical_fps.remove(fp)
-        else:
-            return False
+    if any(item.get("rule") in PHYSICAL_RULES for item in cand_v):
+        return False
     return True
 
 
@@ -1313,22 +1304,6 @@ def suggest_alternatives(
                     )
                     fallback_found = True
                     break
-
-        if not fallback_found:
-            # If absolutely 0 slots exist (e.g. 100% schedule utilization), just return the first slot as a forced suggestion.
-            slot = fallback_slots[0] if fallback_slots else {"day": "Monday", "start": "10:00", "end": "12:00"}
-            room = all_rooms[0] if all_rooms else "Room 1"
-            valid_slot = dict(slot)
-            valid_slot["room"] = room
-            if is_add_action:
-                proposed = _build_proposed_add_class(entry, valid_slot)
-            else:
-                proposed = _build_proposed_move_class(entry, valid_slot, orig_target)
-            _add_rich_suggestion(
-                proposed,
-                f"Emergency Reschedule to {valid_slot['day']} {valid_slot['start']}–{valid_slot['end']} in {room}",
-                "Forced alternative (schedule is at maximum capacity)."
-            )
 
     if not suggestions["rich_suggestions"]:
         suggestions["note"] = (

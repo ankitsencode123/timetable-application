@@ -43,7 +43,7 @@ interface AdvancedResult {
 interface Props { onClose: () => void }
 
 export default function SmartScheduleModal({ onClose }: Props) {
-  const { currentVersionId, setCurrentVersion, catalogSubjects, loadCatalog } = useWorkspaceStore()
+  const { currentVersionId, setCurrentVersion, catalogTeachers, catalogPrograms, catalogSubjects, loadCatalog } = useWorkspaceStore()
   const [activeTab, setActiveTab] = useState<'weekly' | 'single'>('weekly')
   const [fields, setFields] = useState<Record<string, string>>({
     program: '', semester: '', subject_code: '', subject_name: '',
@@ -66,27 +66,20 @@ export default function SmartScheduleModal({ onClose }: Props) {
   const [doneMessage, setDoneMessage] = useState('')
   const [doneSuccess, setDoneSuccess] = useState(false)
 
-  const [dynamicPrograms, setDynamicPrograms] = useState<string[]>([])
-  const [dynamicTeachers, setDynamicTeachers] = useState<string[]>([])
-
   useEffect(() => {
-    req<{name: string}[]>('/catalog/programs').then(progs => {
-      const dbProgs = progs.map(p => (p.name || '').replace(/\.+$/, '').trim()).filter(Boolean)
-      setDynamicPrograms(Array.from(new Set([...dbProgs, 'B.Tech', 'M.Tech', 'M.Sc'])))
-    }).catch(() => setDynamicPrograms(['B.Tech', 'M.Tech', 'M.Sc']))
-    
-    req<{short_name: string}[]>('/catalog/teachers').then(techs => {
-      const dbTechs = techs.map(t => t.short_name).filter(Boolean)
-      const staticTechs = ["AK","SC","RS","DG","DK","SN","NK","VK","HS","RB","SD","SG","SH"]
-      setDynamicTeachers(Array.from(new Set([...dbTechs, ...staticTechs])))
-    }).catch(() => setDynamicTeachers(["AK","SC","RS","DG","DK","SN","NK","VK","HS","RB","SD","SG","SH"]))
-  }, [])
+    loadCatalog()
+  }, [loadCatalog])
 
-  useEffect(() => {
-    if (!catalogSubjects.length) {
-      loadCatalog()
-    }
-  }, [catalogSubjects.length, loadCatalog])
+  const dynamicPrograms = useMemo(() => {
+    const dbProgs = catalogPrograms.map(p => (p.name || '').replace(/\.+$/, '').trim()).filter(Boolean)
+    return Array.from(new Set([...dbProgs, 'B.Tech', 'M.Tech', 'M.Sc']))
+  }, [catalogPrograms])
+
+  const dynamicTeachers = useMemo(() => {
+    const dbTechs = catalogTeachers.map(t => t.short_name).filter(Boolean)
+    const staticTechs = ["AK","SC","RS","DG","DK","SN","NK","VK","HS","RB","SD","SG","SH"]
+    return Array.from(new Set([...dbTechs, ...staticTechs]))
+  }, [catalogTeachers])
 
   const subjectNameOptions = useMemo((): SuggestOption[] => {
     let subs = catalogSubjects

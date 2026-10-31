@@ -27,18 +27,25 @@ def create_draft(
     db.add(version)
     db.flush()
 
+    from app.scheduler.constraints import normalize_program
+
     for row in entries:
+        prog = normalize_program(row.get("program", ""))
+        sem = str(row.get("semester", "")).strip()
+        start = row.get("start") or row.get("start_time", "")
+        end = row.get("end") or row.get("end_time", "")
+        entry_type = row.get("type") or row.get("entry_type", "")
         en = TimetableEntry(
             version_id=version.id,
             day=row.get("day", ""),
-            program=row.get("program", ""),
-            semester=row.get("semester", ""),
-            start_time=row.get("start", ""),
-            end_time=row.get("end", ""),
+            program=prog,
+            semester=sem,
+            start_time=start,
+            end_time=end,
             subject_code=row.get("subject_code") or row.get("subject_name", ""),
             subject_name=row.get("subject_name", ""),
             teacher=row.get("teacher", ""),
-            entry_type=row.get("type", ""),
+            entry_type=entry_type,
             room=row.get("room", ""),
         )
         db.add(en)

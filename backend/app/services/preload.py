@@ -973,21 +973,33 @@ def _register_shadow_routes(
 
         async def versions_list_cached(request: Request, user: User = Depends(require_teacher_or_admin)):
             BUNDLES.touch()
-            bundle = await _bundle_or_503()
-            return _private_response(request, bundle.versions, bundle)
+            try:
+                bundle = await _bundle_or_503()
+                return _private_response(request, bundle.versions, bundle)
+            except Exception as e:
+                logger.warning(f"[preload] versions_list_cached falling back to database: {e}")
+                with _db_session() as db:
+                    versions = list(timetable_service.list_versions(db))
+                    dumped = [_dump(VersionOut, v, from_attributes=True) for v in versions]
+                    return JSONResponse(dumped)
 
         async def version_detail_cached(
             version_id: int, request: Request, user: User = Depends(require_teacher_or_admin)
         ):
             BUNDLES.touch()
-            bundle = await _bundle_or_503()
             try:
+                bundle = await _bundle_or_503()
                 blob = await BUNDLES.detail(bundle, version_id)
-            except BundleUnavailable:
-                raise HTTPException(status_code=503, detail="Timetable data temporarily unavailable. Please retry shortly.")
-            if blob is None:
-                raise HTTPException(status_code=404, detail="Version not found")
-            return _private_response(request, blob, bundle)
+                if blob is not None:
+                    return _private_response(request, blob, bundle)
+            except Exception as e:
+                logger.warning(f"[preload] version_detail_cached falling back to database for #{version_id}: {e}")
+            with _db_session() as db:
+                v = timetable_service.get_version(db, version_id)
+                if v is None:
+                    raise HTTPException(status_code=404, detail="Version not found")
+                dumped = _dump(VersionDetail, _version_detail_dict(v))
+                return JSONResponse(dumped)
 
         app.add_api_route(base, versions_list_cached, methods=["GET"], include_in_schema=False)
         app.add_api_route(base + "/{version_id:int}", version_detail_cached, methods=["GET"], include_in_schema=False)
@@ -998,10 +1010,18 @@ def _register_shadow_routes(
 
         async def draft_cached(request: Request, user: User = Depends(require_teacher_or_admin)):
             BUNDLES.touch()
-            bundle = await _bundle_or_503()
-            if bundle.draft is None:
-                raise HTTPException(status_code=404, detail="No drafts exist")
-            return _private_response(request, bundle.draft, bundle)
+            try:
+                bundle = await _bundle_or_503()
+                if bundle.draft is not None:
+                    return _private_response(request, bundle.draft, bundle)
+            except Exception as e:
+                logger.warning(f"[preload] draft_cached falling back to database: {e}")
+            with _db_session() as db:
+                latest = db.query(TimetableVersion).order_by(TimetableVersion.id.desc()).first()
+                if latest is None:
+                    raise HTTPException(status_code=404, detail="No drafts exist")
+                dumped = _dump(VersionOut, latest, from_attributes=True)
+                return JSONResponse(dumped)
 
         app.add_api_route(path, draft_cached, methods=["GET"], include_in_schema=False)
         logger.info(f"[preload] shadow route active: GET {path}")
@@ -1011,10 +1031,16 @@ def _register_shadow_routes(
 
         async def users_cached(request: Request, admin: User = Depends(require_admin)):
             BUNDLES.touch()
-            bundle = await _bundle_or_503()
-            if bundle.users is None:
-                raise HTTPException(status_code=503, detail="Users data temporarily unavailable. Please retry shortly.")
-            return _private_response(request, bundle.users, bundle)
+            try:
+                bundle = await _bundle_or_503()
+                if bundle.users is not None:
+                    return _private_response(request, bundle.users, bundle)
+            except Exception as e:
+                logger.warning(f"[preload] users_cached falling back to database: {e}")
+            with _db_session() as db:
+                users_raw = db.query(User).order_by(User.created_at.desc()).all()
+                dumped = [_dump(UserOut, u, from_attributes=True) for u in users_raw]
+                return JSONResponse(dumped)
 
         app.add_api_route(upath, users_cached, methods=["GET"], include_in_schema=False)
         logger.info(f"[preload] shadow route active: GET {upath}")

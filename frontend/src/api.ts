@@ -69,43 +69,88 @@ export function formatViolation(v: any): string {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isJson = !init.headers?.toString().includes('urlencoded');
   const token = localStorage.getItem('access_token');
-  const headers: HeadersInit = {
+  const customHeaders = (init.headers as Record<string, string>) || {};
+  const headers: Record<string, string> = {
     ...(isJson ? { 'Content-Type': 'application/json' } : {}),
-    ...(init.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init.method.toUpperCase()) ? csrfHeaders() : {}),
+    ...(init.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(init.method.toUpperCase()) ? (csrfHeaders() as Record<string, string>) : {}),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(init.headers ?? {}),
+    ...customHeaders,
   };
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers,
-    credentials: 'include', // Send cookies automatically
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    let detail = body.detail;
-    let canForce: boolean | undefined = undefined;
-    if (Array.isArray(detail)) {
-      detail = 'Validation error: ' + detail.map((d: any) => d.msg).join(', ');
-    } else if (detail && typeof detail === 'object' && detail.message) {
-      canForce = detail.can_force;
-      if (Array.isArray(detail.violations) && detail.violations.length > 0) {
-        detail = `${detail.message}\n` + detail.violations.map((v: any) => `• ${formatViolation(v)}`).join('\n');
-      } else {
-        detail = detail.message;
-      }
-    } else if (detail && typeof detail !== 'string') {
-      detail = JSON.stringify(detail);
-    }
-    const err = new Error(detail ?? `HTTP ${res.status}`) as Error & { status: number, can_force?: boolean };
-    err.status = res.status;
-    err.can_force = canForce;
-    throw err;
+  // Generate a persistent Idempotency-Key for mutation actions to ensure safe, replayable retries
+  if (init.method && init.method.toUpperCase() === 'POST' && path.includes('/actions/execute') && !headers['Idempotency-Key']) {
+    headers['Idempotency-Key'] = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
   }
-  // 204 No Content
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+
+  const maxRetries = 3;
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        ...init,
+        headers,
+        credentials: 'include', // Send cookies automatically
+      });
+
+      // Handle transient 503 Service Unavailable / 429 Throttling with exponential backoff
+      if ((res.status === 503 || res.status === 429) && attempt < maxRetries) {
+        const retryHeader = res.headers.get('Retry-After');
+        let delayMs = 600 * Math.pow(1.5, attempt);
+        if (retryHeader) {
+          const parsedSeconds = parseFloat(retryHeader);
+          if (!isNaN(parsedSeconds) && parsedSeconds > 0) {
+            delayMs = Math.min(parsedSeconds * 1000, 3000);
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        let detail = body.detail ?? body.message ?? body.error;
+        let canForce: boolean | undefined = undefined;
+        if (Array.isArray(detail)) {
+          detail = 'Validation error: ' + detail.map((d: any) => d.msg).join(', ');
+        } else if (detail && typeof detail === 'object' && detail.message) {
+          canForce = detail.can_force;
+          if (Array.isArray(detail.violations) && detail.violations.length > 0) {
+            detail = `${detail.message}\n` + detail.violations.map((v: any) => `• ${formatViolation(v)}`).join('\n');
+          } else {
+            detail = detail.message;
+          }
+        } else if (detail && typeof detail !== 'string') {
+          detail = JSON.stringify(detail);
+        }
+        const err = new Error(detail ?? `HTTP ${res.status}`) as Error & {
+          status: number;
+          can_force?: boolean;
+          current_version_id?: number;
+          base_version_id?: number;
+          error_code?: string;
+        };
+        err.status = res.status;
+        err.can_force = canForce;
+        err.current_version_id = body.current_version_id;
+        err.base_version_id = body.base_version_id;
+        err.error_code = body.error;
+        throw err;
+      }
+      // 204 No Content
+      if (res.status === 204) return undefined as T;
+      return res.json() as Promise<T>;
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < maxRetries && (err.status === 503 || err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network'))) {
+        await new Promise(resolve => setTimeout(resolve, 600 * Math.pow(1.5, attempt)));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError;
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -552,6 +597,7 @@ export interface WeeklyScheduleRequest {
   include_advanced?: boolean
   allow_cancel?: boolean
   max_proposals?: number
+  version_id?: number | null
 }
 
 export interface DayReportItem {
@@ -615,6 +661,7 @@ export interface WeeklyScheduleResponse {
   day_report: DayReportItem[]
   valid_day_counts: number[]
   proposals: WeeklyProposalItem[]
+  version_id?: number | null
 }
 
 export async function weeklySmartSchedule(payload: WeeklyScheduleRequest): Promise<WeeklyScheduleResponse> {

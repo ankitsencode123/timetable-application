@@ -710,8 +710,11 @@ class ScopeLock:
             if conn is not None:
                 try:
                     if acquired and unlock_sql is not None:
-                        if not conn.execute(unlock_sql, params).scalar():
-                            _log.warning("lock {} was not held at release time", self.scope)
+                        res = conn.execute(unlock_sql, params).scalar()
+                        if not res:
+                            _log.warning("lock {} was not held at release time; invalidating connection", self.scope)
+                            with contextlib.suppress(Exception):
+                                conn.invalidate()
                 except Exception:  # noqa: BLE001
                     _log.exception("failed to release lock {}; invalidating connection", self.scope)
                     with contextlib.suppress(Exception):

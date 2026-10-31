@@ -1,4 +1,6 @@
 # Python / Backend
+__pycache__/
+*.pyc
 backend/venv/
 backend/__pycache__/
 backend/app/__pycache__/

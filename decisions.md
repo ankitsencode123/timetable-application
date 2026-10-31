@@ -157,3 +157,65 @@
   3. **Chevron Arrow Button Scrolling**: Updated `prevDay` and `nextDay` handlers so clicking `<` or `>` both increments the day and smoothly scrolls the pills container (`scrollBy({ left: ±100, behavior: 'smooth' })`).
   4. **Visual Scroll Affordance**: Added a subtle 3px custom scrollbar (`scrollbar-width: thin; scrollbar-color: ...`) on the scroller so users on mobile have immediate visual indication that additional days extend beyond Thursday.
 - **Reasoning**: With 7 days in a week (~60px per pill + gaps = ~440px), narrow phone screens (360px–390px) can only fit 3.5 to 4 pills at a time. The hidden scrollbar, lack of `touch-action: pan-x`, and static arrow buttons prevented users from reaching Friday and Saturday. Combining touch-action, chevron container scrolling, and active-pill centering ensures fluid, intuitive day navigation on all screen sizes.
+
+### 12. Strict Hard Constraint Enforcement Across All Timetable Mutation Flows (2026-10-31)
+- **Decision**: Eliminated all mechanisms that allowed hard constraint violations (specifically H1 semester clashes, H2 teacher clashes, H3 room clashes, and H12 busy slot conflicts) to be suggested, saved, or published:
+  1. **Abolished Blind Emergency Reschedule Fallbacks (`backend/app/actions/suggestions.py`)**:
+     - Removed the blind fallback block that forced the first available time slot (which selected Wednesday 14:00–17:00 in Room 303 for teacher PB) and falsely labeled it `"status": "Conflict-free and validated"`.
+     - Hardened `_is_physically_valid` and `_is_fully_valid` so any candidate containing an `H1_semester_clash`, `H2_teacher_clash`, `H3_room_clash`, or `H12_teacher_busy` is strictly rejected and never offered as a valid suggestion.
+  2. **Strict Hard Constraint Pre-Commit Gating in `ActionEngine` (`backend/app/actions/engine.py`)**:
+     - Previously, `ActionEngine` only computed differential errors (`_get_new_errors()`) against the base schedule. If a prior draft contained an overlap, subsequent operations ignored the violation as "not new".
+     - Implemented an absolute hard constraint gate: if any candidate schedule at any intermediate action step or at the final execution pass contains any hard constraint violation (`H1_semester_clash`, `H2_teacher_clash`, `H3_room_clash`, `H12_teacher_busy`, time format errors), execution immediately halts with `success=False` and the draft is NOT saved.
+     - In `AddTeacherBusyAction`, candidate alternative slots are simulated against hard constraints. If no conflict-free slot exists, the affected class is safely cancelled instead of forced into an overlapping slot.
+  3. **Strict Validation in Teacher Busy Rescheduling (`backend/app/api/busy_slots.py`)**:
+     - Validated candidate rich suggestions against `HARD_RULES` prior to selecting a replacement slot.
+     - Added a final validation check before `create_draft`. If any hard constraint would be introduced, the auto-reschedule raises an `HTTPException` and cancels rather than corrupting the timetable.
+  4. **Publication Hard Constraint Guardrail (`backend/app/services/publication_service.py`)**:
+     - `publish_version` now performs full `validate_schedule` and `validate_schema` checks on all entries of the target version before updating its status to `PUBLISHED`.
+     - Any version with an active hard constraint clash is strictly barred from publication, raising a `ValueError`.
+  5. **Program & Field Normalization in Draft Creation (`backend/app/services/timetable_service.py`)**:
+     - Enforced `normalize_program()` and cleaned string handling on `program`, `semester`, `start_time`, `end_time`, and `entry_type` when creating timetable entries to prevent casing and punctuation discrepancies (`M.Tech.` vs `M.Tech`).
+  6. **Database Timetable Remediation**:
+     - Investigated remote Supabase database lineage: Version 46 introduced the clashing `aa` class on Wednesday 14:00–17:00 when teacher PB was marked busy on Monday via the faulty emergency fallback. Version 47 was published with that H1 clash between `PE-1:SC-P` and `aa`. Later drafts ineffectively cancelled `PE-1:SC-P` and added unapproved subjects (`at`, `dvs`).
+     - Generated clean Version 52: pruned the duplicate Wednesday `aa` class and restored `PE-1:SC-P` to Wednesday 14:30–17:30 in R#209 (free room for M.Tech 1st), resulting in 0 hard constraint violations across the entire schedule.
+- **Reasoning**: Hard constraints represent physical and institutional impossibilities (students attending two classes simultaneously, teachers in two rooms at once, rooms double-booked). Allowing fallback routines to bypass validation or allowing differential checks to ignore existing hard errors created cascading data corruption. Enforcing absolute zero-tolerance gates at suggestion generation, action execution, draft creation, and publication guarantees the integrity of all schedules.
+
+
+### 13. Elimination of HTTP 503 Errors on Suggestion Application & Version Transition (2026-10-31)
+- **Decision**: Resolved intermittent HTTP 503 errors when clicking "Apply Suggestions" / "Apply These Suggestions":
+  1. **Preload Bundle Fallback to Database (`backend/app/services/preload.py`)**:
+     - The shadow routes for `versions_list_cached`, `version_detail_cached`, `draft_cached`, and `users_cached` previously called `_bundle_or_503()`, raising HTTP 503 if the in-RAM preloaded cache bundle was uninitialized or invalidated.
+     - Immediately following action execution (`POST /api/actions/execute`), SQLAlchemy commit hooks trigger `BUNDLES.invalidate("db-commit")`. When client code immediately requested `getVersion(new_version_id)` or `getCurrentDraft()`, the shadow route threw HTTP 503, aborting the application process and presenting an error toast even though the database action had successfully committed.
+     - Updated all shadow routes to seamlessly fall back to querying the database directly (`get_version_by_id`, `get_all_versions`, `get_current_draft`, etc.) whenever the memory bundle is unavailable, completely eliminating 503 errors during version transitions.
+  2. **Safe PostgreSQL Advisory Lock Release on Pooled Connections (`backend/app/actions/concurrency.py` & root `concurrency.py`)**:
+     - In `ScopeLock.hold()`, if unlocking via session advisory lock (`pg_advisory_unlock`) fails or returns false (as can occur on transaction poolers like PgBouncer on Supabase port 6543), `conn.invalidate()` is explicitly invoked to prevent connection-leaks from holding unreleased session advisory locks in the connection pool.
+  3. **Client-Side Exponential Backoff Retry & Idempotent Headers (`frontend/src/api.ts`)**:
+     - Added an automatic exponential backoff retry mechanism in `request()` for HTTP 503 (Lock Contention / Service Unavailable) and HTTP 429 (Rate Limit) responses, respecting `Retry-After` headers sent by the backend concurrency guard.
+     - Added automatic `Idempotency-Key` header generation for `/actions/execute` mutations, guaranteeing that retried proposals can be safely re-evaluated without duplicating operations.
+- **Reasoning**: The 503 errors occurred because in-RAM bundles were invalidated on database commits while the client immediately queried the shadow routes for the new version, coupled with transient lock contention from Postgres advisory locks without client retries. Providing direct DB fallbacks, connection pool invalidation, and client backoff retries ensures that suggestion application is 100% reliable and resilient.
+
+### 14. Immediate Store Synchronization for Newly Added Teachers and Subjects in Weekly Planner (2026-10-31)
+- **Decision**: Fixed the catalog synchronization lifecycle so newly created or edited teachers and subjects appear immediately in the Weekly Planner (`WeeklyScheduleTab`) and Scheduling Modals without requiring a browser page refresh:
+  1. **Workspace Store Invalidation on Catalog Mutations (`frontend/src/components/catalog/CatalogManager.tsx` & `AdminPanel.tsx`)**:
+     - Previously, `CatalogManager.tsx` only updated its local component state (`teachers`, `subjects`, `programs`) when teachers or subjects were created, edited, or deleted. It never updated `useWorkspaceStore`.
+     - Added `useWorkspaceStore.getState().loadCatalog()` after teacher creation (`add()`), teacher subject updates (`saveEdit()`), subject creation (`add()`), subject deletion (`remove()`), program creation (`add()`), bundle application (`applyBundle()`), and user creation in `AdminPanel.tsx`.
+  2. **Direct Workspace Store Derivation in `WeeklyScheduleTab.tsx` and `SmartScheduleModal.tsx`**:
+     - Refactored `SmartScheduleModal.tsx` to derive `dynamicPrograms` and `dynamicTeachers` directly from `catalogPrograms` and `catalogTeachers` in `useWorkspaceStore` via `useMemo`, and ensured `loadCatalog()` is triggered on modal mount.
+     - Refactored `WeeklyScheduleTab.tsx` to subscribe to `catalogTeachers`, `catalogPrograms`, `catalogSubjects`, and `loadCatalog` directly from `useWorkspaceStore`. Replaced static props and stale state with dynamic derivations `dynamicPrograms` and `dynamicTeachers`, and updated `useEffect` to always fetch fresh catalog entries on component mount.
+- **Reasoning**: The Weekly Routine Planner previously relied on hardcoded static teacher lists and local state fetched only once during initial modal mounting, while catalog mutations only modified local state inside `CatalogManager`. Synchronizing mutations directly through the global workspace store and binding the dropdown options reactively ensures that any new teacher or subject created anywhere in the application is immediately visible throughout all scheduling modals.
+
+### 15. Resolution of HTTP 409 Concurrency Version Mismatches on Weekly Planner Application (2026-10-31)
+- **Decision**: Resolved the recurring "Could Not Complete HTTP 409" conflict error when applying weekly schedules:
+  1. **Accurate Concurrency Error Parsing in `api.ts`**:
+     - `ConcurrencyError` responses emitted by FastAPI contain `message`, `error`, `base_version_id`, and `current_version_id` at the top level of the JSON body rather than nested under `detail`.
+     - In `frontend/src/api.ts`, changed detail extraction to `body.detail ?? body.message ?? body.error` and surfaced concurrency attributes on the thrown error object (`current_version_id`, `base_version_id`, `error_code`). This prevents opaque `"HTTP 409"` strings from replacing informative backend explanations (such as "The timetable changed since you loaded it. Reload and retry.").
+  2. **Explicit Target Version Binding in Weekly Planner (`schedule_smart_weekly.py`)**:
+     - Previously, `solve_weekly` and `weekly_smart_schedule` planned against head in the database without recording the `version_id` against which the candidate slots and actions were calculated, and did not accept a `version_id` parameter.
+     - Added optional `version_id` to both `WeeklyScheduleRequest` and `WeeklyScheduleResponse`. In `weekly_smart_schedule`, resolved the target version (falling back to head) and set `resp.version_id = v.id`.
+     - In `WeeklyScheduleTab.tsx`, passed `version_id: currentVersionId ?? undefined` in the search request, and when executing proposals sent `targetVersionId = result?.version_id ?? currentVersionId`. Because proposals are applied directly against the version they were verified on, operations commit cleanly without triggering stale auto-rebase rejections.
+  3. **Automatic Workspace Head Synchronization on 409 Conflicts**:
+     - In `WeeklyScheduleTab.tsx`, if a 409 concurrency conflict occurs during proposal application (e.g., another user commits a new draft concurrently), the application catches the 409, queries `getCurrentDraft()` and `getVersion(draft.id)`, and automatically updates `useWorkspaceStore` (`setCurrentVersion` and `setVersions`).
+     - Displayed an informative message to the user explaining that the timetable has advanced, and provided a one-click `↻ Re-run Routine Search` button so the user can immediately re-calculate and apply conflict-free slots against the updated head routine.
+  4. **Resilient Version Resolution in `TeacherWorkspace.tsx`**:
+     - Updated `init()` in `TeacherWorkspace.tsx` so that if `getCurrentDraft()` fails, it automatically falls back to `listVersions()` and loads the newest existing version into `currentVersionId`, preventing clients from being left uninitialized or stranded on Version 1.
+- **Reasoning**: The 409 error occurred because the Weekly Routine Planner computed proposals against the database head but submitted mutations pinned to `currentVersionId` (which was out-of-date or defaulted to Version 1). Concurrency guards in `SafeActionEngine` detected that the client's base version lagged head by more than `max_rebase_distance` (25 versions), raising `StaleVersionError` (HTTP 409). Binding weekly proposals explicitly to their evaluated version, resolving latest versions on teacher workspace mount, and adding automatic store re-synchronization on 409 eliminates this conflict loop.

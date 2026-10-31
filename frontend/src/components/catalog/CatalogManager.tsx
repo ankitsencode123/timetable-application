@@ -56,6 +56,7 @@ function TeachersTab() {
       setList(l => [...l, r])
       if (r.auto_email) setCreated({ email: r.auto_email, password: r.auto_password })
       setForm({ short_name: '', full_name: '', designation: '', subjects_csv: '', is_internal: true, email: '' })
+      useWorkspaceStore.getState().loadCatalog()
     } catch (e: unknown) { alert((e as Error).message) }
     setSaving(false)
   }
@@ -68,6 +69,7 @@ function TeachersTab() {
       const r = await req<Teacher>(`/catalog/teachers/${id}`, { method: 'PATCH', body: JSON.stringify({ subjects_csv: editSubjects }) })
       setList(l => l.map(t => t.id === id ? r : t))
       setEditId(null)
+      useWorkspaceStore.getState().loadCatalog()
     } catch (e: unknown) { alert((e as Error).message) }
   }
 
@@ -219,6 +221,7 @@ function SubjectsTab() {
       const r = await req<Subject>('/catalog/subjects', { method: 'POST', body: JSON.stringify({ ...form, weekly_hours: 2 }) })
       setList(l => [...l, r])
       setForm({ code: '', name: '', program: 'B.Tech', semester: '1st', entry_type: 'Theory' })
+      useWorkspaceStore.getState().loadCatalog()
     } catch (e: unknown) { alert((e as Error).message) }
     setSaving(false)
   }
@@ -227,6 +230,7 @@ function SubjectsTab() {
     if (!confirm('Remove this subject?')) return
     await req(`/catalog/subjects/${id}`, { method: 'DELETE' })
     setList(l => l.filter(s => s.id !== id))
+    useWorkspaceStore.getState().loadCatalog()
   }
 
   const grouped = list.reduce<Record<string, Subject[]>>((acc, s) => {
@@ -328,6 +332,7 @@ function ProgramsTab() {
       const r = await req<Program>('/catalog/programs', { method: 'POST', body: JSON.stringify({ ...form, semesters_count: parseInt(form.semesters_count) || 8 }) })
       setList(l => [...l, r])
       setForm({ name: '', semesters_count: '8', description: '' })
+      useWorkspaceStore.getState().loadCatalog()
     } catch (e: unknown) { alert((e as Error).message) }
     setSaving(false)
   }
@@ -481,6 +486,7 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
         subjects
       }
       await req('/catalog/bundle', { method: 'POST', body: JSON.stringify(payload) })
+      useWorkspaceStore.getState().loadCatalog()
 
       setStep('preview')
       setScheduling(true)

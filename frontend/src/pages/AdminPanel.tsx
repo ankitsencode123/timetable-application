@@ -4,7 +4,7 @@ import {
   ArrowLeft, Plus, Shield, UserCheck, UserX, RefreshCw,
   Activity, Search, AlertCircle, BookOpen, CalendarOff, Calendar,
 } from 'lucide-react'
-import { useAuthStore } from '../store'
+import { useAuthStore, useWorkspaceStore } from '../store'
 import {
   adminListUsers, adminCreateUser, adminEnableUser, adminDisableUser,
   adminResetPassword, adminGetUserActivity, type AdminUser,
@@ -327,7 +327,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
     e.preventDefault(); setError(null)
     if (form.password.length < 8) { setError('Password must be at least 8 characters.'); return }
     setLoading(true)
-    try { await adminCreateUser(form); onCreated(); onClose() }
+    try { await adminCreateUser(form); onCreated(); useWorkspaceStore.getState().loadCatalog(); onClose() }
     catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
   }

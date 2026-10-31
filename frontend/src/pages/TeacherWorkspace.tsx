@@ -105,7 +105,16 @@ export default function TeacherWorkspace() {
         setCurrentVersion(detail.id, detail.entries)
         const vList = await listVersions()
         setVersions(vList)
-      } catch { /* no draft exists yet */ }
+      } catch {
+        try {
+          const vList = await listVersions()
+          setVersions(vList)
+          if (vList.length > 0) {
+            const detail = await getVersion(vList[0].id)
+            setCurrentVersion(detail.id, detail.entries)
+          }
+        } catch { /* no versions exist */ }
+      }
     }
     init()
   }, [])

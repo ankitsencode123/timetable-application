@@ -164,6 +164,7 @@ class WeeklyScheduleRequest(BaseModel):
     max_proposals: int = 6
     time_budget_s: float = DEFAULT_BUDGET_S
     strict_verify: bool = False                           # also run real validator
+    version_id: Optional[int] = None                      # specific version to solve on
 
 
 class SlotOption(BaseModel):
@@ -232,6 +233,7 @@ class WeeklyScheduleResponse(BaseModel):
     candidates_evaluated: int = 0
     truncated: bool = False
     verification_rejected: int = 0
+    version_id: Optional[int] = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1492,7 +1494,15 @@ if _APP_OK:
         except RequestError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
-        v = db.query(TimetableVersion).order_by(TimetableVersion.id.desc()).first()
+        v = None
+        if req.version_id:
+            try:
+                from app.services import timetable_service
+                v = timetable_service.get_version(db, req.version_id)
+            except Exception:
+                v = None
+        if not v:
+            v = db.query(TimetableVersion).order_by(TimetableVersion.id.desc()).first()
         schedule: List[dict] = [e.to_dict() for e in v.entries] if v else []
         busy: Dict[str, Set[str]] = {}
         for b in db.query(TeacherBusySlot).filter(TeacherBusySlot.scope == "permanent").all():
@@ -1520,6 +1530,7 @@ if _APP_OK:
                 real_check = None
 
         resp = solve_weekly(req, schedule, busy, rules, real_check)
+        resp.version_id = v.id if v else None
         if not resp.truncated:
             _cache_put(key, resp)
         return resp

@@ -1,0 +1,255 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=0.85in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+% Customize algorithm keywords
+\algrenewcommand\algorithmicrequire{\textbf{Input:}}
+\algrenewcommand\algorithmicensure{\textbf{Output:}}
+\algnewcommand{\LineComment}[1]{\State \(\triangleright\) \textit{#1}}
+
+\title{\textbf{Core Scheduling Algorithms: Bitmask Occupancy Engine, Weekly Smart Planner, and Advanced Cascade Suggestions}}
+\author{Timetable Scheduling Engine Specification}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Notation and Hard Constraints}
+Let $\mathcal{D} = \{\text{Mon}, \text{Tue}, \text{Wed}, \text{Thu}, \text{Fri}, \text{Sat}\}$ be the set of working days, and let each day be discretized into $\Delta = 30\text{ min}$ cells over $[t_{\min}, t_{\max}) = [600, 1050)\text{ min}$ ($10\text{:}00\text{--}17\text{:}30$). The solver enforces the following hard constraints:
+\begin{itemize}
+    \item $H_1, H_2, H_3$: No overlapping classes for the same student cohort $(p, s)$, teacher $t$, or room $r$.
+    \item $H_5, H_{5b}$: At most $1$ Theory and $1$ Practical class per teacher $t$ per day $d$.
+    \item $H_6$: Every internal teacher $t \in \mathcal{T}_{\text{int}}$ must retain at least one completely free working day in $\mathcal{D}$.
+    \item $H_{12}$: Teacher $t$ cannot be scheduled on any permanently unavailable day $d \in \text{Busy}(t)$.
+\end{itemize}
+
+% ============================================================================
+% ALGORITHM 1: BITMASK OCCUPANCY & CP-SAT CASCADE ENGINE
+% ============================================================================
+\begin{algorithm}[htbp]
+\caption{Bitmask Occupancy Index \& Two-Tier Slot Suggestion Engine (\texttt{fast\_suggester.py})}
+\label{alg:bitmask}
+\begin{algorithmic}[1]
+\Require Schedule $\mathcal{S}$, target entry $e$, duration $L$ (min), lab flag $\text{need\_lab}$, preferred slot $(d^*, s^*)$, busy map $\text{Busy}$
+\Ensure Top-$k$ conflict-free slot/relocation plans $\mathcal{P}$
+
+\vspace{0.4em}
+\LineComment{\textbf{Phase 1: Build $O(1)$ Bitmask Occupancy Index ($\text{ScheduleIndex}$)}}
+\State Initialize bitmask table $\text{Occ}[(\text{kind}, \text{key}, d)] \gets [0, 0]$ \Comment{$[\text{any\_mask}, \text{multi\_mask}]$}
+\ForAll{row $r \in \mathcal{S}$}
+    \State $s_r \gets \lfloor r.\text{start} / \Delta \rfloor$, \quad $e_r \gets \lceil r.\text{end} / \Delta \rceil$, \quad $n_r \gets \max(0, e_r - s_r)$
+    \State $r.\text{mask} \gets ((1 \ll n_r) - 1) \ll s_r$ \Comment{Bitmask of occupied 30-min cells}
+    \State $r.\text{res} \gets \{(0, r.\text{sem})\} \cup \{(1, t) \mid t \in r.\text{teachers}\} \cup \{(2, r.\text{room})\}$
+    \ForAll{$(\text{kind}, \text{key}) \in r.\text{res}$}
+        \State $[A, M] \gets \text{Occ}[(\text{kind}, \text{key}, r.d)]$
+        \State $M \gets M \;\lor\; (A \;\land\; r.\text{mask})$; \quad $A \gets A \;\lor\; r.\text{mask}$
+        \State $\text{Occ}[(\text{kind}, \text{key}, r.d)] \gets [A, M]$
+    \EndFor
+    \ForAll{$t \in r.\text{teachers}$}
+        \State $\text{TypeCount}[(t, r.d, r.\text{type})] \gets \text{TypeCount}[(t, r.d, r.\text{type})] + 1$
+        \State $\text{TeachDays}[t][r.d] \gets \text{TeachDays}[t][r.d] + 1$
+    \EndFor
+\EndFor
+
+\vspace{0.4em}
+\Function{IsBlocked}{$\text{kind}, \text{key}, d, W, r_{\text{own}}$}
+    \State $[A, M] \gets \text{Occ}[(\text{kind}, \text{key}, d)]$
+    \If{$r_{\text{own}} \neq \text{null} \;\land\; r_{\text{own}}.d = d \;\land\; (\text{kind}, \text{key}) \in r_{\text{own}}.\text{res}$}
+        \State $A \gets (A \;\land\; \sim r_{\text{own}}.\text{mask}) \;\lor\; (M \;\land\; r_{\text{own}}.\text{mask})$ \Comment{$O(1)$ self-removal preserving base clashes}
+    \EndIf
+    \State \Return $(A \;\land\; W) \neq 0$
+\EndFunction
+
+\vspace{0.4em}
+\LineComment{\textbf{Phase 2: Tier-1 Bitwise Candidate Search (Zero-Disruption)}}
+\State $\mathcal{C} \gets \emptyset$, \quad $c_{\text{len}} \gets \max(1, \lfloor L / \Delta \rfloor)$, \quad $r_{\text{own}} \gets \textsc{FindRow}(\mathcal{S}, e)$
+\ForAll{$d \in \mathcal{D}$}
+    \If{$\exists t \in e.\text{teachers}: d \in \text{Busy}(t)$ \textbf{or} $\text{TypeCount}[(t, d, e.\text{type})] \ge 1$ \textbf{or} $H_6\text{ NewlyBroken}(t, d, r_{\text{own}})$}
+        \State \textbf{continue} \Comment{Prune entire day via $H_{12}, H_5, H_6$}
+    \EndIf
+    \For{$s = s_{\min}$ \textbf{to} $s_{\max} - c_{\text{len}}$}
+        \State $W \gets ((1 \ll c_{\text{len}}) - 1) \ll s$
+        \If{$\textsc{IsBlocked}(0, e.\text{sem}, d, W, r_{\text{own}}) \;\lor\; \bigvee_{t \in e.\text{teachers}} \textsc{IsBlocked}(1, t, d, W, r_{\text{own}})$}
+            \State \textbf{continue} \Comment{Bitwise check for $H_1$ and $H_2$}
+        \EndIf
+        \State $r^* \gets \text{first } r \in \mathcal{R}_{\text{compat}}(\text{need\_lab}) \text{ s.t. } \neg\textsc{IsBlocked}(2, r, d, W, r_{\text{own}})$ \Comment{$H_3$ check}
+        \If{$r^* \neq \text{null}$}
+            \State $\text{rank} \gets (\mathbb{I}[d \neq d^*], \;|s\cdot\Delta - s^*|, \;\text{idx}(d), \;s)$
+            \State $\mathcal{C} \gets \mathcal{C} \cup \{(\text{rank}, \langle d, s, s + c_{\text{len}}, r^* \rangle)\}$
+        \EndIf
+    \EndFor
+\EndFor
+\If{$\mathcal{C} \neq \emptyset$}
+    \State \Return $\text{Top-}k(\mathcal{C})$
+\EndIf
+
+\vspace{0.4em}
+\LineComment{\textbf{Phase 3: Tier-2 CP-SAT Cascade Repair (When Tier 1 Finds No Slot)}}
+\State Identify top-$M$ blocker classes $\mathcal{B} \subseteq \mathcal{S}$ overlapping $e$ with $|\text{overlap}| \le K_{\max}$ ($K_{\max} = 2$)
+\State Build frozen index $\text{Occ}_{\text{frozen}}$ over $\mathcal{S} \setminus (\mathcal{B} \cup \{r_{\text{own}}\})$
+\State Create boolean decision variables $x_{m, d, s, r} \in \{0, 1\}$ for each movable entity $m \in \{e\} \cup \mathcal{B}$
+\State Enforce $\sum_{d,s,r} x_{m,d,s,r} = 1$, cell capacity $\le 1$ ($H_1, H_2, H_3$), daily limit $\le 1$ ($H_5$), free-day ($H_6$), and $\sum_{m \in \mathcal{B}} \text{Moved}(m) \le K_{\max}$
+\State Minimize $\sum_{m \in \mathcal{B}} 10000 \cdot \text{Moved}(m) + \sum_{m \in \{e\} \cup \mathcal{B}} \big(600\cdot\mathbb{I}[d_m \neq d_m^0] + |s_m - s_m^0|\cdot\Delta + 30\cdot\mathbb{I}[r_m \neq r_m^0]\big)$
+\State Iteratively solve CP-SAT $k$ times, adding no-good cuts $x_{0, d^*, s^*, \cdot} = 0$ to extract $k$ distinct cascade plans $\mathcal{P}$
+\State \Return $\mathcal{P}$
+\end{algorithmic}
+\end{algorithm}
+
+\newpage
+% ============================================================================
+% ALGORITHM 2: WEEKLY SMART PLANNER & ADVANCED SUGGESTIONS
+% ============================================================================
+\begin{algorithm}[htbp]
+\caption{Weekly Smart Planner \& Bounded-DFS Advanced Suggestions (\texttt{schedule\_smart\_weekly.py})}
+\label{alg:weekly}
+\begin{algorithmic}[1]
+\Require Weekly minutes $W$, selected days $P \subseteq \mathcal{D}$, day rule $\text{rule} \in \{\text{exact}, \text{at\_least}, \text{at\_most}\}$, count $k$, spec $S$, schedule $\mathcal{S}$
+\Ensure Ranked verified weekly proposals $\mathcal{Q} = \mathcal{Q}_{\text{exact}} \cup \mathcal{Q}_{\text{sub}} \cup \mathcal{Q}_{\text{adv}} \cup \mathcal{Q}_{\text{part}}$
+
+\vspace{0.4em}
+\LineComment{\textbf{Step 1: Partition Weekly Minutes $W$ into Even Session Shapes}}
+\State $\Sigma \gets \emptyset$
+\For{$n = 1$ \textbf{to} $|\mathcal{D}|$ \text{satisfying} $\textsc{RuleOK}(\text{rule}, k, n)$}
+    \If{$S.\text{type} = \text{Practical} \;\land\; n \cdot 180 = W$}
+        \State $\Sigma \gets \Sigma \cup \{(180, \dots, 180)\}$
+    \ElsIf{$S.\text{type} = \text{Theory}$}
+        \State $q \gets \lfloor (W / n) / \Delta \rfloor \cdot \Delta$, \quad $\text{rem} \gets W - q \cdot n$, \quad $\text{extra} \gets \text{rem} / \Delta$
+        \State $\text{lo} \gets q$, \quad $\text{hi} \gets q + (\Delta \text{ if } \text{extra} > 0 \text{ else } 0)$
+        \If{$60 \le \text{lo} \;\land\; \text{hi} \le 180 \;\land\; \text{rem} \bmod \Delta = 0$}
+            \State $\sigma \gets (\underbrace{\text{hi}, \dots, \text{hi}}_{\text{extra}}, \underbrace{\text{lo}, \dots, \text{lo}}_{n - \text{extra}})$
+            \State $\text{cost}(\sigma) \gets \sum_{x \in \sigma} |x - 120|/\Delta + 2(\max(\sigma) - \min(\sigma))/\Delta$
+            \State $\Sigma \gets \Sigma \cup \{\sigma\}$
+        \EndIf
+    \EndIf
+\EndFor
+\State Sort $\Sigma$ ascending by $(\text{cost}(\sigma), |\sigma|)$
+
+\vspace{0.4em}
+\LineComment{\textbf{Step 2: Scan Daily Time Windows on In-Memory Interval Board $\mathcal{B}$}}
+\ForAll{$d \in \mathcal{D}$ \text{with} $\textsc{DayBlock}(\mathcal{B}, S, d) = \text{null}$ \text{and duration} $x \in \bigcup_{\sigma \in \Sigma} \sigma$}
+    \State $\text{Avail}[d][x] \gets \emptyset$
+    \For{$s = 600$ \textbf{to} $1050 - x$ \textbf{step} $\Delta$}
+        \If{$\neg\textsc{Clash}(\mathcal{B}, d, s, s+x, S.\text{sem}, S.\text{teachers})$ \textbf{and} $\textsc{PickRoom}(\mathcal{B}, d, s, s+x) = r^* \neq \text{null}$}
+            \State $c_w \gets (s - 600)/\Delta + 90\cdot\mathbb{I}[s \notin G_{\text{grid}}] + 400\cdot\mathbb{I}[\text{CrossesBreak}(s, s+x)] + 30\cdot\mathbb{I}[r^* \neq S.\text{room}]$
+            \State Append window $w = \langle s, x, r^*, c_w \rangle$ to $\text{Avail}[d][x]$, sorted by $(c_w, s)$
+        \EndIf
+    \EndFor
+\EndFor
+
+\vspace{0.4em}
+\LineComment{\textbf{Step 3: Tier 1 (Exact Match) \& Tier 2 (Minimal Substitute Days)}}
+\State $\mathcal{C} \gets \emptyset$
+\ForAll{shape $\sigma \in \Sigma$ \text{and combination} $D \in \binom{\mathcal{D}_{\text{allowed}}}{|\sigma|}$ \text{s.t.} $\textsc{H6\_OK}(\mathcal{B}, S.\text{teachers}, D)$}
+    \State Find permutation $\pi \in \text{Perm}(\sigma)$ minimizing total window cost $C_{\text{tot}} = \sum_{i=1}^{|\sigma|} \text{Avail}[D_i][\pi_i][0].\text{cost}$
+    \If{all windows exist}
+        \State $\text{out} \gets |\{d \in D \mid P \neq \emptyset \;\land\; d \notin P\}|$ \Comment{$\text{out}=0 \implies \text{Exact}$; $\text{out}>0 \implies \text{Substitute}$}
+        \State $\mathcal{C} \gets \mathcal{C} \cup \{\langle \sigma, D, \text{windows}, \text{out}, \text{key}=(\text{out}, \text{cost}(\sigma), C_{\text{tot}}, D) \rangle\}$
+    \EndIf
+\EndFor
+\State Sort $\mathcal{C}$ by $\text{key}$; retain best candidates with minimum $\text{out} = \text{out}_{\min}$
+\ForAll{candidate $c \in \mathcal{C}_{\text{best}}$}
+    \If{$\exists$ room $r_{\text{common}}$ free across all $(d_i, w_i) \in c$} \Comment{Room Harmonization}
+        \State Assign $r_{\text{common}}$ to every session in $c$
+    \EndIf
+    \State Add $\textsc{VerifyAndBuild}(c)$ to $\mathcal{Q}_{\text{exact}}$ (if $\text{out}_{\min}=0$) or $\mathcal{Q}_{\text{sub}}$ (if $\text{out}_{\min}>0$)
+\EndFor
+
+\vspace{0.4em}
+\LineComment{\textbf{Step 4: Tier 3 (Advanced Suggestions via Bounded Beam-DFS Relocation)}}
+\If{$\text{out}_{\min} > 0$ \textbf{and} $\text{include\_advanced}$}
+    \ForAll{$\sigma \in \Sigma[:3]$}
+        \State $\textsc{AdvancedDFS}(\mathcal{B}, \sigma, \text{depth}=0, \text{placed}=\emptyset, \text{moves}=\emptyset, \text{out}_{\min}, \mathcal{Q}_{\text{adv}})$
+    \EndFor
+\EndIf
+
+\vspace{0.4em}
+\LineComment{\textbf{Step 5: Tier 4 (Pareto-Optimal Partial Fallback)}}
+\If{$\mathcal{Q}_{\text{exact}} \cup \mathcal{Q}_{\text{sub}} = \emptyset$}
+    \State Generate sub-shapes $\Sigma_{\text{part}}$ with total minutes $W' < W$ or days $n' < k$
+    \State Enumerate, filter dominated $(\text{deficit}_W, \text{deficit}_{\text{days}})$ pairs, harmonize rooms, and add to $\mathcal{Q}_{\text{part}}$
+\EndIf
+\State \Return $\mathcal{Q}_{\text{exact}} \cup \mathcal{Q}_{\text{sub}} \cup \mathcal{Q}_{\text{adv}} \cup \mathcal{Q}_{\text{part}}$
+\end{algorithmic}
+\end{algorithm}
+
+\newpage
+% ============================================================================
+% ALGORITHM 3: ADVANCED SUGGESTIONS SUBROUTINE (BEAM-DFS & COHORT RELOCATION)
+% ============================================================================
+\begin{algorithm}[htbp]
+\caption{Advanced Suggestions Subroutine: Cohort Blocker Relocation \& Beam-DFS}
+\label{alg:advanced}
+\begin{algorithmic}[1]
+\Procedure{AdvancedDFS}{$\mathcal{B}, \sigma_{\text{rem}}, \text{depth}, \text{placed}, \text{moves}, \text{out}_{\text{base}}, \mathcal{Q}_{\text{adv}}$}
+    \State Recompute $\text{Avail}$ for remaining session durations $\sigma_{\text{rem}}$ on $\mathcal{D}_{\text{allowed}} \setminus \text{Days}(\text{placed})$
+    \State $\mathcal{C}_{\text{rem}} \gets \textsc{Enumerate}(\mathcal{B}, [\sigma_{\text{rem}}], \text{Avail})$
+    \If{$\text{moves} \neq \emptyset$}
+        \ForAll{$c \in \mathcal{C}_{\text{rem}}$ \text{s.t.} $c.\text{out} < \text{out}_{\text{base}}$} \Comment{Strictly honours more user-selected days}
+            \State Record atomic bundle $(\text{moves} \;\Vert\; \text{placed} \;\Vert\; c.\text{sessions})$ into $\mathcal{Q}_{\text{adv}}$
+        \EndFor
+        \If{any recorded} \Return \EndIf
+    \EndIf
+    \If{$\text{depth} \ge D_{\max}$ ($D_{\max} = 2$)} \Return \EndIf
+
+    \vspace{0.3em}
+    \LineComment{Identify cohort/teacher blockers and evaluate relocation cost}
+    \State $\mathcal{O} \gets \emptyset$
+    \ForAll{blocked target day $d \in \mathcal{D}_{\text{allowed}} \setminus \text{HardBlocked}$ \text{and duration} $x \in \sigma_{\text{rem}}$}
+        \ForAll{existing class $a \in \text{SameCohort}(\mathcal{B}, S.\text{sem})$ \text{where} $a.d = d \;\lor\; (a.\text{teachers} \cap S.\text{teachers} \neq \emptyset)$}
+            \State $\textsc{Detach}(\mathcal{B}, a)$ \Comment{$O(1)$ removal of blocker $a$}
+            \If{$\textsc{DayOK}(\mathcal{B}, S.\text{teachers}, S.\text{type}, d)$}
+                \ForAll{unlocked window $w \in \textsc{DayWindows}(\mathcal{B}, d, x)[:2]$}
+                    \State $p_{\text{new}} \gets \textsc{Placeholder}(S, d, w)$
+                    \State $\textsc{Attach}(\mathcal{B}, p_{\text{new}})$ \Comment{Reserve slot $w$ for target class}
+                    \State $\text{dest} \gets \textsc{BestMove}(\mathcal{B}, a)$ \Comment{Find cheapest conflict-free slot for $a$}
+                    \State $\textsc{Detach}(\mathcal{B}, p_{\text{new}})$
+                    \If{$\text{dest} \neq \text{null}$ \textbf{or} ($\text{allow\_cancel} \;\land\; \text{cancels} < 1$)}
+                        \State $\text{key} \gets (\mathbb{I}[\text{dest}=\text{null}], \;\mathbb{I}[d \notin P], \;\text{dest}.\text{cost} + w.\text{cost}, \;\text{idx}(d))$
+                        \State $\mathcal{O} \gets \mathcal{O} \cup \{\langle a, d, x, w, \text{dest}, \text{key} \rangle\}$
+                    \EndIf
+                \EndFor
+            \EndIf
+            \State $\textsc{Attach}(\mathcal{B}, a)$ \Comment{Restore blocker $a$}
+        \EndFor
+    \EndFor
+
+    \vspace{0.3em}
+    \LineComment{Branch on top-$B_{\text{depth}}$ unlock options ($B_0 = 8, B_1 = 3$)}
+    \State Sort $\mathcal{O}$ ascending by $\text{key}$
+    \ForAll{option $o = \langle a, d, x, w, \text{dest}, \text{key} \rangle \in \mathcal{O}[:B_{\text{depth}}]$}
+        \State $\textsc{Detach}(\mathcal{B}, a)$; \quad $\textsc{Attach}(\mathcal{B}, \textsc{Placeholder}(S, d, w))$
+        \If{$\text{dest} \neq \text{null}$}
+            \State $a_{\text{moved}} \gets \textsc{Row}(a, \text{dest}.d, \text{dest}.s, \text{dest}.r)$; \quad $\textsc{Attach}(\mathcal{B}, a_{\text{moved}})$
+            \State $\text{mv} \gets \text{MOVE\_CLASS}(a \to \text{dest})$
+        \Else
+            \State $\text{mv} \gets \text{REMOVE\_CLASS}(a)$
+        \EndIf
+        \State $\textsc{AdvancedDFS}(\mathcal{B}, \sigma_{\text{rem}} \setminus \{x\}, \text{depth}+1, \text{placed} \cup \{(d,w)\}, \text{moves} \cup \{\text{mv}\}, \text{out}_{\text{base}}, \mathcal{Q}_{\text{adv}})$
+        \State \textsc{Undo}$(\mathcal{B}, o)$ \Comment{Backtrack state on $\mathcal{B}$}
+    \EndFor
+\EndProcedure
+
+\vspace{0.5em}
+\Function{BestMove}{$\mathcal{B}, a$}
+    \State $L_a \gets a.e - a.s$, \quad $\text{best} \gets \text{null}$
+    \ForAll{$d \in \mathcal{D}$ \text{with} $\textsc{DayOK}(\mathcal{B}, a.\text{teachers}, a.\text{type}, d)$}
+        \For{$s = 600$ \textbf{to} $1050 - L_a$ \textbf{step} $\Delta$ \text{s.t.} $(d, s) \neq (a.d, a.s)$}
+            \If{$\neg\textsc{Clash}(\mathcal{B}, d, s, s+L_a, a.\text{sem}, a.\text{teachers})$ \textbf{and} $\textsc{PickRoom}(\mathcal{B}, d, s, s+L_a) = r \neq \text{null}$}
+                \State $c \gets 600\cdot\mathbb{I}[d \neq a.d] + |s - a.s| + 30\cdot\mathbb{I}[r \neq a.r] + 90\cdot\mathbb{I}[s \notin G_{\text{grid}}] + 400\cdot\mathbb{I}[\text{CrossesBreak}(s, s+L_a)]$
+                \State Keep minimum $(c, \text{idx}(d), s, d, r)$ as $\text{best}$
+            \EndIf
+        \EndFor
+    \EndFor
+    \State \Return $\text{best}$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\end{document}

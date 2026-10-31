@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.api.auth import get_current_user, require_admin
 from app.models.user import User
 from app.models.busy_slot import TeacherBusySlot
+from app.scheduler.validator import validate_schedule
 
 router = APIRouter()
 
@@ -189,46 +190,62 @@ def _reschedule_affected_classes(
         )
 
         rich = sugg.get("rich_suggestions", [])
-        if rich:
-            best = rich[0]
-            action = best.get("action", {})
+        placed = False
+        HARD_RULES = {"H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy", "start_not_before_end", "bad_time_format"}
+        for s in rich:
+            action = s.get("action", {})
             new_day = action.get("new_day", entry["day"])
             new_start = action.get("new_start_time", entry["start"])
             new_end = action.get("new_end_time", entry["end"])
             new_room = action.get("new_room", entry.get("room", ""))
 
-            # Apply the move to current_schedule for the next iteration
-            for i, e in enumerate(current_schedule):
+            # Verify trial schedule introduces no hard physical conflicts
+            trial_sched = copy.deepcopy(current_schedule)
+            for i, e in enumerate(trial_sched):
                 if (e.get("day") == entry["day"] and
                         e.get("start") == entry["start"] and
                         e.get("subject_code") == entry["subject_code"] and
                         e.get("teacher") == teacher):
-                    current_schedule[i] = {**e, "day": new_day, "start": new_start, "end": new_end, "room": new_room}
+                    trial_sched[i] = {**e, "day": new_day, "start": new_start, "end": new_end, "room": new_room}
                     break
 
-            auto_rescheduled.append({
-                "subject_code": entry["subject_code"],
-                "subject_name": entry.get("subject_name", ""),
-                "from_day": entry["day"],
-                "from_start": entry["start"],
-                "from_end": entry["end"],
-                "to_day": new_day,
-                "to_start": new_start,
-                "to_end": new_end,
-                "room": new_room,
-            })
-        else:
+            trial_v = validate_schedule(trial_sched)
+            if not any(v.get("rule") in HARD_RULES for v in trial_v):
+                current_schedule = trial_sched
+                auto_rescheduled.append({
+                    "subject_code": entry["subject_code"],
+                    "subject_name": entry.get("subject_name", ""),
+                    "from_day": entry["day"],
+                    "from_start": entry["start"],
+                    "from_end": entry["end"],
+                    "to_day": new_day,
+                    "to_start": new_start,
+                    "to_end": new_end,
+                    "room": new_room,
+                })
+                placed = True
+                break
+
+        if not placed:
             cancelled_classes.append({
                 "subject_code": entry["subject_code"],
                 "subject_name": entry.get("subject_name", ""),
                 "day": entry["day"],
                 "start": entry["start"],
                 "end": entry["end"],
-                "reason": "No valid conflict-free slot was found. Please reschedule manually.",
+                "reason": "No valid conflict-free slot was found without hard constraint violations. Please reschedule manually.",
             })
 
-    # Persist the updated schedule as a new draft
+    # Persist the updated schedule as a new draft ONLY if free of hard physical conflicts
     if auto_rescheduled:
+        final_v = validate_schedule(current_schedule)
+        hard_clashes = [v for v in final_v if v.get("rule") in HARD_RULES]
+        if hard_clashes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Auto-reschedule would introduce hard constraint violations: {hard_clashes[0].get('rule')}. Reschedule cancelled."
+            )
+
         new_version_summary = (
             f"Auto-rescheduled: teacher {teacher} marked busy on {conflict_day}. "
             f"{len(auto_rescheduled)} class(es) moved."

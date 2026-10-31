@@ -49,8 +49,16 @@ from app.actions.suggestions import suggest_alternatives
 from app.scheduler.validator import validate_schedule, validate_schema, _entry_id
 from app.models.timetable import TimetableVersion, VersionStatus
 from app.models.timetable_entry import TimetableEntry
-from app.models.user import User
 from app.services import timetable_service, audit_service
+
+HARD_RULES = {
+    "H1_semester_clash",
+    "H2_teacher_clash",
+    "H3_room_clash",
+    "H12_teacher_busy",
+    "start_not_before_end",
+    "bad_time_format",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -322,18 +330,27 @@ def _simulate_one(
                     busy_days={action.day_of_week} if action.day_of_week else None,
                 )
                 rich = sugg.get("rich_suggestions", [])
-                if rich:
-                    best = rich[0].get("action", {})
-                    n_day = best.get("new_day", entry["day"])
-                    n_start = best.get("new_start_time", entry["start"])
-                    n_end = best.get("new_end_time", entry["end"])
-                    n_room = best.get("new_room", entry.get("room", ""))
-                    for i, e in enumerate(new_sched):
+                placed = False
+                for s in rich:
+                    cand_action = s.get("action", {})
+                    n_day = cand_action.get("new_day", entry["day"])
+                    n_start = cand_action.get("new_start_time", entry["start"])
+                    n_end = cand_action.get("new_end_time", entry["end"])
+                    n_room = cand_action.get("new_room", entry.get("room", ""))
+
+                    trial_sched = copy.deepcopy(new_sched)
+                    for i, e in enumerate(trial_sched):
                         if (e.get("day") == entry["day"] and e.get("start") == entry["start"] and e.get("subject_code") == entry["subject_code"] and e.get("teacher") == action.teacher_short_name):
-                            new_sched[i] = {**e, "day": n_day, "start": n_start, "end": n_end, "room": n_room}
+                            trial_sched[i] = {**e, "day": n_day, "start": n_start, "end": n_end, "room": n_room}
                             break
-                    moved.append(f"{entry['subject_code']} -> {n_day} {n_start}")
-                else:
+                    trial_v = validate_schedule(trial_sched)
+                    if not any(v.get("rule") in {"H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy", "start_not_before_end", "bad_time_format"} for v in trial_v):
+                        new_sched = trial_sched
+                        moved.append(f"{entry['subject_code']} -> {n_day} {n_start}")
+                        placed = True
+                        break
+
+                if not placed:
                     new_sched = [
                         e for e in new_sched 
                         if not (e.get("day") == entry["day"] and e.get("start") == entry["start"] and e.get("subject_code") == entry["subject_code"] and e.get("teacher") == action.teacher_short_name)
@@ -342,7 +359,7 @@ def _simulate_one(
 
             msg_parts = [f"Marked {action.teacher_short_name} busy on {action.day_of_week}."]
             if moved: msg_parts.append(f"Auto-moved: {', '.join(moved)}.")
-            if cancelled: msg_parts.append(f"Cancelled (no free slots): {', '.join(cancelled)}.")
+            if cancelled: msg_parts.append(f"Cancelled (no free slots without hard clashes): {', '.join(cancelled)}.")
                 
             return new_sched, ActionResult(
                 action_type=atype.value, success=True,
@@ -513,12 +530,15 @@ class ActionEngine:
             schema_errs = validate_schema(new_sched)
             violations  = validate_schedule(new_sched)
 
+            hard_violations = [v for v in violations if v.get("rule") in HARD_RULES]
             new_schema_errs = _get_new_errors(base_schema_errs, schema_errs)
             new_violations = _get_new_errors(base_violations, violations)
 
-            if new_violations or new_schema_errs:
-                # Build suggestions for first NEW violation
-                first_v = new_violations[0] if new_violations else new_schema_errs[0]
+            if hard_violations or new_violations or new_schema_errs or schema_errs:
+                # Build suggestions for first violation
+                blocking_violations = hard_violations if hard_violations else new_violations
+                blocking_schema = schema_errs if schema_errs else new_schema_errs
+                first_v = blocking_violations[0] if blocking_violations else (blocking_schema[0] if blocking_schema else {})
                 teacher = getattr(action, "new_teacher", None)
                 need_lab = (
                     getattr(getattr(action, "spec", None), "entry_type", "") == "Practical"
@@ -567,8 +587,8 @@ class ActionEngine:
                     return EngineResult(
                         success=False,
                         results=results,
-                        violations=new_violations,
-                        schema_errors=new_schema_errs,
+                        violations=blocking_violations,
+                        schema_errors=blocking_schema,
                         change_log="",
                     )
                 else:
@@ -588,17 +608,19 @@ class ActionEngine:
         final_schema_errs = validate_schema(applied_schedule)
         final_violations  = validate_schedule(applied_schedule)
         
-        # Determine if we INTRODUCED any new violations overall across the entire transaction
+        final_hard_violations = [v for v in final_violations if v.get("rule") in HARD_RULES]
         overall_new_schema_errs = _get_new_errors(validate_schema(base_schedule), final_schema_errs)
         overall_new_violations = _get_new_errors(validate_schedule(base_schedule), final_violations)
 
-        if overall_new_violations or overall_new_schema_errs:
-            first_v = overall_new_violations[0] if overall_new_violations else {}
+        if final_hard_violations or final_schema_errs or overall_new_violations or overall_new_schema_errs:
+            blocking_violations = final_hard_violations if final_hard_violations else overall_new_violations
+            blocking_schema = final_schema_errs if final_schema_errs else overall_new_schema_errs
+            first_v = blocking_violations[0] if blocking_violations else (blocking_schema[0] if blocking_schema else {})
             return EngineResult(
                 success=False,
                 results=results,
-                violations=overall_new_violations,
-                schema_errors=overall_new_schema_errs,
+                violations=blocking_violations,
+                schema_errors=blocking_schema,
                 change_log="",
             )
 
