@@ -650,7 +650,7 @@ def _context(schedule, entry, orig_target, need_lab, teacher, simulate_as_add, b
 
 def find_valid_slots(schedule, entry, free_slots=None, need_lab=False, orig_target=None,
                      simulate_as_add=False, limit=MAX_RANKED_SUGGESTIONS, busy_days=None,
-                     teacher=None, dur_min=None, allow_cascade=True, **cp_kwargs) -> List[dict]:
+                     teacher=None, dur_min=None, allow_cascade=False, **cp_kwargs) -> List[dict]:
     """Drop-in for suggestion._find_valid_slots.  `free_slots` (optional) restricts the search
     domain, e.g. the H5 'other days only' list.  Slots may carry a 'cascade' key (Tier 2)."""
     idx, e, own, pref_day, pref_min, skip, banned = _context(
@@ -688,7 +688,7 @@ def _plan_to_slot(plan: dict) -> dict:
 
 def universal_move_suggestion(schedule, entry, action_type, need_lab, orig_target, teacher,
                               duration_minutes, busy_days=None, allow_duration_fallback=True,
-                              allow_cascade=True, **cp_kwargs) -> Optional[dict]:
+                              allow_cascade=False, **cp_kwargs) -> Optional[dict]:
     """Drop-in for suggestion._universal_move_suggestion (returns ONE slot dict or None).
     Tiers: normalised duration -> other standard durations -> CP-SAT repair."""
     is_add = action_type == "ADD_CLASS"

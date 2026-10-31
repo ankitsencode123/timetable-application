@@ -281,8 +281,18 @@ def create_bundle(
 
     # 2. Process subjects and teachers
     for s_in in req.subjects:
-        code_lower = s_in.code.strip().lower()
+        code_clean = s_in.code.strip()
+        name_clean = s_in.name.strip()
         search_short = s_in.teacher_short_name.strip()
+        if not code_clean:
+            raise HTTPException(status_code=400, detail="Subject code cannot be empty.")
+        if not name_clean:
+            raise HTTPException(status_code=400, detail="Subject name cannot be empty.")
+        if not search_short:
+            raise HTTPException(status_code=400, detail="Teacher short name cannot be empty.")
+        if s_in.weekly_hours <= 0:
+            raise HTTPException(status_code=400, detail="Weekly hours must be at least 1.")
+        code_lower = code_clean.lower()
         # Ensure teacher exists (case-insensitive check)
         t = db.query(Teacher).filter(func.lower(Teacher.short_name) == search_short.lower()).first()
         if not t:

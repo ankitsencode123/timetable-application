@@ -22,14 +22,16 @@ export default function ClassCell({ entry, compact, onClick }: Props) {
       : 'var(--accent)'
 
   return (
-    <div className={cls} onClick={onClick} title={`${entry.program} ${entry.semester} — ${entry.subject_name} — ${entry.teacher} — ${entry.room}`}>
+    <div className={cls} onClick={onClick} title={`${entry.program} ${entry.semester} — ${entry.subject_name || entry.subject_code || '—'} — ${entry.teacher} — ${entry.room}`}>
       {!compact && (
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.1em', marginBottom: 2, color: 'var(--ink-soft)', textTransform: 'uppercase', opacity: 0.8 }}>
           {entry.program} {entry.semester}
         </div>
       )}
       <div className="cell-subject" style={{ color: subjectColor, fontFamily: 'var(--font-display)', fontWeight: 600 }}>
-        {compact ? entry.subject_code.toUpperCase() : entry.subject_name}
+        {compact
+          ? (entry.subject_code ? entry.subject_code.toUpperCase() : (entry.subject_name || '—'))
+          : (entry.subject_name && entry.subject_name !== '-' ? entry.subject_name : (entry.subject_code ? entry.subject_code.toUpperCase() : '—'))}
       </div>
       {!compact && (
         <div className="cell-meta">

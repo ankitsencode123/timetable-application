@@ -165,6 +165,7 @@ class WeeklyScheduleRequest(BaseModel):
     time_budget_s: float = DEFAULT_BUDGET_S
     strict_verify: bool = False                           # also run real validator
     version_id: Optional[int] = None                      # specific version to solve on
+    entries: Optional[List[dict]] = None                  # in-memory schedule override for atomic preview
 
 
 class SlotOption(BaseModel):
@@ -383,7 +384,15 @@ def normalize_request(req: WeeklyScheduleRequest, rules: Rules) -> NormRequest:
 def subject_known(nr: NormRequest, rules: Rules) -> bool:
     allowed = rules.subject_map.get((nr.program.rstrip("."), nr.semester), set())
     if not allowed:
-        return False
+        p_clean = nr.program.strip().rstrip('.').lower()
+        s_clean = nr.semester.strip().lower()
+        for (p, s), subs in rules.subject_map.items():
+            if p.strip().rstrip('.').lower() == p_clean and s.strip().lower() == s_clean:
+                allowed = allowed | subs
+    if not allowed:
+        # If no subjects are cataloged yet for this program/semester (e.g. brand new program/bundle),
+        # accept any valid non-empty subject code.
+        return bool(nr.subject_code.strip())
     code = nr.subject_code.lower()
     root = code[:-2] if code.endswith("-p") else code
     if code in allowed or root in allowed:
@@ -1488,6 +1497,8 @@ if _APP_OK:
     ):
         """Propose conflict-free weekly plans honouring weekly hours + preferred days.
         Nothing is applied; execute ``actions_to_apply`` after user confirmation."""
+        from app.scheduler import constraints as C
+        C.reload_catalog(db)
         rules = Rules.from_app()
         try:
             normalize_request(req, rules)
@@ -1495,22 +1506,26 @@ if _APP_OK:
             raise HTTPException(status_code=422, detail=str(exc))
 
         v = None
-        if req.version_id:
-            try:
-                from app.services import timetable_service
-                v = timetable_service.get_version(db, req.version_id)
-            except Exception:
-                v = None
-        if not v:
-            v = db.query(TimetableVersion).order_by(TimetableVersion.id.desc()).first()
-        schedule: List[dict] = [e.to_dict() for e in v.entries] if v else []
+        if req.entries is not None:
+            schedule: List[dict] = req.entries
+        else:
+            if req.version_id:
+                try:
+                    from app.services import timetable_service
+                    v = timetable_service.get_version(db, req.version_id)
+                except Exception:
+                    v = None
+            if not v:
+                v = db.query(TimetableVersion).order_by(TimetableVersion.id.desc()).first()
+            schedule: List[dict] = [e.to_dict() for e in v.entries] if v else []
         busy: Dict[str, Set[str]] = {}
         for b in db.query(TeacherBusySlot).filter(TeacherBusySlot.scope == "permanent").all():
             if b.day_of_week:
                 busy.setdefault(b.teacher_short_name, set()).add(b.day_of_week)
 
         busy_sig = hash(frozenset((t, frozenset(d)) for t, d in busy.items()))
-        key = (getattr(v, "id", 0), len(schedule), busy_sig, req.program, req.semester,
+        sched_sig = len(schedule) if req.entries is None else hash(str([(e.get('day'), e.get('start'), e.get('end'), e.get('teacher'), e.get('room'), e.get('subject_code')) for e in schedule]))
+        key = (getattr(v, "id", 0), sched_sig, busy_sig, req.program, req.semester,
                req.subject_code, req.subject_name, req.teacher, req.entry_type, req.room,
                req.weekly_hours, tuple(req.selected_days), req.day_rule, req.day_count,
                req.session_minutes, req.outside_days, req.include_advanced, req.allow_cancel,

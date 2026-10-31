@@ -193,7 +193,7 @@ def smart_schedule(
                         constraint_issue=" | ".join(issue_msgs)
                     ))
 
-    final_proposals = perfect_options if perfect_options else imperfect_options[:3]
+    final_proposals = perfect_options
     is_perfect = len(perfect_options) > 0
 
     # --- Pass 2: if preferred-day search found nothing, expand to all days ---
@@ -201,7 +201,6 @@ def smart_schedule(
         # Re-run search over all remaining days (excluding preferred, already tried)
         other_slots = [s for s in all_free_slots if s["day"] != req.preferred_day]
         perfect_options2: List[NormalProposal] = []
-        imperfect_options2: List[NormalProposal] = []
         for slot in other_slots:
             if len(perfect_options2) >= 3:
                 break
@@ -231,31 +230,23 @@ def smart_schedule(
                         "room": room,
                     },
                 }
-                fallback_note = f"Preferred day ({req.preferred_day}) unavailable — expanded search."
+                fallback_note = f"Conflict-free slot on {slot['day']} (expanded search beyond {req.preferred_day})."
                 if len(new_violations) == 0:
                     perfect_options2.append(NormalProposal(
                         day=slot["day"], start=slot["start"], end=slot["end"], room=room,
                         proposed_action=proposed,
                         constraint_issue=fallback_note,
                     ))
-                else:
-                    hard_rules = {"H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy"}
-                    if not any(v.get("rule") in hard_rules for v in new_violations):
-                        imperfect_options2.append(NormalProposal(
-                            day=slot["day"], start=slot["start"], end=slot["end"], room=room,
-                            proposed_action=proposed,
-                            constraint_issue=fallback_note,
-                        ))
-        final_proposals = perfect_options2 if perfect_options2 else imperfect_options2[:3]
-        is_perfect = False  # Expanded fallback — not a perfect preferred-day match
+        final_proposals = perfect_options2
+        is_perfect = len(perfect_options2) > 0
 
     if not final_proposals and expanded_to_all_days:
         # All-days search: teacher fully booked everywhere
         return SmartScheduleResponse(
             found=False,
             message=(
-                f"No slots found for {req.teacher} on {req.preferred_day} or any other day. "
-                f"Teacher may be fully booked or blocked by hard constraints."
+                f"No conflict-free slots found for {req.teacher} on {req.preferred_day} or any other day. "
+                f"Teacher may be fully booked or blocked by hard constraints (daily class limit or free day rules)."
             ),
         )
 
@@ -263,9 +254,10 @@ def smart_schedule(
         return SmartScheduleResponse(
             found=False,
             message=(
-                f"No slots found for {req.teacher} "
+                f"No conflict-free slots found for {req.teacher} "
                 f"({'any day' if not req.preferred_day else req.preferred_day}). "
-                f"Teacher may be fully booked or blocked by hard constraints."
+                f"All candidate slots violate hard constraints (e.g. teacher clash, daily limit, or free day rules). "
+                f"Try Advanced Smart Schedule to rebalance the timetable."
             ),
         )
 

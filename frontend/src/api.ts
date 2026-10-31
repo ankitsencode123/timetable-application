@@ -598,6 +598,7 @@ export interface WeeklyScheduleRequest {
   allow_cancel?: boolean
   max_proposals?: number
   version_id?: number | null
+  entries?: any[]
 }
 
 export interface DayReportItem {

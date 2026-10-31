@@ -627,13 +627,13 @@ def _attribute_conflicts(
 # Distributed lock
 # =============================================================================
 
-_LOCAL_LOCKS: Dict[str, threading.Lock] = {}
+_LOCAL_LOCKS: Dict[str, threading.RLock] = {}
 _LOCAL_LOCKS_GUARD = threading.Lock()
 
 
-def _local_lock_for(scope: str) -> threading.Lock:
+def _local_lock_for(scope: str) -> threading.RLock:
     with _LOCAL_LOCKS_GUARD:
-        return _LOCAL_LOCKS.setdefault(scope, threading.Lock())
+        return _LOCAL_LOCKS.setdefault(scope, threading.RLock())
 
 
 def _advisory_key(scope: str) -> int:
@@ -733,30 +733,31 @@ class ScopeLock:
             if conn.execute(stmt, params).scalar():
                 return
             remaining = deadline - time.monotonic()
+            # If PostgreSQL, check if the lock is held by an idle/abandoned zombie backend early (after ~300ms) or on expiry
+            if dialect == "postgresql" and (remaining <= 0 or delay >= 0.16):
+                try:
+                    holder = conn.execute(text("""
+                        SELECT l.pid, a.state, (now() - a.state_change) as idle_duration
+                        FROM pg_locks l
+                        JOIN pg_stat_activity a ON l.pid = a.pid
+                        WHERE l.locktype = 'advisory' AND l.pid <> pg_backend_pid()
+                    """)).mappings().first()
+                    if holder and holder["state"] == "idle":
+                        _log.warning(
+                            "Detected abandoned advisory lock on idle Postgres backend pid={}; terminating",
+                            holder["pid"],
+                        )
+                        conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": holder["pid"]})
+                        time.sleep(0.05)
+                        if conn.execute(stmt, params).scalar():
+                            _log.info(
+                                "Successfully acquired lock after clearing abandoned zombie backend pid={}",
+                                holder["pid"],
+                            )
+                            return
+                except Exception as exc:
+                    _log.debug("Zombie lock recovery check skipped: {}", exc)
             if remaining <= 0:
-                # If PostgreSQL, check if the lock is held by an idle/abandoned zombie backend
-                if dialect == "postgresql":
-                    try:
-                        k = params.get("k")
-                        if k is not None:
-                            u64 = k if k >= 0 else k + (1 << 64)
-                            hi = u64 >> 32
-                            lo = u64 & 0xFFFFFFFF
-                            holder = conn.execute(text("""
-                                SELECT l.pid, a.state, (now() - a.state_change) as idle_duration
-                                FROM pg_locks l
-                                JOIN pg_stat_activity a ON l.pid = a.pid
-                                WHERE l.locktype = 'advisory' AND l.classid = :hi AND l.objid = :lo
-                            """), {"hi": hi, "lo": lo}).mappings().first()
-                            if holder and holder["state"] == "idle":
-                                _log.warning("Detected abandoned advisory lock on idle Postgres backend pid={}; terminating", holder["pid"])
-                                conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": holder["pid"]})
-                                time.sleep(0.05)
-                                if conn.execute(stmt, params).scalar():
-                                    _log.info("Successfully acquired lock after clearing abandoned zombie backend pid={}", holder["pid"])
-                                    return
-                    except Exception as exc:
-                        _log.debug("Zombie lock recovery check skipped: {}", exc)
                 raise LockTimeoutError("Another timetable change is in progress. Please retry.")
             time.sleep(min(delay + random.uniform(0, delay / 2), remaining))
             delay = min(delay * 2, 0.25)

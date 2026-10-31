@@ -27,7 +27,7 @@ except Exception:
     _FAST_AVAILABLE = False
 
 
-def _fast_find_valid_slots(schedule, entry, free_slots, need_lab, orig_target, simulate_as_add, limit):
+def _fast_find_valid_slots(schedule, entry, free_slots, need_lab, orig_target, simulate_as_add, limit, allow_cascade=False):
     """Delegate to fast_suggester.find_valid_slots when available, else fall back."""
     if USE_FAST_SUGGESTER and _FAST_AVAILABLE:
         return _fast.find_valid_slots(
@@ -37,6 +37,7 @@ def _fast_find_valid_slots(schedule, entry, free_slots, need_lab, orig_target, s
             orig_target=orig_target,
             simulate_as_add=simulate_as_add,
             limit=limit,
+            allow_cascade=allow_cascade,
         )
     return _find_valid_slots(schedule, entry, free_slots or [], need_lab, orig_target, simulate_as_add, limit)
 
@@ -576,6 +577,70 @@ def _build_proposed_remove_class(entry: dict, orig_target: Optional[dict] = None
     }
 
 
+def _simulate_proposed_action(schedule: List[dict], action_dict: dict) -> Optional[List[dict]]:
+    """Simulate applying an action dictionary using executor functions."""
+    try:
+        from app.actions.types import ClassTarget, ClassSpec
+        from app.actions import executor as ex
+        
+        atype = action_dict.get("action")
+        if atype == "ADD_CLASS":
+            spec_data = action_dict.get("spec", {})
+            spec = ClassSpec(**spec_data)
+            return ex.apply_add_class(schedule, spec)
+        elif atype == "MOVE_CLASS":
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _, _ = ex.apply_move_class(
+                schedule, target,
+                new_day=action_dict.get("new_day"),
+                new_start_time=action_dict.get("new_start_time"),
+                new_end_time=action_dict.get("new_end_time"),
+                new_room=action_dict.get("new_room"),
+            )
+            return cand
+        elif atype in ("REMOVE_CLASS", "CANCEL_CLASS"):
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _ = ex.apply_remove_class(schedule, target)
+            return cand
+        elif atype == "CHANGE_ROOM":
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _, _ = ex.apply_change_room(schedule, target, action_dict.get("new_room"))
+            return cand
+        elif atype == "EXTEND_CLASS":
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _, _ = ex.apply_extend_class(schedule, target, action_dict.get("new_end_time"))
+            return cand
+        elif atype == "SHORTEN_CLASS":
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _, _ = ex.apply_shorten_class(schedule, target, action_dict.get("new_end_time"))
+            return cand
+        elif atype == "CHANGE_TEACHER":
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _, _ = ex.apply_change_teacher(schedule, target, action_dict.get("new_teacher"))
+            return cand
+        elif atype == "CHANGE_TIME":
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _, _ = ex.apply_change_time(
+                schedule, target, action_dict.get("new_start_time"), action_dict.get("new_end_time")
+            )
+            return cand
+        elif atype == "CHANGE_DAY":
+            target = ClassTarget(**(action_dict.get("target") or {}))
+            cand, _, _ = ex.apply_change_day(schedule, target, action_dict.get("new_day"))
+            return cand
+        elif atype in ("SWAP_CLASSES", "INTERCHANGE_CLASSES"):
+            ta = ClassTarget(**(action_dict.get("target_a") or {}))
+            tb = ClassTarget(**(action_dict.get("target_b") or {}))
+            if atype == "SWAP_CLASSES":
+                cand, _, _, _, _ = ex.apply_swap_classes(schedule, ta, tb)
+            else:
+                cand, _, _, _, _ = ex.apply_interchange_classes(schedule, ta, tb)
+            return cand
+    except Exception:
+        return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Helper: build the best universal move suggestion
 # ---------------------------------------------------------------------------
@@ -786,6 +851,12 @@ def suggest_alternatives(
         action_key = json.dumps(action, sort_keys=True)
         if any(json.dumps(item["action"], sort_keys=True) == action_key for item in suggestions["rich_suggestions"]):
             return
+
+        # Pre-simulate and strictly validate that applying this action introduces 0 physical clashes and 0 new violations
+        cand = _simulate_proposed_action(schedule, action)
+        if cand is None or cand == schedule or not _is_fully_valid(schedule, cand):
+            return
+
         suggestions["rich_suggestions"].append({
             "title": f"{title} — {_action_context(action)}",
             "description": desc,
@@ -937,11 +1008,17 @@ def suggest_alternatives(
             target_slots = [
                 slot for slot in free_slots
                 if not (
-                    target_cand_orig
-                    and slot["day"] == target_cand_orig.get("day")
-                    and slot["start"] == (
-                        target_cand_orig.get("start_time")
-                        or target_cand_orig.get("start")
+                    (
+                        target_cand_orig
+                        and slot["day"] == target_cand_orig.get("day")
+                        and slot["start"] == (
+                            target_cand_orig.get("start_time")
+                            or target_cand_orig.get("start")
+                        )
+                    )
+                    or (
+                        slot["day"] == entry.get("day")
+                        and slot["start"] == entry.get("start")
                     )
                 )
             ]
@@ -967,7 +1044,23 @@ def suggest_alternatives(
     # ── H2: Teacher clash ─────────────────────────────────────────────────────
     elif rule == "H2_teacher_clash":
         _teacher = teacher or entry.get("teacher")
-        free_slots = _all_slots_of_duration(dur)
+        free_slots = [
+            slot for slot in _all_slots_of_duration(dur)
+            if not (
+                (
+                    orig_target
+                    and slot["day"] == orig_target.get("day")
+                    and slot["start"] == (
+                        orig_target.get("start_time")
+                        or orig_target.get("start")
+                    )
+                )
+                or (
+                    slot["day"] == entry.get("day")
+                    and slot["start"] == entry.get("start")
+                )
+            )
+        ]
 
         suggestions["free_slots"] = []
         suggestions["note"] = f"Free slots for teacher {_teacher}" if _teacher else "Available alternative slots"

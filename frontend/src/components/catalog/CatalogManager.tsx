@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, Loader2, Pencil, Check, X, AlertCircle } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
-import { req } from '../../api'
+import { req, weeklySmartSchedule } from '../../api'
 
 const PROGRAMS = ['B.Tech', 'M.Tech', 'M.Sc']
 const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
@@ -438,52 +438,33 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
 
   const [step, setStep] = useState<'form' | 'preview'>('form')
   const [scheduling, setScheduling] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [pendingActions, setPendingActions] = useState<any[]>([])
   const [scheduleLog, setScheduleLog] = useState<{ name: string; status: 'ok' | 'fail'; detail: string }[]>([])
-  const [initialVersion, setInitialVersion] = useState<{id: number, entries: any[]} | null>(null)
-
-  // Slot candidates: 10:00 AM – 5:30 PM only
-  const SLOT_CANDIDATES = [
-    { day: 'Monday',    start: '10:00', end: '12:00' },
-    { day: 'Tuesday',   start: '10:00', end: '12:00' },
-    { day: 'Wednesday', start: '10:00', end: '12:00' },
-    { day: 'Thursday',  start: '10:00', end: '12:00' },
-    { day: 'Friday',    start: '10:00', end: '12:00' },
-    { day: 'Monday',    start: '12:00', end: '14:00' },
-    { day: 'Tuesday',   start: '12:00', end: '14:00' },
-    { day: 'Wednesday', start: '12:00', end: '14:00' },
-    { day: 'Thursday',  start: '12:00', end: '14:00' },
-    { day: 'Friday',    start: '12:00', end: '14:00' },
-    { day: 'Monday',    start: '14:00', end: '16:00' },
-    { day: 'Tuesday',   start: '14:00', end: '16:00' },
-    { day: 'Wednesday', start: '14:00', end: '16:00' },
-    { day: 'Thursday',  start: '14:00', end: '16:00' },
-    { day: 'Friday',    start: '14:00', end: '16:00' },
-    { day: 'Monday',    start: '15:30', end: '17:30' },
-    { day: 'Tuesday',   start: '15:30', end: '17:30' },
-    { day: 'Wednesday', start: '15:30', end: '17:30' },
-    { day: 'Thursday',  start: '15:30', end: '17:30' },
-    { day: 'Friday',    start: '15:30', end: '17:30' },
-    { day: 'Saturday',  start: '10:00', end: '12:00' },
-  ]
-
-  const PRAC_SLOT_CANDIDATES = [
-    { day: 'Monday',    start: '14:00', end: '17:00' },
-    { day: 'Tuesday',   start: '14:00', end: '17:00' },
-    { day: 'Wednesday', start: '14:00', end: '17:00' },
-    { day: 'Thursday',  start: '14:00', end: '17:00' },
-    { day: 'Friday',    start: '14:00', end: '17:00' },
-    { day: 'Monday',    start: '10:00', end: '13:00' },
-    { day: 'Tuesday',   start: '10:00', end: '13:00' },
-  ]
 
   const submit = async () => {
     setSaving(true)
     try {
+      const cleanSubjects = subjects.map(s => {
+        const nameClean = (s.name as string || '').trim()
+        const codeClean = (s.code as string || '').trim() || nameClean.replace(/\s+/g, '').slice(0, 6).toUpperCase()
+        return {
+          ...s,
+          name: nameClean,
+          code: codeClean,
+          teacher_short_name: (s.teacher_short_name as string || '').trim(),
+          teacher_full_name: (s.teacher_full_name as string || '').trim(),
+          semester: (s.semester as string || '1st').trim(),
+          weekly_hours: parseFloat(s.weekly_hours as string) || 2,
+          entry_type: (s.entry_type as string || 'Theory'),
+        }
+      })
+
       const payload = {
-        program_name: programName,
+        program_name: programName.trim(),
         semesters: parseInt(semesters) || 8,
-        description,
-        subjects
+        description: description.trim(),
+        subjects: cleanSubjects
       }
       await req('/catalog/bundle', { method: 'POST', body: JSON.stringify(payload) })
       useWorkspaceStore.getState().loadCatalog()
@@ -491,62 +472,79 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
       setStep('preview')
       setScheduling(true)
       setScheduleLog([])
+      setPendingActions([])
 
       const store = useWorkspaceStore.getState()
-      setInitialVersion({ id: store.currentVersionId!, entries: store.entries })
-      let versionId = store.currentVersionId
-
+      let currentSchedule = [...(store.entries || [])]
+      const allActionsToApply: any[] = []
       const log: { name: string; status: 'ok' | 'fail'; detail: string }[] = []
 
-      for (const sub of subjects as any[]) {
-        const isPrac = (sub.entry_type || 'Theory') === 'Practical'
-        const slots = isPrac ? PRAC_SLOT_CANDIDATES : SLOT_CANDIDATES
-        let placed = false
+      for (const sub of cleanSubjects) {
+        const teacher = sub.teacher_short_name || sub.teacher_full_name
+        try {
+          const res = await weeklySmartSchedule({
+            program: programName.trim(),
+            semester: sub.semester,
+            subject_code: sub.code,
+            subject_name: sub.name,
+            teacher: teacher,
+            entry_type: sub.entry_type as 'Theory' | 'Practical',
+            weekly_hours: sub.weekly_hours,
+            selected_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+            day_rule: 'at_least',
+            day_count: 1,
+            outside_days: 'allow',
+            include_advanced: true,
+            allow_cancel: false,
+            entries: currentSchedule,
+            version_id: store.currentVersionId ?? undefined,
+          })
 
-        for (const slot of slots) {
-          const action = {
-            action: 'ADD_CLASS',
-              spec: {
-                program: programName,
-                semester: sub.semester || '1st',
-                day: slot.day,
-                start_time: slot.start,
-                end_time: slot.end,
-                subject_code: sub.code || '',
-                subject_name: sub.name || '',
-                teacher: sub.teacher_short_name || sub.teacher_full_name || '',
-                entry_type: sub.entry_type || 'Theory',
-                room: '',
-              }
-            }
-            try {
-              const data = await req<any>('/actions/execute', {
-                method: 'POST',
-                body: JSON.stringify({ actions: [action], version_id: versionId }),
+          if (res.found && res.proposals && res.proposals.length > 0) {
+            const proposal = res.proposals[0]
+            allActionsToApply.push(...proposal.actions_to_apply)
+
+            for (const s of proposal.sessions) {
+              currentSchedule.push({
+                program: programName.trim(),
+                semester: sub.semester,
+                day: s.day,
+                start: s.start,
+                end: s.end,
+                subject_code: sub.code,
+                subject_name: sub.name,
+                teacher: teacher,
+                type: (sub.entry_type === 'Practical' ? 'Practical' : 'Theory') as 'Theory' | 'Practical',
+                room: s.room || '',
               })
-              if (data.success) {
-                versionId = data.new_version_id || versionId
-                if (data.new_version_id) {
-                  try {
-                    const vdata = await req<any>(`/versions/${data.new_version_id}`)
-                    store.setCurrentVersion(vdata.id, vdata.entries)
-                  } catch (_) {}
-                }
-                log.push({ name: sub.name || sub.code, status: 'ok', detail: `Scheduled: ${slot.day} ${slot.start}–${slot.end}` })
-                placed = true
-                break
-              }
-            } catch (_) {}
-          }
+            }
 
-          if (!placed) {
-            log.push({ name: sub.name || sub.code, status: 'fail', detail: 'Could not find a conflict-free slot — add manually' })
+            const sessionSummary = proposal.sessions.map(s => `${s.day} ${s.start}–${s.end}`).join(', ')
+            const hoursLabel = proposal.total_minutes ? `${proposal.total_minutes / 60}h` : `${sub.weekly_hours}h`
+            log.push({
+              name: sub.name,
+              status: 'ok',
+              detail: `Scheduled: ${sessionSummary} (${hoursLabel})`,
+            })
+          } else {
+            log.push({
+              name: sub.name,
+              status: 'fail',
+              detail: res.message || 'Could not find conflict-free weekly slots — add manually',
+            })
           }
-
-          setScheduleLog([...log])
+        } catch (err: any) {
+          log.push({
+            name: sub.name,
+            status: 'fail',
+            detail: err?.message || 'Failed to auto-schedule',
+          })
         }
+        setScheduleLog([...log])
+      }
 
-        setScheduling(false)
+      setPendingActions(allActionsToApply)
+      setScheduling(false)
     } catch (e: unknown) {
       alert((e as Error).message)
     }
@@ -608,7 +606,15 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
               </div>
               <div className="form-group" style={{ gridColumn: 'span 2' }}>
                 <label className="form-label">Subject Name</label>
-                <input className="form-control" list="existing-subjects-name" placeholder="Name" value={sub.name as string} onChange={e => updateSub(i, 'name', e.target.value)} />
+                <input className="form-control" list="existing-subjects-name" placeholder="Name" value={sub.name as string} onChange={e => {
+                  const val = e.target.value;
+                  updateSub(i, 'name', val);
+                  const matched = catalogSubjects.find(s => s.name.toLowerCase() === val.toLowerCase());
+                  if (matched) {
+                    if (!sub.code) updateSub(i, 'code', matched.code);
+                    if (!sub.semester || sub.semester === '1st') updateSub(i, 'semester', matched.semester);
+                  }
+                }} />
               </div>
               <div className="form-group"><label className="form-label">Sem ({semesters} max)</label><input className="form-control" placeholder="e.g. 1st" value={sub.semester as string} onChange={e => updateSub(i, 'semester', e.target.value)} /></div>
               <div className="form-group">
@@ -657,8 +663,36 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
       </datalist>
 
       <button className="btn btn-primary" style={{ padding: '12px', fontSize: 'var(--fs-sm)' }} disabled={saving} onClick={() => {
-         if (!programName) { alert("Please provide a Program Name in Step 1."); return; }
+         if (!programName.trim()) { alert("Please provide a Program Name in Step 1."); return; }
          if (subjects.length === 0) { alert("Please add at least one subject to the bundle in Step 2."); return; }
+         for (let idx = 0; idx < subjects.length; idx++) {
+           const s = subjects[idx];
+           const num = idx + 1;
+           const sName = (s.name as string || '').trim();
+           const sCode = (s.code as string || '').trim();
+           const sTeacher = (s.teacher_short_name as string || s.teacher_full_name as string || '').trim();
+           const sHours = parseFloat(s.weekly_hours as string) || 0;
+           if (!sName && !sCode) {
+             alert(`Subject #${num} is empty. Please enter a Subject Name and Code, or click the trash icon to remove it.`);
+             return;
+           }
+           if (!sName) {
+             alert(`Subject #${num} (Code: ${sCode}) is missing a Subject Name. Ghost subjects without a name cannot be scheduled.`);
+             return;
+           }
+           if (!sCode) {
+             alert(`Subject #${num} ("${sName}") is missing a Subject Code. Please provide a short code (e.g. ${sName.slice(0, 4).toUpperCase()}).`);
+             return;
+           }
+           if (!sTeacher) {
+             alert(`Subject #${num} ("${sName}") has no assigned Teacher. Please select or enter a Teacher.`);
+             return;
+           }
+           if (sHours <= 0) {
+             alert(`Subject #${num} ("${sName}") must have at least 1 weekly hour.`);
+             return;
+           }
+         }
          submit();
       }}>
          {saving ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : '✨ Create Entire Program Structure'}
@@ -671,7 +705,7 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
       <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
         <div style={{ fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
           {scheduling ? (
-            <><Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--clr-primary)' }} /> Auto-scheduling Preview…</>
+            <><Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--clr-primary)' }} /> Auto-scheduling via Weekly Planner…</>
           ) : (
             <>✅ Suggested Schedule Preview</>
           )}
@@ -701,7 +735,26 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
             <button
               className="btn btn-primary"
               style={{ fontSize: 'var(--fs-sm)' }}
-              onClick={() => {
+              disabled={applying || pendingActions.length === 0}
+              onClick={async () => {
+                if (pendingActions.length > 0) {
+                  setApplying(true)
+                  try {
+                    const store = useWorkspaceStore.getState()
+                    const data = await req<any>('/actions/execute', {
+                      method: 'POST',
+                      body: JSON.stringify({ actions: pendingActions, version_id: store.currentVersionId }),
+                    })
+                    if (data.success && data.new_version_id) {
+                      const vdata = await req<any>(`/versions/${data.new_version_id}`)
+                      store.setCurrentVersion(vdata.id, vdata.entries)
+                    }
+                  } catch (e: any) {
+                    alert(e.message || 'Failed to apply schedule')
+                  } finally {
+                    setApplying(false)
+                  }
+                }
                 setProgramName('')
                 setSemesters('8')
                 setDescription('')
@@ -710,15 +763,13 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
                 onClose?.()
               }}
             >
-              ✓ Yes, Confirm & Apply
+              {applying ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : '✓ Yes, Confirm & Apply'}
             </button>
             <button
               className="btn btn-ghost"
               style={{ fontSize: 'var(--fs-sm)' }}
+              disabled={applying}
               onClick={() => {
-                if (initialVersion) {
-                  useWorkspaceStore.getState().setCurrentVersion(initialVersion.id, initialVersion.entries)
-                }
                 setStep('form')
               }}
             >

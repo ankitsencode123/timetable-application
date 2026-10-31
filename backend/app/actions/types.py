@@ -94,6 +94,21 @@ class ClassSpec(BaseModel):
                 data['end_time'] = data.get('end')
             if 'type' in data and 'entry_type' not in data:
                 data['entry_type'] = data.get('type')
+
+            # Prevent Ghost Subject: ensure subject_name and subject_code are not blank
+            s_name = str(data.get('subject_name') or '').strip()
+            s_code = str(data.get('subject_code') or '').strip()
+            if not s_name and not s_code:
+                raise ValueError("subject_name or subject_code is required (cannot schedule unnamed/ghost subject)")
+            if not s_name and s_code:
+                data['subject_name'] = s_code.upper()
+                data['subject_code'] = s_code
+            elif not s_code and s_name:
+                data['subject_name'] = s_name
+                data['subject_code'] = s_name.replace(' ', '')[:6].upper()
+            else:
+                data['subject_name'] = s_name
+                data['subject_code'] = s_code
         return data
 
     def to_schedule_dict(self) -> dict:
