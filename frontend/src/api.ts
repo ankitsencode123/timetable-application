@@ -77,11 +77,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...customHeaders,
   };
 
-  // Generate a persistent Idempotency-Key for mutation actions to ensure safe, replayable retries
-  if (init.method && init.method.toUpperCase() === 'POST' && path.includes('/actions/execute') && !headers['Idempotency-Key']) {
-    headers['Idempotency-Key'] = `idem-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
-  }
-
   const maxRetries = 3;
   let lastError: any = null;
 
@@ -126,15 +121,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         const err = new Error(detail ?? `HTTP ${res.status}`) as Error & {
           status: number;
           can_force?: boolean;
-          current_version_id?: number;
-          base_version_id?: number;
-          error_code?: string;
         };
         err.status = res.status;
         err.can_force = canForce;
-        err.current_version_id = body.current_version_id;
-        err.base_version_id = body.base_version_id;
-        err.error_code = body.error;
         throw err;
       }
       // 204 No Content

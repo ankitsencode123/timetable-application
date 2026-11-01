@@ -6,7 +6,7 @@ import {
 import { useWorkspaceStore } from '../../store'
 import SuggestInput, { SuggestOption } from '../common/SuggestInput'
 import {
-  getVersion, req, weeklySmartSchedule, getCurrentDraft, listVersions,
+  getVersion, req, weeklySmartSchedule, listVersions,
   WeeklyScheduleRequest, WeeklyScheduleResponse, WeeklyProposalItem, DayReportItem
 } from '../../api'
 
@@ -175,22 +175,7 @@ export default function WeeklyScheduleTab({ dynamicPrograms: propPrograms, dynam
       }
     } catch (e: any) {
       setDoneSuccess(false)
-      const is409 = e?.status === 409 || e?.error_code === 'stale_version' || e?.error_code === 'diverged_lineage' || e?.error_code === 'entry_conflict' || e?.message?.includes('409') || e?.message?.toLowerCase().includes('reload') || e?.message?.toLowerCase().includes('version')
-      if (is409) {
-        // Automatically sync workspace to head draft
-        try {
-          const draft = await getCurrentDraft()
-          const detail = await getVersion(draft.id)
-          setCurrentVersion(detail.id, detail.entries)
-          const vList = await listVersions().catch(() => [])
-          if (vList.length > 0) setVersions(vList)
-          setDoneMessage(`The timetable was updated to Version #${draft.id} by another change. Your workspace has been synchronized with the latest version. Please re-run Find Weekly Schedule to generate updated slots on the new routine.`)
-        } catch (_) {
-          setDoneMessage(e?.message || 'The timetable has been modified since you opened the planner. Please reload and try again.')
-        }
-      } else {
-        setDoneMessage(e?.message || 'Execution error')
-      }
+      setDoneMessage(e?.message || 'Execution error')
     } finally {
       setApplying(false)
       setStep('done')

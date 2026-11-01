@@ -6,7 +6,6 @@ from app.models.timetable import TimetableVersion
 from app.models.timetable_entry import TimetableEntry
 from app.models.user import RoleEnum
 from app.services.auth_service import create_user
-from app.actions.concurrency import ensure_concurrency_schema
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -24,7 +23,6 @@ def isolated_env():
         poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
-    ensure_concurrency_schema(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()

@@ -84,13 +84,7 @@ from app.models.timetable import TimetableVersion
 from app.services import timetable_service
 from app.schemas.actions import ActionExecuteResponse, ActionResultSchema
 from app.actions.types import parse_action
-from app.actions.concurrency import (
-    SafeActionEngine,
-    if_match_header,
-    idempotency_key_header,
-    resolve_expected_version,
-    current_head,
-)
+from app.actions.engine import ActionEngine
 from app.services import notification_service as notif
 from app.scheduler import constraints as C
 from app.scheduler.validator import validate_schedule, validate_schema
@@ -2082,8 +2076,7 @@ def _remember(sess: _Session, user_text: str, resp: AdvancedChatResponse):
     sess.turns.append(("assistant", _clip(mem, 500)))
 
 
-def _handle(req: AdvancedChatRequest, bg: BackgroundTasks, response: Response, db: Session, user: User,
-            if_match: Optional[str], idem_key: Optional[str]) -> AdvancedChatResponse:
+def _handle(req: AdvancedChatRequest, bg: BackgroundTasks, response: Response, db: Session, user: User) -> AdvancedChatResponse:
     text = (req.text or "").strip()
     if not text and not req.plan_id:
         raise HTTPException(422, "Empty request")
@@ -2092,7 +2085,8 @@ def _handle(req: AdvancedChatRequest, bg: BackgroundTasks, response: Response, d
     _user_limit(user.id)
 
     sess = _get_session(f"{user.id}:{req.session_id or 'default'}")
-    base = resolve_expected_version(req.version_id, if_match) or current_head(db)
+    head_row = db.query(TimetableVersion.id).order_by(TimetableVersion.id.desc()).first()
+    base = req.version_id or (head_row[0] if head_row else None)
     entries, head = _load_entries(db, base)
     cat = Catalog.load(db, entries)
     admin = _is_admin(user)
@@ -2224,16 +2218,13 @@ def _handle(req: AdvancedChatRequest, bg: BackgroundTasks, response: Response, d
         return respond("confirmation_required", plan, msg, pf, actions=shown, plan_id=plan_id, requires_confirmation=True,
                        confirmation_reasons=risk, cached=cached)
 
-    # ---------- execute through the authoritative, concurrency-safe engine ----------
-    fp = hashlib.sha256(json.dumps([head, pf.grounded], sort_keys=True, default=str).encode()).hexdigest()[:32]
+    # ---------- execute through the authoritative engine ----------
     try:
         parsed = [parse_action(a) for a in pf.grounded]
     except Exception as e:
         return respond("blocked", plan, f"Internal validation error: {e}", pf, actions=shown)
-    guarded = SafeActionEngine(db=db, user=user, base_version_id=base, partial_ok=req.partial_ok,
-                               skip_suggestions=False, idempotency_key=idem_key or f"adv:{fp}").execute(parsed)
-    result = guarded.result
-    response.headers.update(guarded.response_headers())
+    result = ActionEngine(db=db, user=user, version_id=base, partial_ok=req.partial_ok,
+                          skip_suggestions=False).execute(parsed)
     if result.success or result.partial_applied:
         notif.publish_engine_result(result, actor=user)
 
@@ -2291,8 +2282,6 @@ def advanced_chat(
     response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
-    if_match: Optional[str] = Depends(if_match_header),
-    idem_key: Optional[str] = Depends(idempotency_key_header),
 ):
     """
     Plan -> deterministic preflight -> (optional confirm) -> safe execute.
@@ -2301,7 +2290,7 @@ def advanced_chat(
     execute=true: applies it; risky plans additionally need confirm=true.
     """
     try:
-        return _handle(req, background_tasks, response, db, user, if_match, idem_key)
+        return _handle(req, background_tasks, response, db, user)
     except HTTPException:
         raise
     except LLMBusy as e:

@@ -583,23 +583,14 @@ def _check_delta(before: dict, after: dict, force: bool, base_v: Optional[dict] 
     return new
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Concurrency guard + audit
-# ═════════════════════════════════════════════════════════════════════════════
-_WRITE_LOCK = threading.RLock()
-
-
 @contextmanager
 def _write_guard(db: Session):
-    """Serialise calendar writes (process lock + Postgres advisory xact lock); rollback on error."""
-    with _WRITE_LOCK:
-        try:
-            if db.get_bind().dialect.name == "postgresql":
-                db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": 7_310_042})
-            yield
-        except Exception:
-            db.rollback()
-            raise
+    """Rollback on error."""
+    try:
+        yield
+    except Exception:
+        db.rollback()
+        raise
 
 
 def _audit(db: Session, user: Any, action: str, entity: str, entity_id: Optional[int], payload: dict) -> None:

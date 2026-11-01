@@ -16,13 +16,7 @@ from app.schemas.actions import (
 )
 from app.actions.parser import ActionParser, ClarifyNeeded
 from app.actions.types import parse_action
-from app.actions.concurrency import (
-    SafeActionEngine,
-    if_match_header,
-    idempotency_key_header,
-    resolve_expected_version,
-    current_head,
-)
+from app.actions.engine import ActionEngine
 from app.services import notification_service as notif
 
 router = APIRouter()
@@ -66,7 +60,7 @@ def _build_schedule_context(db: Session, version_id: int | None) -> str:
                 f"- {t}: already has Theory on {', '.join(sorted(days))} (CANNOT take any more Theory classes on these days due to Rule H5)"
                 for t, days in sorted(teacher_theory_days.items())
             ]
-            context += "\n\nTEACHER DAILY THEORY ALLOCATIONS (Rule H5: Max 1 Theory per teacher per day):\n" + "\n".join(theory_info)
+            context += "\n\nTEACHER DAILY THEORY ALLOCATIONS (Rule H5: Max 1 Theory per day):\n" + "\n".join(theory_info)
         return context
     except Exception:
         return ""
@@ -112,35 +106,23 @@ def execute_actions(
     response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
-    if_match: Optional[str] = Depends(if_match_header),
-    idem_key: Optional[str] = Depends(idempotency_key_header),
 ):
     """
     Execute a list of action dicts transactionally.
     Actions can come from the button UI (structured) or from the /parse preview.
-
-    Concurrency-safe: acquires a per-scope distributed lock, performs stale
-    detection via If-Match / version_id, auto-rebases disjoint edits, and
-    stores idempotency records so client retries are safe.
-    Successful responses carry an ETag header for the next If-Match.
     """
     try:
         parsed = [parse_action(a) for a in req.actions]
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Invalid action payload: {e}")
 
-    guarded = SafeActionEngine(
+    result = ActionEngine(
         db=db,
         user=user,
-        base_version_id=resolve_expected_version(req.version_id, if_match),
+        version_id=req.version_id,
         partial_ok=req.partial_ok,
         skip_suggestions=req.skip_suggestions,
-        idempotency_key=idem_key,
     ).execute(parsed)
-    result = guarded.result
-
-    # Emit ETag so the client can send If-Match on the next request
-    response.headers.update(guarded.response_headers())
 
     if result.success or result.partial_applied:
         notif.publish_engine_result(result, actor=user)
@@ -167,8 +149,6 @@ def chat_execute(
     response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(require_teacher_or_admin),
-    if_match: Optional[str] = Depends(if_match_header),
-    idem_key: Optional[str] = Depends(idempotency_key_header),
 ):
     """
     Combined NLP parse and optional execute.
@@ -177,11 +157,10 @@ def chat_execute(
     - If execute=True: parses and immediately executes (trusted/power-user mode).
 
     The same H1-H11 validation always runs regardless of execute flag.
-    Base version is captured BEFORE the LLM call so the stale window does not
-    include the ~2 s LLM round-trip.
     """
-    # Capture base version BEFORE the LLM call (widest stale window).
-    base = resolve_expected_version(req.version_id, if_match) or current_head(db)
+    from app.models.timetable import TimetableVersion
+    head_row = db.query(TimetableVersion.id).order_by(TimetableVersion.id.desc()).first()
+    base = req.version_id or (head_row[0] if head_row else None)
 
     # Load live schedule context so LLM can resolve ambiguous targets
     schedule_ctx = _build_schedule_context(db, base)
@@ -210,18 +189,13 @@ def chat_execute(
             executed=False,
         )
 
-    # Execute via SafeActionEngine (serialised, stale-detected, idempotent)
-    guarded = SafeActionEngine(
+    # Execute via ActionEngine
+    result = ActionEngine(
         db=db,
         user=user,
-        base_version_id=base,
+        version_id=base,
         partial_ok=True,  # Allow multiple chat intents to proceed independently
-        idempotency_key=idem_key,
     ).execute(parsed)
-    result = guarded.result
-
-    # Emit ETag
-    response.headers.update(guarded.response_headers())
 
     # Dispatch email notification in the background
     if result.success or result.partial_applied:
