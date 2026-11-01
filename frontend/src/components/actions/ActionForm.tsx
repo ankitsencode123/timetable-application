@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Search, CheckCircle2, AlertCircle, Loader2, Lightbulb, RefreshCw } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
-import { executeActions, getVersion } from '../../api'
+import { executeActions, getVersion, req } from '../../api'
 import type { TimetableEntry, ActionExecuteResponse } from '../../types'
 import { DAYS } from '../../types'
+import { LiveTeacherPicker, LiveRoomPicker, BusySlotLite } from './LiveAvailabilityPicker'
 
 interface Props {
   actionType: string
   onClose: () => void
+  initialTarget?: TimetableEntry
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -103,20 +105,27 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div className="form-group">{children ? <label className="form-label">{label}</label> : null}{children}</div>
 }
 
-export default function ActionForm({ actionType, onClose }: Props) {
+export default function ActionForm({ actionType, onClose, initialTarget }: Props) {
   const { currentVersionId, entries, setCurrentVersion, catalogTeachers, catalogPrograms, catalogSubjects } = useWorkspaceStore()
   const TEACHERS = Array.from(new Set([...catalogTeachers.map(t => t.short_name), 'SK', 'SKS', 'SC', 'SCh', 'PB', 'PBn', 'RD', 'RM', 'VP']))
   const PROGRAMS = Array.from(new Set([...catalogPrograms.map(p => p.name), 'B.Tech', 'M.Tech', 'M.Sc']))
 
-  const [target, setTarget] = useState<TimetableEntry | null>(null)
+  const [target, setTarget] = useState<TimetableEntry | null>(initialTarget || null)
   const [targetB, setTargetB] = useState<TimetableEntry | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
+  const [busySlots, setBusySlots] = useState<BusySlotLite[]>([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ActionExecuteResponse | null>(null)
   const [step, setStep] = useState<'form' | 'confirm' | 'alternative' | 'done'>('form')
   const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    req<BusySlotLite[]>('/busy-slots')
+      .then(s => setBusySlots(Array.isArray(s) ? s : []))
+      .catch(() => {})
+  }, [])
 
   const set = (k: string, v: string) => setFields(f => ({ ...f, [k]: v }))
   const needsTarget = !['ADD_CLASS', 'VALIDATE_TIMETABLE', 'OPTIMIZE_TIMETABLE'].includes(actionType)
@@ -243,7 +252,53 @@ export default function ActionForm({ actionType, onClose }: Props) {
         {step === 'form' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
             {/* Target selection */}
-            {needsTarget && (
+            {needsTarget && target && (actionType === 'CHANGE_TEACHER' || actionType === 'CHANGE_ROOM') ? (
+              <div style={{
+                padding: '12px 14px',
+                background: 'var(--clr-bg-3)',
+                border: '1px solid var(--clr-border)',
+                borderRadius: 'var(--radius)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-soft)', padding: '2px 6px', borderRadius: 4 }}>
+                      Selected Class
+                    </span>
+                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-3)', fontWeight: 600 }}>
+                      {target.program} · {target.semester}
+                    </span>
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--clr-text)' }}>
+                    {target.subject_name} <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--clr-text-2)', fontWeight: 500 }}>({target.subject_code})</span>
+                  </div>
+                  <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-2)', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600 }}>{target.day} {target.start}–{target.end}</span>
+                    <span>•</span>
+                    <span>Teacher: <strong>{target.teacher}</strong></span>
+                    <span>•</span>
+                    <span>Room: <strong>{target.room}</strong></span>
+                  </div>
+                </div>
+                {!initialTarget && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setTarget(null)
+                      set('new_teacher', '')
+                      set('new_room', '')
+                    }}
+                    style={{ fontSize: 'var(--fs-xs)', color: 'var(--clr-text-2)', border: '1px solid var(--clr-border)' }}
+                  >
+                    Change Class
+                  </button>
+                )}
+              </div>
+            ) : needsTarget ? (
               <div>
                 <label className="form-label" style={{ marginBottom: 6, display: 'block' }}>Select Class to {label.split(' ')[0]}</label>
                 <TargetSelector entries={entries} onSelect={(t) => {
@@ -265,7 +320,7 @@ export default function ActionForm({ actionType, onClose }: Props) {
                   }
                 }} selected={target} />
               </div>
-            )}
+            ) : null}
 
             {needsTargetB && (
               <div>
@@ -362,21 +417,61 @@ export default function ActionForm({ actionType, onClose }: Props) {
             )}
 
             {actionType === 'CHANGE_TEACHER' && (
-              <Field label="New Teacher">
-                <select className="form-control" value={fields.new_teacher ?? ''} onChange={e => set('new_teacher', e.target.value)}>
-                  <option value="">Select…</option>
-                  {TEACHERS.map(t => <option key={t}>{t}</option>)}
-                </select>
-              </Field>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label" style={{ margin: 0, fontWeight: 700 }}>
+                    Select New Teacher (Live Availability)
+                  </label>
+                  {fields.new_teacher && (
+                    <span style={{
+                      fontSize: 'var(--fs-xs)',
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      background: 'var(--accent-soft)',
+                      padding: '2px 8px',
+                      borderRadius: 4
+                    }}>
+                      ✓ Selected: {fields.new_teacher}
+                    </span>
+                  )}
+                </div>
+                <LiveTeacherPicker
+                  target={target}
+                  entries={entries}
+                  catalogTeachers={catalogTeachers}
+                  busySlots={busySlots}
+                  selectedTeacher={fields.new_teacher ?? ''}
+                  onSelectTeacher={t => set('new_teacher', t)}
+                />
+              </div>
             )}
 
             {actionType === 'CHANGE_ROOM' && (
-              <Field label="New Room">
-                <select className="form-control" value={fields.new_room ?? ''} onChange={e => set('new_room', e.target.value)}>
-                  <option value="">Select…</option>
-                  {ROOMS.map(r => <option key={r}>{r}</option>)}
-                </select>
-              </Field>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label" style={{ margin: 0, fontWeight: 700 }}>
+                    Select New Room (Live Occupancy)
+                  </label>
+                  {fields.new_room && (
+                    <span style={{
+                      fontSize: 'var(--fs-xs)',
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      background: 'var(--accent-soft)',
+                      padding: '2px 8px',
+                      borderRadius: 4
+                    }}>
+                      ✓ Selected: {fields.new_room}
+                    </span>
+                  )}
+                </div>
+                <LiveRoomPicker
+                  target={target}
+                  entries={entries}
+                  selectedRoom={fields.new_room ?? ''}
+                  onSelectRoom={r => set('new_room', r)}
+                />
+              </div>
             )}
 
             {(actionType === 'EXTEND_CLASS') && (
@@ -395,6 +490,16 @@ export default function ActionForm({ actionType, onClose }: Props) {
               {target && <div style={{ marginTop: 8, fontSize: 'var(--fs-sm)', color: 'var(--clr-text)' }}>
                 Target: <strong>{target.subject_name}</strong> — {target.day} {target.start}–{target.end} ({target.teacher} / {target.room})
               </div>}
+              {actionType === 'CHANGE_TEACHER' && fields.new_teacher && (
+                <div style={{ marginTop: 8, padding: '8px 10px', background: 'var(--accent-soft)', borderRadius: 'var(--radius)', fontSize: 'var(--fs-sm)', color: 'var(--accent)', fontWeight: 600 }}>
+                  Change Teacher: <strong>{target?.teacher}</strong> → <strong>{fields.new_teacher}</strong>
+                </div>
+              )}
+              {actionType === 'CHANGE_ROOM' && fields.new_room && (
+                <div style={{ marginTop: 8, padding: '8px 10px', background: 'var(--accent-soft)', borderRadius: 'var(--radius)', fontSize: 'var(--fs-sm)', color: 'var(--accent)', fontWeight: 600 }}>
+                  Change Room: <strong>{target?.room}</strong> → <strong>{fields.new_room}</strong>
+                </div>
+              )}
             </div>
             <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--clr-warning)', display: 'flex', gap: 6, alignItems: 'center' }}>
               <AlertCircle size={14} /> Hard constraints (H1–H11) will be checked before changes are saved.
@@ -536,7 +641,11 @@ export default function ActionForm({ actionType, onClose }: Props) {
             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button
               className="btn btn-primary"
-              disabled={needsTarget && !target}
+              disabled={
+                (needsTarget && !target) ||
+                (actionType === 'CHANGE_TEACHER' && !fields.new_teacher) ||
+                (actionType === 'CHANGE_ROOM' && !fields.new_room)
+              }
               onClick={() => setStep('confirm')}
             >
               Preview →

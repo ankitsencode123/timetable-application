@@ -3,6 +3,7 @@ import { X, Clock, User, MapPin, BookOpen, GraduationCap, CalendarClock, Refresh
 import type { TimetableEntry } from '../../types'
 import RescheduleModal from './RescheduleModal'
 import InterchangeModal from './InterchangeModal'
+import ActionForm from '../actions/ActionForm'
 
 import { executeActions } from '../../api'
 
@@ -15,6 +16,7 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
   const isPractical = entry.type === 'Practical'
   const [showReschedule, setShowReschedule] = useState(false)
   const [showInterchange, setShowInterchange] = useState(false)
+  const [actionType, setActionType] = useState<'CHANGE_TEACHER' | 'CHANGE_ROOM' | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -143,6 +145,30 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
                 Cancel Class
               </button>
               <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setActionType('CHANGE_TEACHER')}
+                disabled={loading}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  background: 'var(--clr-bg-3)', border: '1px solid var(--clr-border)',
+                }}
+                title="Change teacher with live availability"
+              >
+                <User size={13} style={{ color: 'var(--accent)' }} /> Change Teacher
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setActionType('CHANGE_ROOM')}
+                disabled={loading}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  background: 'var(--clr-bg-3)', border: '1px solid var(--clr-border)',
+                }}
+                title="Change room with live occupancy"
+              >
+                <MapPin size={13} style={{ color: 'var(--accent)' }} /> Change Room
+              </button>
+              <button
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowInterchange(true)}
                 disabled={loading}
@@ -168,6 +194,17 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
           )}
         </div>
       </div>
+
+      {actionType && (
+        <ActionForm
+          actionType={actionType}
+          initialTarget={entry}
+          onClose={() => {
+            setActionType(null)
+            onClose()
+          }}
+        />
+      )}
 
       {showReschedule && (
         <RescheduleModal
