@@ -35,7 +35,7 @@ EXISTING_TIMETABLE_MD = """
 | Tuesday | M.Sc. | 1st | 10:00-12:00 | TD(ES&IoT):R#208 |
 | Tuesday | M.Sc. | 1st | 12:00-14:00 | NC(ADBMS):R#208 |
 | Tuesday | M.Sc. | 1st | 14:30-17:30 | NC(ADBMS-P):R#208 |
-| Tuesday | M.Tech. | 1st | 11:00-14:00 | PB(AA):R#209 |
+| Tuesday | M.Tech. | 1st | 12:00-14:00 | PB(AA):R#209 |
 | Tuesday | M.Tech. | 1st | 14:30-16:30 | SGC(MFCS):R#209 |
 | Tuesday | M.Tech. | 1st | 16:30-17:30 | SR(PE-1:SC):R#209 |
 | Tuesday | M.Tech. | 3rd | 12:00-14:00 | RKP(VLSI):R#403 |
@@ -118,6 +118,7 @@ Never swap SK with SKS or PB with PBn. They are entirely different people with d
 | Debesh Choudhury | DC | Research Methodology |
 | Rituparna Sinha | RS | Bioinformatics |
 | Rajat K Pal | RKP | VLSI Design; Problem Solving Techniques |
+| Banani Saha | BS | Internal Faculty (Associate Professor) |
 """
 
 LAB_ALLOCATION_MD = """

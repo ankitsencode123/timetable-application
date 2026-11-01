@@ -1,6 +1,6 @@
 """
 Migration script to update teachers table with designation and correct is_internal flag.
-Only 7 teachers are internal; all others are external guest faculty.
+Only 8 teachers are internal; all others are external guest faculty.
 """
 import sqlite3
 import os
@@ -8,11 +8,12 @@ import os
 DB_PATH = os.path.join(os.path.dirname(__file__), "dev.db")
 
 INTERNAL_FACULTY = {
-    "SKS": {"full_name": "Dr. Sanjit Kumar Setua", "designation": "Associate Professor"},
+    "NC":  {"full_name": "Dr. Nabendu Chaki", "designation": "Professor"},
     "RKP": {"full_name": "Dr. Rajat Kumar Pal", "designation": "Professor"},
     "SC":  {"full_name": "Dr. Sankhayan Choudhury", "designation": "Professor"},
-    "NC":  {"full_name": "Dr. Nabendu Chaki", "designation": "Professor"},
+    "SKS": {"full_name": "Dr. Sanjit Kumar Setua", "designation": "Associate Professor"},
     "RD":  {"full_name": "Dr. Rajib Kumar Das", "designation": "Associate Professor & Head of Department"},
+    "BS":  {"full_name": "Dr. Banani Saha", "designation": "Associate Professor"},
     "PB":  {"full_name": "Dr. Pritha Banerjee", "designation": "Assistant Professor"},
     "SK":  {"full_name": "Dr. Sunirmal Khatua", "designation": "Assistant Professor"},
 }

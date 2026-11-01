@@ -43,7 +43,8 @@ def _parse_timetable_md(md: str) -> list[dict]:
         program = program.replace("B.Tech.", "B.Tech").replace("M.Tech.", "M.Tech").replace("M.Sc.", "M.Sc")
 
         # Parse time range HH:MM-HH:MM
-        m = re.match(r"(\d{1,2}:\d{2})-(\d{1,2}:\d{2})", time_range.strip())
+        time_norm = time_range.replace("–", "-").replace("—", "-")
+        m = re.match(r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})", time_norm.strip())
         if not m:
             continue
         start_time, end_time = m.group(1), m.group(2)

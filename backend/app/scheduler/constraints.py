@@ -114,6 +114,7 @@ INTERNAL_TEACHERS: set = {
     "SC",    # Sankhayan Choudhury — Professor
     "NC",    # Nabendu Chaki — Professor
     "RD",    # Rajib Kumar Das — Associate Professor & Head of Department
+    "BS",    # Banani Saha — Associate Professor
     "PB",    # Pritha Banerjee — Assistant Professor
     "SK",    # Sunirmal Khatua — Assistant Professor
 }

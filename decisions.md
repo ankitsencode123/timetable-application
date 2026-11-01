@@ -311,3 +311,20 @@
   3. **Room Occupancy Indicators**: Evaluates current occupancy during the target window, verifies lab compatibility (e.g. practicals requiring lab rooms like R#207A/B), and shows which class is currently occupying busy rooms.
   4. **Direct Quick Actions in ClassDetailModal**: Added "Change Teacher" and "Change Room" buttons inside the class detail popup (`ClassDetailModal.tsx`), allowing admins to prefill the selected class and open the live availability picker in one click.
 - **Reasoning**: Previously, `ActionForm` presented plain, unguided dropdown selects for teachers and rooms with no indication of faculty availability or room occupancy, leading to trial-and-error selections that failed during server validation (H2 teacher clash, H3 room clash, H5 multiple theory classes). Showing live availability and occupancy with immediate visual feedback prevents invalid mutations before submission.
+
+### 23. Fresh Database Migration to Supabase PostgreSQL with 8 Internal Faculty & Authoritative Timetable (2026-11-01)
+- **Decision**: Migrated the database connection from local SQLite to a fresh Supabase PostgreSQL instance (`db.sicvpuptswdgmlsxntkb.supabase.co:5432/postgres`) and seeded all tables, faculty registry, academic catalog, and the authoritative weekly timetable:
+  1. **Supabase Connection Configuration**: Configured the IPv4 connection pooler URL `DATABASE_URL=postgresql://postgres.sicvpuptswdgmlsxntkb:Hello123%24ankit890@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require` in `backend/.env` and `backend/.env.production`. Direct connection hostnames (`db.<project-ref>.supabase.co`) resolve exclusively to IPv6 addresses, which fail on cloud environments without IPv6 outbound routing (such as Render) with `Network is unreachable`. The Supabase pooler host (`aws-0-us-east-1.pooler.supabase.com`) provides dual-stack IPv4 resolution and connection pooling. The password character `$` is safely percent-encoded as `%24`.
+  2. **8 Internal Faculty Members**: Updated the faculty registry in `seed_timetable.py`, `constraints.py`, `fast_suggester.py`, `update_teachers_migration.py`, and `data.py` to ensure only the designated 8 professors are categorized as internal faculty (`is_internal=True`):
+     - Dr. Nabendu Chaki (NC) — Professor
+     - Dr. Rajat Kumar Pal (RKP) — Professor
+     - Dr. Sankhayan Choudhury (SC) — Professor
+     - Dr. Sanjit Kumar Setua (SKS) — Associate Professor
+     - Dr. Rajib Kumar Das (RD) — Associate Professor & Head of Department
+     - Dr. Banani Saha (BS) — Associate Professor
+     - Dr. Pritha Banerjee (PB) — Assistant Professor
+     - Dr. Sunirmal Khatua (SK) — Assistant Professor
+     All other 15 teachers were registered as External Guest Faculty.
+  3. **Authoritative Timetable Seeding**: Fixed the baseline slot for Tuesday M.Tech. 1st to 12:00–14:00 (PB(AA):R#209) in `backend/app/scheduler/data.py` and enhanced `seed_timetable.py` to normalize unicode en-dashes (`–`) during parsing. Successfully created all tables (including calendar tables and notification tables with Row-Level Security), seeded administrator (`admin@college.edu`), 23 faculty users, catalog programs/subjects, and Version #1 PUBLISHED with all 76 entries.
+- **Reasoning**: Starting on a completely fresh PostgreSQL instance eliminates accumulated test artifacts from SQLite dev databases and aligns the runtime environment with production constraints, exact faculty designations, and verified timetable schedules. Using the Supabase IPv4 connection pooler resolves deployment network unreachable errors on Render.
+

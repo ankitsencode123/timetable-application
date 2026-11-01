@@ -16,13 +16,14 @@ from app.services.seed_timetable import seed_default_timetable_if_needed, seed_c
 import secrets
 
 # === Teacher Registry ===
-# Internal faculty (permanent staff) — Exactly 7
+# Internal faculty (permanent staff) — Exactly 8
 INTERNAL_TEACHERS = [
-    {"short_name": "SKS", "full_name": "Dr. Sanjit Kumar Setua",  "designation": "Associate Professor",                      "subjects_csv": "Compiler Design,CD Lab,Deep Learning"},
+    {"short_name": "NC",  "full_name": "Dr. Nabendu Chaki",       "designation": "Professor",                                "subjects_csv": "Software Engineering,SE Lab,Advance DBMS,ADBMS Lab"},
     {"short_name": "RKP", "full_name": "Dr. Rajat Kumar Pal",    "designation": "Professor",                                "subjects_csv": "VLSI Design,Problem Solving Techniques"},
     {"short_name": "SC",  "full_name": "Dr. Sankhayan Choudhury", "designation": "Professor",                                "subjects_csv": "DBMS,DBMS Lab,Wireless & Mobile Computing"},
-    {"short_name": "NC",  "full_name": "Dr. Nabendu Chaki",       "designation": "Professor",                                "subjects_csv": "Software Engineering,SE Lab,Advance DBMS,ADBMS Lab"},
+    {"short_name": "SKS", "full_name": "Dr. Sanjit Kumar Setua",  "designation": "Associate Professor",                      "subjects_csv": "Compiler Design,CD Lab,Deep Learning"},
     {"short_name": "RD",  "full_name": "Dr. Rajib Kumar Das",     "designation": "Associate Professor & Head of Department",  "subjects_csv": "Microprocessor & Microcontroller,Introduction to Data Mining,IDM Lab,Digital Logic & Microprocessor Lab"},
+    {"short_name": "BS",  "full_name": "Dr. Banani Saha",         "designation": "Associate Professor",                      "subjects_csv": ""},
     {"short_name": "PB",  "full_name": "Dr. Pritha Banerjee",     "designation": "Assistant Professor",                      "subjects_csv": "Data Structure,Data Structure Lab,Advanced Algorithms,AA Lab"},
     {"short_name": "SK",  "full_name": "Dr. Sunirmal Khatua",     "designation": "Assistant Professor",                      "subjects_csv": "Digital Logic,Computer Networks,CN Lab,Wireless & Mobile Computing,Digital Logic & Microprocessor Lab"},
 ]
@@ -47,8 +48,19 @@ EXTERNAL_TEACHERS = [
 ]
 
 def seed_all():
+    print("=== Ensuring database tables exist ===")
+    Base.metadata.create_all(bind=engine)
+    from app.calendar_system import init_calendar_tables
+    init_calendar_tables(engine)
+    from app.services import notification_service as notif
+    notif.ensure_notification_schema(engine)
+
     db = SessionLocal()
     try:
+        print("=== Seeding admin user ===")
+        from app.services.auth_service import seed_admin_if_needed
+        seed_admin_if_needed(db)
+
         print("=== Seeding teachers ===")
         for t_data in INTERNAL_TEACHERS:
             _upsert_teacher(db, t_data, is_internal=True)
@@ -59,8 +71,6 @@ def seed_all():
         seed_catalog_if_needed(db)
 
         print("=== Seeding timetable ===")
-        from app.services.auth_service import seed_admin_if_needed
-        seed_admin_if_needed(db)
         admin = db.query(User).filter(User.role == RoleEnum.ADMIN).first()
         if admin:
             seed_default_timetable_if_needed(db, admin.id)

@@ -59,7 +59,7 @@ except Exception:  # pragma: no cover - only used outside the app
         "L2": {"blackboard": True, "projector": True, "lab": True},
         "L3": {"blackboard": False, "projector": True, "lab": True},
     }
-    INTERNAL_TEACHERS = {"SKS", "RKP", "SCh", "NC", "RD", "PB", "SK"}
+    INTERNAL_TEACHERS = {"SKS", "RKP", "SC", "NC", "RD", "BS", "PB", "SK"}
 
     def normalize_program(p):
         if not p:
