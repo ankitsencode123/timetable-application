@@ -125,19 +125,25 @@ def _count_new_violations(base_schedule: List[dict], candidate_schedule: List[di
 
 
 def _is_fully_valid(base_schedule: List[dict], candidate_schedule: List[dict]) -> bool:
-    """Return True only when candidate has zero physical clashes and introduces zero NEW violations compared to base."""
-    cand_v = validate_schedule(candidate_schedule)
-    if any(item.get("rule") in ("H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy") for item in cand_v):
-        return False
+    """Return True only when candidate introduces zero new physical clashes and zero NEW violations compared to base."""
     return _count_new_violations(base_schedule, candidate_schedule) == 0
 
 
 def _is_physically_valid(base_schedule: List[dict], candidate_schedule: List[dict], base_physical_fps: Optional[list] = None) -> bool:
-    """Return True if candidate introduces no physical/overlap violations."""
+    """Return True if candidate introduces no new physical/overlap violations compared to base."""
     PHYSICAL_RULES = ("H1_semester_clash", "H2_teacher_clash", "H3_room_clash", "H12_teacher_busy")
     cand_v = validate_schedule(candidate_schedule)
-    if any(item.get("rule") in PHYSICAL_RULES for item in cand_v):
-        return False
+    cand_physical = [item for item in cand_v if item.get("rule") in PHYSICAL_RULES]
+    if base_physical_fps is None:
+        base_v = validate_schedule(base_schedule)
+        base_physical_fps = [_fingerprint(x) for x in base_v if x.get("rule") in PHYSICAL_RULES]
+    fps = list(base_physical_fps)
+    for item in cand_physical:
+        fp = _fingerprint(item)
+        if fp in fps:
+            fps.remove(fp)
+        else:
+            return False
     return True
 
 
@@ -847,20 +853,26 @@ def suggest_alternatives(
             parts.append(f"Room {room}")
         return " — ".join(parts)
 
-    def _add_rich_suggestion(action: dict, title: str, desc: str):
+    def _add_rich_suggestion(action: dict, title: str, desc: str, allow_physical_only: bool = False):
         action_key = json.dumps(action, sort_keys=True)
         if any(json.dumps(item["action"], sort_keys=True) == action_key for item in suggestions["rich_suggestions"]):
             return
 
         # Pre-simulate and strictly validate that applying this action introduces 0 physical clashes and 0 new violations
         cand = _simulate_proposed_action(schedule, action)
-        if cand is None or cand == schedule or not _is_fully_valid(schedule, cand):
+        if cand is None or cand == schedule:
             return
+        if allow_physical_only:
+            if not _is_physically_valid(schedule, cand):
+                return
+        else:
+            if not _is_fully_valid(schedule, cand):
+                return
 
         suggestions["rich_suggestions"].append({
             "title": f"{title} — {_action_context(action)}",
             "description": desc,
-            "status": "Conflict-free and validated",
+            "status": "Conflict-free and validated" if not allow_physical_only else "Conflict-free slot",
             "action": action
         })
 
@@ -1393,7 +1405,8 @@ def suggest_alternatives(
                     _add_rich_suggestion(
                         proposed,
                         f"Force Reschedule to {valid_slot['day']} {valid_slot['start']}–{valid_slot['end']} in {room}",
-                        "Guaranteed alternative slot (avoids physical overlaps but may trigger strict constraint warnings)."
+                        "Guaranteed alternative slot (avoids physical overlaps but may trigger strict constraint warnings).",
+                        allow_physical_only=True
                     )
                     fallback_found = True
                     break

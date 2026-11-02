@@ -6,14 +6,18 @@ import InterchangeModal from './InterchangeModal'
 import ActionForm from '../actions/ActionForm'
 
 import { executeActions } from '../../api'
+import { useAuthStore } from '../../store'
 
 interface Props {
   entry: TimetableEntry
   onClose: () => void
+  readOnly?: boolean
 }
 
-export default function ClassDetailModal({ entry, onClose }: Props) {
+export default function ClassDetailModal({ entry, onClose, readOnly }: Props) {
   const isPractical = entry.type === 'Practical'
+  const { user } = useAuthStore()
+  const canEdit = !readOnly && !!user && (user.role === 'ADMIN' || user.role === 'TEACHER')
   const [showReschedule, setShowReschedule] = useState(false)
   const [showInterchange, setShowInterchange] = useState(false)
   const [actionType, setActionType] = useState<'CHANGE_TEACHER' | 'CHANGE_ROOM' | null>(null)
@@ -134,7 +138,7 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
 
         <div className="modal-footer" style={{ justifyContent: 'flex-end', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={loading}>Close</button>
-          {!entry._cancelled && (
+          {canEdit && !entry._cancelled && (
             <>
               <button
                 className="btn btn-ghost btn-sm"
@@ -195,7 +199,7 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
         </div>
       </div>
 
-      {actionType && (
+      {canEdit && actionType && (
         <ActionForm
           actionType={actionType}
           initialTarget={entry}
@@ -206,7 +210,7 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
         />
       )}
 
-      {showReschedule && (
+      {canEdit && showReschedule && (
         <RescheduleModal
           entry={entry}
           onClose={() => setShowReschedule(false)}
@@ -217,7 +221,7 @@ export default function ClassDetailModal({ entry, onClose }: Props) {
           }}
         />
       )}
-      {showInterchange && (
+      {canEdit && showInterchange && (
         <InterchangeModal
           entry={entry}
           onClose={() => setShowInterchange(false)}

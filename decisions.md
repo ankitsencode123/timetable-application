@@ -328,3 +328,20 @@
   3. **Authoritative Timetable Seeding**: Fixed the baseline slot for Tuesday M.Tech. 1st to 12:00–14:00 (PB(AA):R#209) in `backend/app/scheduler/data.py` and enhanced `seed_timetable.py` to normalize unicode en-dashes (`–`) during parsing. Successfully created all tables (including calendar tables and notification tables with Row-Level Security), seeded administrator (`admin@college.edu`), 23 faculty users, catalog programs/subjects, and Version #1 PUBLISHED with all 76 entries.
 - **Reasoning**: Starting on a completely fresh PostgreSQL instance eliminates accumulated test artifacts from SQLite dev databases and aligns the runtime environment with production constraints, exact faculty designations, and verified timetable schedules. Using the Supabase IPv4 connection pooler resolves deployment network unreachable errors on Render.
 
+### 24. Public Timetable View Mutation Action Stripping and Reschedule Suggestions Restoration (2026-11-02)
+- **Decision**:
+  1. **Public Timetable Read-Only Enforcement (`ClassDetailModal.tsx`, `TimetableGrid.tsx`, `PublicPage.tsx`)**:
+     - Stripped all mutation buttons (`Cancel Class`, `Change Teacher`, `Change Room`, `Interchange`, `Reschedule`) from the Public Timetable View (`/` or `PublicPage.tsx`).
+     - Added `readOnly?: boolean` prop to `TimetableGrid` and passed `readOnly={true}` from `PublicPage.tsx`.
+     - In `ClassDetailModal.tsx`, integrated `useAuthStore` and computed `canEdit = !readOnly && !!user && (user.role === 'ADMIN' || user.role === 'TEACHER')`.
+     - When `canEdit` is false, only the class metadata (Day, Time, Teacher, Room, Program, Semester, tags) and the "Close" button are rendered. Edit action buttons and mutation sub-modals (`ActionForm`, `RescheduleModal`, `InterchangeModal`) are strictly barred from rendering, preventing students and unauthenticated public visitors from altering or canceling scheduled classes.
+  2. **Restored Conflict-Free Suggestions in Reschedule Modal (`backend/app/actions/suggestions.py`)**:
+     - Diagnosed why suggestions disappeared when attempting to reschedule: `_is_fully_valid()` and `_is_physically_valid()` were performing absolute constraint checks against the entire candidate schedule (`if any(v.get('rule') in ... for v in cand_v): return False`).
+     - If the base timetable contained any pre-existing or unrelated physical/room violation (e.g. an existing conflict in another department/room), `cand_v` always retained that clash, causing `_is_fully_valid()` to unconditionally reject 100% of candidate slots and return an empty `rich_suggestions` list (`[]`).
+     - Updated `_is_fully_valid` to use `_count_new_violations(base_schedule, candidate_schedule) == 0`, ensuring that candidate suggestions are validated strictly on whether they introduce *new* violations into the timetable.
+     - Updated `_is_physically_valid` to compare against `base_physical_fps` (differential physical clashes).
+     - Added `allow_physical_only: bool = False` to `_add_rich_suggestion()` and enabled it in the fallback loop so that if strict soft-constraints (e.g. workload limits) are exhausted, guaranteed conflict-free slots can still be returned instead of leaving the user with zero suggestions.
+- **Reasoning**:
+  - Timetable security and integrity require that the public student-facing view never exposes administrative or mutative controls. While the backend guarded `/api/actions/execute` with authentication, displaying actionable mutation buttons on public devices allowed logged-in administrative sessions to accidentally modify classes from public views and caused student confusion.
+  - The reschedule suggestions engine was designed to provide alternative, conflict-free slots whenever a proposed move collided with a constraint (such as a teacher clash or semester clash). By switching validation from absolute timetable-wide failure to differential new-violation detection, valid reschedule suggestions are once again computed and displayed in the Reschedule modal.
+

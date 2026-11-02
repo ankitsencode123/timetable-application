@@ -728,6 +728,7 @@ export default function PublicPage() {
                 dayDateMap={dayDateMap}
                 todayDay={todayDayName}
                 density="comfortable"
+                readOnly={true}
               />
             </div>
           </div>

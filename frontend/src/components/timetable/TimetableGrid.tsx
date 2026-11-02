@@ -21,9 +21,10 @@ interface Props {
   showDays?: string[]
   dayDateMap?: Record<string, string>
   todayDay?: string
+  readOnly?: boolean
 }
 
-export default function TimetableGrid({ entries, filters, density = 'comfortable', onEntryClick, showDays, dayDateMap, todayDay }: Props) {
+export default function TimetableGrid({ entries, filters, density = 'comfortable', onEntryClick, showDays, dayDateMap, todayDay, readOnly }: Props) {
   const [selected, setSelected] = useState<TimetableEntry | null>(null)
   const days = useMemo(() => {
     if (showDays) return showDays
@@ -190,7 +191,7 @@ export default function TimetableGrid({ entries, filters, density = 'comfortable
       </div>
 
       {selected && (
-        <ClassDetailModal entry={selected} onClose={() => setSelected(null)} />
+        <ClassDetailModal entry={selected} onClose={() => setSelected(null)} readOnly={readOnly} />
       )}
     </>
   )
