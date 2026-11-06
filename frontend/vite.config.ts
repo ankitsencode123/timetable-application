@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const rawBackend = env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+  const rawBackend = mode === 'development' ? (env.VITE_DEV_BACKEND_URL || 'http://127.0.0.1:8000') : (env.VITE_API_BASE_URL || 'http://127.0.0.1:8000')
   const backendUrl = rawBackend.replace('0.0.0.0', '127.0.0.1')
 
   return {

@@ -4,6 +4,7 @@ import {
   Clock, User, MapPin, AlignLeft, Zap, CheckSquare, ChevronDown,
   Sparkles, BookOpen, GraduationCap, FlaskConical, CalendarOff,
 } from 'lucide-react'
+import { useWorkspaceStore } from '../../store'
 import ActionForm from './ActionForm'
 import SmartScheduleModal from './SmartScheduleModal'
 import CatalogManager from '../catalog/CatalogManager'
@@ -41,6 +42,7 @@ export default function ActionPanel() {
   const [openAction, setOpenAction] = useState<string | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const [smartOpen, setSmartOpen] = useState(false)
+  const setSidebarTab = useWorkspaceStore(s => s.setSidebarTab)
 
   return (
     <>
@@ -53,6 +55,16 @@ export default function ActionPanel() {
           title="Let the system auto-pick the best time slot and room"
         >
           <Sparkles size={13} /> Smart Schedule
+        </button>
+
+        {/* Full Timetable Auto Generator */}
+        <button
+          className="action-btn"
+          style={{ background: 'var(--accent)', color: 'var(--paper)', fontWeight: 600, border: 'none', gap: 5 }}
+          onClick={() => setSidebarTab('generator')}
+          title="Open the automated institution-wide timetable generator"
+        >
+          <Zap size={13} /> Auto Generator
         </button>
 
         <span className="mono-label" style={{ marginRight: 4 }}>Quick:</span>

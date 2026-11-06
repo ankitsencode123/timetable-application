@@ -6,7 +6,8 @@ import InterchangeModal from './InterchangeModal'
 import ActionForm from '../actions/ActionForm'
 
 import { executeActions } from '../../api'
-import { useAuthStore } from '../../store'
+import { useAuthStore, useWorkspaceStore } from '../../store'
+import { formatTeacherShortName } from '../../utils'
 
 interface Props {
   entry: TimetableEntry
@@ -96,7 +97,12 @@ export default function ClassDetailModal({ entry, onClose, readOnly }: Props) {
             <span className="class-detail-label">Teacher</span>
             <span className="class-detail-value" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <User size={13} style={{ color: 'var(--clr-text-3)' }} />
-              {entry.teacher}
+              {(() => {
+                const catalogTeachers = useWorkspaceStore.getState().catalogTeachers
+                const short = formatTeacherShortName(entry.teacher, entry.subject_name || entry.subject_code, catalogTeachers)
+                const matched = (catalogTeachers || []).find((t: { short_name?: string; full_name?: string }) => t.short_name?.toLowerCase() === short.toLowerCase())
+                return matched ? `${short} — ${matched.full_name}` : short
+              })()}
             </span>
           </div>
           <div className="class-detail-row">

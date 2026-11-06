@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { RefreshCw, Search, LayoutDashboard, History, ShieldCheck, Rocket, Calendar, X } from 'lucide-react'
+import { RefreshCw, Search, LayoutDashboard, History, ShieldCheck, Rocket, Calendar, X, Sparkles } from 'lucide-react'
 import { useWorkspaceStore, useAuthStore } from '../store'
 import { getCurrentDraft, listVersions, getVersion } from '../api'
 import Sidebar from '../components/sidebar/Sidebar'
@@ -10,6 +10,7 @@ import ChatPanel from '../components/chat/ChatPanel'
 import ValidationPanel from '../components/validation/ValidationPanel'
 import VersionsList from '../components/versions/VersionsList'
 import UserMenu from '../components/layout/UserMenu'
+import TimetableGeneratorView from '../components/generator/TimetableGeneratorView'
 
 function ReelSpin({ value }: { value: string | number }) {
   const str = String(value)
@@ -131,6 +132,7 @@ export default function TeacherWorkspace() {
 
   function renderPanel() {
     switch (sidebarTab) {
+      case 'generator':  return <TimetableGeneratorView />
       case 'versions':   return <VersionsList />
       case 'validation': return <ValidationPanel versionId={currentVersionId} />
       case 'publish':    return <PublishPanel />
@@ -206,8 +208,15 @@ export default function TeacherWorkspace() {
                   </button>
                 </div>
               ) : (
-                <div style={{ padding: '8px 0', flexShrink: 0 }}>
+                <div style={{ padding: '8px 0', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-xs)', color: 'var(--ink-soft)' }}>No version loaded — generate or select a version.</span>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ background: 'var(--ink)', color: 'var(--paper)', gap: 6 }}
+                    onClick={() => setSidebarTab('generator')}
+                  >
+                    <Sparkles size={12} /> Auto Generate Timetable
+                  </button>
                 </div>
               )}
               <TimetableGrid
@@ -226,6 +235,7 @@ export default function TeacherWorkspace() {
       <div className="mobile-nav">
         {[
           { id: 'dashboard',  icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { id: 'generator',  icon: <Sparkles size={20} />,        label: 'Auto' },
           { id: 'versions',   icon: <History size={20} />,         label: 'Versions' },
           { id: 'validation', icon: <ShieldCheck size={20} />,     label: 'Validate' },
           { id: 'publish',    icon: <Rocket size={20} />,          label: 'Publish' },

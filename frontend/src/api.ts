@@ -6,6 +6,8 @@ import type {
   TimetableEntry, TimetableVersion, VersionDetail,
   ValidationResult, ActionExecuteResponse, ActionChatResponse,
   CatalogTeacher, CatalogSubject, CatalogProgram,
+  GeneratorBoard, GeneratorResult, GeneratorIssue, GeneratorScheduledClass, ExtractedFilesData,
+  CreatedAccountInfo,
 } from './types';
 
 function getApiBase(): string {
@@ -102,6 +104,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         continue;
       }
 
+      // Handle 401 Unauthorized by attempting a silent token refresh once
+      if (res.status === 401 && attempt === 0 && !path.startsWith('/auth/')) {
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (refreshToken) {
+          try {
+            const refreshRes = await fetch(`${BASE}/auth/refresh`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${refreshToken}`,
+                'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+            });
+            if (refreshRes.ok) {
+              const refreshData = await refreshRes.json();
+              if (refreshData.access_token) {
+                localStorage.setItem('access_token', refreshData.access_token);
+                if (refreshData.refresh_token) {
+                  localStorage.setItem('refresh_token', refreshData.refresh_token);
+                }
+                headers['Authorization'] = `Bearer ${refreshData.access_token}`;
+                continue; // Retry request with refreshed token
+              }
+            }
+          } catch {
+            // Refresh failed; fall through to error handling
+          }
+        }
+      }
+
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         let detail = body.detail ?? body.message ?? body.error;
@@ -188,31 +220,9 @@ export async function login(form: LoginForm): Promise<AuthResponse> {
   return data;
 }
 
-// ── Optimistic preload (login page) ──────────────────────────────────────────
-// Fire-and-forget hint to the backend that someone is about to log in: wakes
-// the server, warms DB/crypto and preloads dashboard data into RAM.
-// NEVER include the password. Errors are ignored.
-
-const WARM_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
-let _warmLastEmail = '';
-let _warmLastAt = 0;
-
-export function warmBackend(email: string = ''): void {
-  const e = (email || '').trim().toLowerCase();
-  const valid = WARM_EMAIL_RE.test(e);
-  if (valid && e === _warmLastEmail && Date.now() - _warmLastAt < 15000) return;
-  if (valid) { _warmLastEmail = e; _warmLastAt = Date.now(); }
-  try {
-    fetch(`${BASE}/preload/warm`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(valid ? { email: e } : {}),
-      credentials: 'omit',
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    /* best effort */
-  }
+// ── Optimistic preload (Disabled for testing) ────────────────────────────────
+export function warmBackend(_email: string = ''): void {
+  // Disabled: testing baseline application latency without optimistic preloading.
 }
 
 export async function logout(): Promise<void> {
@@ -661,6 +671,119 @@ export async function weeklySmartSchedule(payload: WeeklyScheduleRequest): Promi
   })
 }
 
+// ── Automated Timetable Generator API ──────────────────────────────
+export async function getGeneratorPresets(): Promise<{ demo: GeneratorBoard; catalog: GeneratorBoard }> {
+  return request<{ demo: GeneratorBoard; catalog: GeneratorBoard }>('/timetable/generator/presets');
+}
+
+export async function validateGeneratorBoard(board: GeneratorBoard): Promise<{ valid: boolean; issues: GeneratorIssue[] }> {
+  return request<{ valid: boolean; issues: GeneratorIssue[] }>('/timetable/generator/validate', {
+    method: 'POST',
+    body: JSON.stringify({ board }),
+  });
+}
+
+export async function runAutomatedGenerator(payload: { board: GeneratorBoard; strict?: boolean }): Promise<GeneratorResult> {
+  return request<GeneratorResult>('/timetable/generator/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function saveGeneratedTimetableAsDraft(payload: {
+  classes: GeneratorScheduledClass[];
+  change_summary?: string;
+  publish_immediately?: boolean;
+}): Promise<{
+  version_id: number;
+  status: string;
+  entries_count: number;
+  message: string;
+  created_accounts?: CreatedAccountInfo[];
+}> {
+  return request<{
+    version_id: number;
+    status: string;
+    entries_count: number;
+    message: string;
+    created_accounts?: CreatedAccountInfo[];
+  }>('/timetable/generator/save-draft', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createGeneratorFaculty(payload: {
+  name: string;
+  id?: string;
+  is_internal?: boolean;
+  designation?: string;
+  initial_subject?: string;
+}): Promise<{
+  id: string;
+  short_name: string;
+  name: string;
+  full_name: string;
+  internal: boolean;
+  email: string;
+  auto_email: string;
+  password?: string;
+  auto_password?: string;
+  is_new: boolean;
+  message: string;
+}> {
+  return request('/timetable/generator/faculty', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createGeneratorSubject(payload: {
+  code: string;
+  name: string;
+  program: string;
+  semester: number | string;
+  class_type?: string;
+  weekly_hours?: number;
+  teacher_short_name?: string;
+}): Promise<{
+  code: string;
+  name: string;
+  program: string;
+  semester: string;
+  entry_type: string;
+  weekly_hours: number;
+  created: boolean;
+  message: string;
+}> {
+  return request('/timetable/generator/subject', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function extractGeneratorFiles(payload: {
+  subjects_file_content?: string;
+  teachers_file_content?: string;
+}): Promise<ExtractedFilesData> {
+  return request<ExtractedFilesData>('/timetable/generator/extract-files', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getGeneratorTemplates(): Promise<{
+  subjects_template_csv: string;
+  teachers_template_csv: string;
+}> {
+  return request<{ subjects_template_csv: string; teachers_template_csv: string }>(
+    '/timetable/generator/templates'
+  );
+}
+
 export { request as req };
+
+
+
 
 

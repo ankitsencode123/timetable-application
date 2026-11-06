@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Shield, UserCheck, UserX, RefreshCw,
-  Activity, Search, AlertCircle, BookOpen, CalendarOff, Calendar,
+  Activity, Search, AlertCircle, BookOpen, CalendarOff, Calendar, Sparkles,
 } from 'lucide-react'
 import { useAuthStore, useWorkspaceStore } from '../store'
 import {
@@ -94,9 +94,21 @@ export default function AdminPanel() {
               </div>
             </div>
           </div>
-          <button onClick={() => setShowCreate(true)} className="btn btn-primary" id="create-teacher-btn">
-            <Plus size={14} /> Add teacher
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => {
+                useWorkspaceStore.getState().setSidebarTab('generator');
+                navigate('/teacher');
+              }}
+              className="btn btn-ghost"
+              style={{ gap: 6 }}
+            >
+              <Sparkles size={14} /> Auto Generator
+            </button>
+            <button onClick={() => setShowCreate(true)} className="btn btn-primary" id="create-teacher-btn">
+              <Plus size={14} /> Add teacher
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}

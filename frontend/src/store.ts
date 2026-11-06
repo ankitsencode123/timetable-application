@@ -55,7 +55,7 @@ interface WorkspaceState {
   catalogSubjects: CatalogSubject[];
   filters: TimetableFilters;
   density: 'comfortable' | 'compact';
-  sidebarTab: 'dashboard' | 'versions' | 'validation' | 'publish';
+  sidebarTab: 'dashboard' | 'versions' | 'validation' | 'publish' | 'generator';
   pendingChatQuery: string | null;
   pendingDeterminateActions: ParsedActionItem[] | null;
   setCurrentVersion: (id: number, entries: TimetableEntry[]) => void;

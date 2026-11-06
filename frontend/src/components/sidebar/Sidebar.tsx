@@ -1,9 +1,10 @@
-import { LayoutDashboard, History, ShieldCheck, Rocket, LogOut } from 'lucide-react'
+import { LayoutDashboard, History, ShieldCheck, Rocket, LogOut, Sparkles } from 'lucide-react'
 import { useAuthStore, useWorkspaceStore } from '../../store'
 import { useNavigate } from 'react-router-dom'
 
 const NAV = [
   { id: 'dashboard',  icon: <LayoutDashboard size={15} />, label: 'Dashboard' },
+  { id: 'generator',  icon: <Sparkles size={15} />,        label: 'Auto Generator' },
   { id: 'versions',   icon: <History size={15} />,         label: 'Versions' },
   { id: 'validation', icon: <ShieldCheck size={15} />,     label: 'Validation' },
   { id: 'publish',    icon: <Rocket size={15} />,          label: 'Publish' },

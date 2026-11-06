@@ -1,4 +1,6 @@
 import type { TimetableEntry } from '../../types'
+import { formatTeacherShortName } from '../../utils'
+import { useWorkspaceStore } from '../../store'
 
 interface Props {
   entry: TimetableEntry
@@ -7,6 +9,9 @@ interface Props {
 }
 
 export default function ClassCell({ entry, compact, onClick }: Props) {
+  const catalogTeachers = useWorkspaceStore(s => s.catalogTeachers)
+  const teacherShort = formatTeacherShortName(entry.teacher, entry.subject_name || entry.subject_code, catalogTeachers)
+
   const isPractical = entry.type === 'Practical'
   const cls = [
     'class-cell',
@@ -22,7 +27,7 @@ export default function ClassCell({ entry, compact, onClick }: Props) {
       : 'var(--accent)'
 
   return (
-    <div className={cls} onClick={onClick} title={`${entry.program} ${entry.semester} — ${entry.subject_name || entry.subject_code || '—'} — ${entry.teacher} — ${entry.room}`}>
+    <div className={cls} onClick={onClick} title={`${entry.program} ${entry.semester} — ${entry.subject_name || entry.subject_code || '—'} — ${teacherShort} — ${entry.room}`}>
       {!compact && (
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.1em', marginBottom: 2, color: 'var(--ink-soft)', textTransform: 'uppercase', opacity: 0.8 }}>
           {entry.program} {entry.semester}
@@ -35,7 +40,7 @@ export default function ClassCell({ entry, compact, onClick }: Props) {
       </div>
       {!compact && (
         <div className="cell-meta">
-          <span>{entry.teacher}</span>
+          <span style={{ fontWeight: 600 }}>{teacherShort}</span>
           <span style={{ opacity: 0.4 }}>·</span>
           <span>{entry.room}</span>
           {isPractical && (

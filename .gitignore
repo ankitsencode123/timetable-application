@@ -12,6 +12,7 @@ backend/timetable.db
 .env*
 *.env*
 *.backup
+*.bak
 backend/.env*
 backend/.pytest_cache/
 backend/alembic/__pycache__/

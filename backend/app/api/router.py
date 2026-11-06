@@ -3,13 +3,15 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api import users, teachers, timetable, versions, public, chat, actions, profile
-from app.api import catalog, busy_slots, schedule_smart, schedule_smart_weekly
+from app.api import catalog, busy_slots, schedule_smart, schedule_smart_weekly, generator
 from app.calendar_system import router as calendar_router
 from app.calendar_chat import router as calendar_chat_router
 from app.actions.advanced_chat import router as advanced_chat_router
 from app.services.notification_service import router as notifications_router
 
 api_router = APIRouter()
+
+api_router.include_router(generator.router,        prefix="/timetable/generator", tags=["generator"])
 
 api_router.include_router(profile.router,        prefix="/profile",         tags=["profile"])
 api_router.include_router(users.router,          prefix="/users",           tags=["users"])

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Loader2, Pencil, Check, X, AlertCircle } from 'lucide-react'
+import { Plus, Trash2, Loader2, Pencil, Check, X, AlertCircle, Upload, Download, Copy, KeyRound, CheckCircle2 } from 'lucide-react'
 import { useWorkspaceStore } from '../../store'
-import { req, weeklySmartSchedule } from '../../api'
+import { req, weeklySmartSchedule, createGeneratorSubject, extractGeneratorFiles } from '../../api'
+import type { CreatedAccountInfo } from '../../types'
 
 const PROGRAMS = ['B.Tech', 'M.Tech', 'M.Sc']
 const SEMS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th']
@@ -199,16 +200,22 @@ function TeachersTab() {
 function SubjectsTab() {
   const [list, setList] = useState<Subject[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ code: '', name: '', program: '', semester: '1st', entry_type: 'Theory' })
+  const [form, setForm] = useState({ code: '', name: '', program: '', semester: '1st', entry_type: 'Theory', teacher_short: '' })
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   useEffect(() => {
-    Promise.all([req<Subject[]>('/catalog/subjects'), req<Program[]>('/catalog/programs')])
-      .then(([subs, progs]) => {
+    Promise.all([
+      req<Subject[]>('/catalog/subjects'),
+      req<Program[]>('/catalog/programs'),
+      req<Teacher[]>('/catalog/teachers'),
+    ])
+      .then(([subs, progs, ts]) => {
         setList(subs)
         setPrograms(progs)
+        setTeachers(ts)
         if (progs.length > 0 && !form.program) setF('program', progs[0].name)
       })
       .catch(() => {})
@@ -218,9 +225,23 @@ function SubjectsTab() {
   async function add() {
     setSaving(true)
     try {
-      const r = await req<Subject>('/catalog/subjects', { method: 'POST', body: JSON.stringify({ ...form, weekly_hours: 2 }) })
-      setList(l => [...l, r])
-      setForm({ code: '', name: '', program: 'B.Tech', semester: '1st', entry_type: 'Theory' })
+      const semNum = parseInt(form.semester.replace(/\D/g, '')) || 1
+      await createGeneratorSubject({
+        code: form.code.trim(),
+        name: form.name.trim(),
+        program: form.program || (programs[0]?.name || 'B.Tech'),
+        semester: semNum,
+        class_type: form.entry_type.toLowerCase(),
+        weekly_hours: 2,
+        teacher_short_name: form.teacher_short || undefined,
+      })
+      const [subs, ts] = await Promise.all([
+        req<Subject[]>('/catalog/subjects'),
+        req<Teacher[]>('/catalog/teachers'),
+      ])
+      setList(subs)
+      setTeachers(ts)
+      setForm({ code: '', name: '', program: form.program || 'B.Tech', semester: '1st', entry_type: 'Theory', teacher_short: '' })
       useWorkspaceStore.getState().loadCatalog()
     } catch (e: unknown) { alert((e as Error).message) }
     setSaving(false)
@@ -283,6 +304,17 @@ function SubjectsTab() {
             <label className="form-label">Type</label>
             <select className="form-control" value={form.entry_type} onChange={e => setF('entry_type', e.target.value)}>
               {ENTRY_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Assign Faculty</label>
+            <select className="form-control" value={form.teacher_short} onChange={e => setF('teacher_short', e.target.value)}>
+              <option value="">None / Unassigned</option>
+              {teachers.map(t => (
+                <option key={t.id} value={t.short_name}>
+                  {t.short_name} — {t.full_name}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -784,8 +816,245 @@ function BundleSetupTab({ onClose }: { onClose?: () => void }) {
   return step === 'form' ? renderForm() : renderPreview()
 }
 
+// ── Import CSV Tab ─────────────────────────────────
+const DEFAULT_SUBJECTS_TEMPLATE = `Subject Code,Subject Name,Semester,Internal Teacher ID,External Teacher ID,Class Type,Sessions Per Week,Facility
+CS301,Data Structures,B.Tech 3rd,I01,E01,Theory,2.5,none
+CS302,Database Systems,B.Tech 3rd,I02,E02,Theory,3,none
+MA301,Discrete Mathematics,B.Tech 3rd,I03,,Theory,2.5,blackboard
+CS351,Data Structures Lab,B.Tech 3rd,I01,,Practical,1,none
+CS601,Advanced Algorithms,M.Tech 1st,I01,E01,Theory,2.5,none
+CS651,Algorithms Lab,M.Tech 1st,I03,,Practical,2,none
+`
+
+const DEFAULT_TEACHERS_TEMPLATE = `Teacher ID,Name,Pref 1 Day,Pref 1 Time,Pref 1 Facility,Pref 2 Day,Pref 2 Time,Pref 2 Facility,Pref 3 Day,Pref 3 Time,Pref 3 Facility
+I01,Dr. A. Rao,Mon,10-12:00,blackboard and projector,Wed,12-2,projector,Fri,10-12:00,black board
+I02,Dr. B. Iyer,Tue,10-12:00,black board,Thu,2:30-4:30,blackboard and projector,Mon,12-2,projector
+I03,Prof. C. Das,Mon,10-12:00,black board,Tue,12-2,black board,Thu,10-12:00,black board
+`
+
+function ImportCSVTab() {
+  const [subjectsCsv, setSubjectsCsv] = useState('')
+  const [teachersCsv, setTeachersCsv] = useState('')
+  const [subjectsFileName, setSubjectsFileName] = useState('')
+  const [teachersFileName, setTeachersFileName] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const [accounts, setAccounts] = useState<CreatedAccountInfo[]>([])
+  const [copied, setCopied] = useState(false)
+
+  function handleFileRead(file: File, type: 'subjects' | 'teachers') {
+    const reader = new FileReader()
+    reader.onload = e => {
+      const text = (e.target?.result as string) || ''
+      if (type === 'subjects') {
+        setSubjectsCsv(text)
+        setSubjectsFileName(file.name)
+      } else {
+        setTeachersCsv(text)
+        setTeachersFileName(file.name)
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  function downloadTemplate(filename: string, content: string) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleImport() {
+    if (!subjectsCsv.trim() && !teachersCsv.trim()) {
+      setError('Please provide at least one CSV file (Subjects or Teachers).')
+      return
+    }
+    setImporting(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const res = await extractGeneratorFiles({
+        subjects_file_content: subjectsCsv || undefined,
+        teachers_file_content: teachersCsv || undefined,
+      })
+      if (res.created_accounts && res.created_accounts.length > 0) {
+        setAccounts(res.created_accounts)
+      }
+      setSuccess(
+        `Import Successful! Added ${res.summary.semesters_count} semesters, ${res.summary.subjects_count} subjects, and ${res.summary.teachers_count} teachers. Generated ${res.created_accounts?.length || 0} teacher user accounts.`
+      )
+      useWorkspaceStore.getState().loadCatalog()
+    } catch (err: any) {
+      setError(err.message || String(err))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+      {/* Informational Header */}
+      <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)' }}>
+        <div style={{ fontWeight: 700, fontSize: 'var(--fs-md)', marginBottom: 4 }}>
+          CSV Curriculum & Faculty Ingestion
+        </div>
+        <p style={{ margin: 0, fontSize: 'var(--fs-sm)', color: 'var(--clr-text-2)' }}>
+          Upload or paste CSV files containing subject allocations and teacher preferences. Subjects will automatically be linked to their semesters, teachers will be added to the catalog, and <strong>institutional login accounts (email & password)</strong> will automatically be created.
+        </p>
+      </div>
+
+      {error && (
+        <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--clr-error)', borderRadius: 'var(--radius)', padding: '10px 14px', color: 'var(--clr-error)', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertCircle size={16} />
+          <div style={{ flex: 1 }}>{error}</div>
+          <button className="btn-icon" onClick={() => setError(null)}><X size={12} /></button>
+        </div>
+      )}
+
+      {success && (
+        <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', borderRadius: 'var(--radius)', padding: '10px 14px', color: '#065f46', fontSize: 'var(--fs-sm)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <CheckCircle2 size={16} style={{ color: '#10b981' }} />
+          <div style={{ flex: 1 }}>{success}</div>
+        </div>
+      )}
+
+      {/* Inputs Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--sp-4)' }}>
+        {/* Subjects CSV */}
+        <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>1. Subjects & Allocations CSV</span>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 11 }}
+              onClick={() => downloadTemplate('subjects_template.csv', DEFAULT_SUBJECTS_TEMPLATE)}
+            >
+              <Download size={11} style={{ marginRight: 4 }} /> Sample CSV
+            </button>
+          </div>
+          <label className="btn btn-sm btn-ghost" style={{ border: '1px dashed var(--clr-border)', textAlign: 'center', cursor: 'pointer', padding: 8 }}>
+            <Upload size={13} style={{ marginRight: 6 }} />
+            {subjectsFileName || 'Choose or Drag CSV File'}
+            <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFileRead(f, 'subjects') }} />
+          </label>
+          <textarea
+            className="form-control"
+            rows={7}
+            style={{ fontFamily: 'monospace', fontSize: 11, width: '100%' }}
+            placeholder={DEFAULT_SUBJECTS_TEMPLATE}
+            value={subjectsCsv}
+            onChange={e => setSubjectsCsv(e.target.value)}
+          />
+        </div>
+
+        {/* Teachers CSV */}
+        <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-3)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>2. Teachers & Preferences CSV</span>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 11 }}
+              onClick={() => downloadTemplate('teachers_template.csv', DEFAULT_TEACHERS_TEMPLATE)}
+            >
+              <Download size={11} style={{ marginRight: 4 }} /> Sample CSV
+            </button>
+          </div>
+          <label className="btn btn-sm btn-ghost" style={{ border: '1px dashed var(--clr-border)', textAlign: 'center', cursor: 'pointer', padding: 8 }}>
+            <Upload size={13} style={{ marginRight: 6 }} />
+            {teachersFileName || 'Choose or Drag CSV File'}
+            <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFileRead(f, 'teachers') }} />
+          </label>
+          <textarea
+            className="form-control"
+            rows={7}
+            style={{ fontFamily: 'monospace', fontSize: 11, width: '100%' }}
+            placeholder={DEFAULT_TEACHERS_TEMPLATE}
+            value={teachersCsv}
+            onChange={e => setTeachersCsv(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <button
+          className="btn btn-primary"
+          disabled={importing || (!subjectsCsv.trim() && !teachersCsv.trim())}
+          onClick={handleImport}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          {importing ? <Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> : <Upload size={14} />}
+          {importing ? 'Processing & Registering…' : 'Import to Catalog & Generate Credentials'}
+        </button>
+      </div>
+
+      {/* Generated Accounts Table */}
+      {accounts.length > 0 && (
+        <div style={{ background: 'var(--clr-bg-2)', border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', padding: 'var(--sp-4)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <KeyRound size={18} style={{ color: 'var(--clr-primary)' }} />
+              <strong style={{ fontSize: 'var(--fs-md)' }}>Generated Faculty Credentials ({accounts.length})</strong>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  const csv = ['Teacher Name,Short Name,Email,Password', ...accounts.map(a => `"${a.full_name}","${a.short_name}","${a.email}","${a.password || ''}"`)].join('\n')
+                  downloadTemplate(`teacher_accounts_${Date.now()}.csv`, csv)
+                }}
+              >
+                <Download size={12} style={{ marginRight: 4 }} /> Export CSV
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  const text = accounts.map(a => `Teacher: ${a.full_name} (${a.short_name})\nEmail: ${a.email}\nPassword: ${a.password || ''}\nRole: TEACHER\n`).join('\n')
+                  navigator.clipboard.writeText(text)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                }}
+              >
+                <Copy size={12} style={{ marginRight: 4 }} /> {copied ? 'Copied!' : 'Copy All'}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid var(--clr-border)', borderRadius: 'var(--radius)', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+              <thead>
+                <tr style={{ background: 'var(--clr-bg-3)', borderBottom: '1px solid var(--clr-border)', textAlign: 'left' }}>
+                  <th style={{ padding: '8px 12px' }}>Faculty Name</th>
+                  <th style={{ padding: '8px 12px' }}>Short Form</th>
+                  <th style={{ padding: '8px 12px' }}>Institutional Email</th>
+                  <th style={{ padding: '8px 12px' }}>Login Password</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((acc, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--clr-border-soft)' }}>
+                    <td style={{ padding: '8px 12px', fontWeight: 600 }}>{acc.full_name}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: 'var(--clr-primary)', fontWeight: 700 }}>{acc.short_name}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace' }}>{acc.email}</td>
+                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700 }}>
+                      <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 6px', borderRadius: 4 }}>{acc.password || '••••••••'}</code>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main CatalogManager ────────────────────────────
-const TABS = ['Bundle Setup', 'Teachers', 'Subjects', 'Programs'] as const
+const TABS = ['Bundle Setup', 'Teachers', 'Subjects', 'Programs', 'Import CSV'] as const
 type Tab = typeof TABS[number]
 
 export default function CatalogManager({ initialTab = 'Bundle Setup', onClose }: { initialTab?: string, onClose?: () => void }) {
@@ -806,6 +1075,7 @@ export default function CatalogManager({ initialTab = 'Bundle Setup', onClose }:
       {tab === 'Teachers' && <TeachersTab />}
       {tab === 'Subjects' && <SubjectsTab />}
       {tab === 'Programs' && <ProgramsTab />}
+      {tab === 'Import CSV' && <ImportCSVTab />}
     </div>
   )
 }

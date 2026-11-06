@@ -341,7 +341,290 @@
      - Updated `_is_fully_valid` to use `_count_new_violations(base_schedule, candidate_schedule) == 0`, ensuring that candidate suggestions are validated strictly on whether they introduce *new* violations into the timetable.
      - Updated `_is_physically_valid` to compare against `base_physical_fps` (differential physical clashes).
      - Added `allow_physical_only: bool = False` to `_add_rich_suggestion()` and enabled it in the fallback loop so that if strict soft-constraints (e.g. workload limits) are exhausted, guaranteed conflict-free slots can still be returned instead of leaving the user with zero suggestions.
-- **Reasoning**:
-  - Timetable security and integrity require that the public student-facing view never exposes administrative or mutative controls. While the backend guarded `/api/actions/execute` with authentication, displaying actionable mutation buttons on public devices allowed logged-in administrative sessions to accidentally modify classes from public views and caused student confusion.
-  - The reschedule suggestions engine was designed to provide alternative, conflict-free slots whenever a proposed move collided with a constraint (such as a teacher clash or semester clash). By switching validation from absolute timetable-wide failure to differential new-violation detection, valid reschedule suggestions are once again computed and displayed in the Reschedule modal.
 
+### 25. Seamless Integration of Campus Timetable Hub UI Dashboard (2026-11-02)
+- **Decision**: Integrated the new high-fidelity University Timetable Dashboard (`campus-timetable-hub`) directly into the production frontend application (`frontend/`) while strictly preserving 100% of the existing timetable grid, admin panel, public view, and studio workflows:
+  1. **Component and Asset Migration**:
+     - Brought in the dashboard components (`app-shell.tsx`, `panels.tsx`, `charts.tsx`, `primitives.tsx`), demo dataset (`demo.ts`), and supporting UI components (`avatar.tsx`, `button.tsx`, `dropdown-menu.tsx`, `input.tsx`, `select.tsx`, `sheet.tsx`, `progress.tsx`, `badge.tsx`, and `utils.ts`).
+     - Installed necessary runtime dependencies (`recharts`, `@tailwindcss/vite`, `tailwindcss`, `tw-animate-css`, `clsx`, `tailwind-merge`, `class-variance-authority`, `@radix-ui/react-avatar`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-select`, `@radix-ui/react-dialog`, `@radix-ui/react-slot`, `@radix-ui/react-progress`).
+  2. **Scoped Theme CSS Isolation (`campus-dashboard.css`)**:
+     - Scoped dashboard custom variables and Tailwind theme tokens strictly under `.campus-dashboard-theme` to guarantee that existing institutional paper/ink palettes, custom CSS classes (`.btn`, `.badge`, `.sidebar`, etc.), and CSS tokens (`--accent`, `--ink`, `--paper`) in `index.css` remain completely unaltered and collision-free.
+     - Added DM Sans and Space Grotesk Google font definitions in `index.html`.
+  3. **Router & Navigation Integration**:
+     - Added `/dashboard` and protected `/admin/dashboard` routes to `frontend/src/App.tsx` mapped to `<CampusDashboard />`.
+     - In `Sidebar.tsx`, added a direct "Campus Overview" navigation link allowing faculty and administrators to seamlessly toggle between the operational timetable grid and the strategic university-wide dashboard.
+     - In `AdminPanel.tsx`, added a "Campus Dashboard" quick-action button in the header.
+     - In `UserMenu.tsx`, added a "Campus Dashboard" item for instant access from any screen.
+     - In `PublicPage.tsx`, added a "Campus Dashboard" header link for convenient overview exploration.
+     - In `AppShell.tsx`, wired up navigation handlers to seamlessly route back to the Timetable Studio (`/teacher`), Admin Panel (`/admin`), and user profiles (`/teacher/profile`).
+  4. **Production Build & Code-Splitting Optimization**:
+     - Configured manual chunking in `vite.config.ts` for `recharts` to isolate chart rendering libraries, optimizing bundle sizes and ensuring fast initial load times.
+- **Reasoning**: The user requested that the new timetable dashboard UI from `campus-timetable-hub` be cleanly integrated into the application without deleting or altering any existing capabilities or styles. Scoped theming, non-destructive routing, and bi-directional navigation links ensure that both the operational Timetable Studio grid and the new executive analytics dashboard coexist harmoniously with zero visual regressions.
+
+### 26. Dynamic Data Engine & Admin-Only Role-Based Access Control for Campus Timetable Dashboard (2026-11-02)
+- **Decision**: Rebuilt the University Timetable Dashboard integration from the ground up to achieve 100% visual fidelity to the Lovable mockup, compute all metrics dynamically from live PostgreSQL database records, and enforce strict admin-only authentication and role-based access control:
+  1. **Visual Fidelity & Chart Color Resolution (`charts.tsx`, `primitives.tsx`, `campus-dashboard.css`)**:
+     - Diagnosed and resolved the root cause of the solid black SVG rendering in earlier iterations: Recharts SVG elements (`<rect fill="var(--color-chart-1)">`) fail to resolve scoped parent CSS variables in browsers, causing standard SVG fallback to solid black (`#000000`). Replaced variable references in SVG elements with explicit hex constants (`CHART_COLORS: Lecture="#0d9488", Lab="#d97706", Tutorial="#7c3aed", Seminar="#475569", TotalLine="#0f172a"`) and matching `SCHOOL_COLORS`.
+     - Added the complete `@theme inline` mapping and oklch tokens (`--background`, `--foreground`, `--card`, `--primary`, `--sidebar`, `--sidebar-accent`, etc.) to `campus-dashboard.css` scoped under `.campus-dashboard-theme`, ensuring pixel-perfect replication of cards, shadows, borders, fonts (DM Sans & Space Grotesk), and sidebar styles.
+  2. **Dynamic Server-Side Calculation Endpoint (`backend/app/api/dashboard.py`)**:
+     - Built `GET /api/admin/dashboard/stats` guarded by `Depends(require_admin)` to calculate all dashboard statistics dynamically from live database tables:
+       - **Active Version Resolution**: Automatically queries the current published timetable version (or newest draft) and extracts all entries.
+       - **6 Authoritative KPIs**: Dynamically computes scheduled sessions count, overall room utilization percentage, average faculty contact hours, open conflict count (with high-severity breakdown), enrolled student count, and currently free rooms for the active time window.
+       - **Weekly Class Distribution**: Aggregates sessions by day of week (Monday through Saturday) and session type (Lecture, Lab, Tutorial, Seminar) with total overlay calculations.
+       - **School Mix**: Calculates contact hours and percentage shares across university schools (Engineering & Tech, Business & Mgmt, Humanities & Social, Natural Sciences).
+       - **Room Utilization Heat Map**: Computes occupancy across all 6 days and 8 standard time slots (08:00 to 16:00), identifying peak slots, lightest slots, and top occupied rooms (e.g. R#208, R#207B, R#205).
+       - **Today's Live Schedule**: Gathers the day's scheduled classes with subject code, title, room, seats, teacher, and dynamic running indicator based on current time.
+       - **Engine-Detected Conflicts**: Runs `validate_schedule` to extract real constraint violations and maps them into severity-coded conflict alerts.
+       - **Faculty Workload**: Compares faculty contact hours against weekly caps (24h) and flags over-capacity professors.
+       - **Facility Occupancy & Departments**: Computes real-time room occupancies (lecture halls, labs, seminar rooms, auditoria) and department-level utilization and status.
+       - **Audit Trail**: Pulls recent administrative actions from `audit_logs`.
+     - Registered the router under prefix `/admin/dashboard` in `backend/app/api/router.py`.
+  3. **Frontend Dynamic Data Wiring (`CampusDashboard.tsx`, `api.ts`, `app-shell.tsx`)**:
+     - Added `DashboardStats` interface and `getDashboardStats()` to `frontend/src/api.ts`.
+     - In `CampusDashboard.tsx`, implemented React state and `useEffect` to fetch live metrics, accompanied by a skeleton loading state matching the card dimensions and an error recovery view with a "Retry" button.
+     - Passed live stats to `KpiGrid`, `WeeklyDistributionPanel`, `SchoolMixPanel`, `RoomHeatPanel`, `TodaySchedulePanel`, `ConflictsPanel`, `FacultyWorkloadPanel`, `FacilityPanel`, `DepartmentPanel`, and `ActivityPanel`.
+     - Passed live conflict count to `AppShell` so the sidebar's "Conflicts" badge and topbar's notification bell reflect real open conflicts.
+  4. **Strict Admin-Only Access Control Enforcement**:
+     - **Client-Side Routing Guard (`App.tsx`)**: Protected both `/dashboard` and `/admin/dashboard` with `<ProtectedRoute role="ADMIN">`. Unauthenticated visitors are redirected to `/login`; authenticated non-admin users (such as teachers) are redirected to `/teacher`.
+     - **Server-Side Authorization (`require_admin`)**: All requests to `/api/admin/dashboard/stats` require a valid JWT with `role="ADMIN"`, rejecting anonymous requests with HTTP 401 and non-admin tokens with HTTP 403 Forbidden.
+     - **Navigation Access Control**: Removed the dashboard link from the unauthenticated public page (`PublicPage.tsx`). Conditioned the "Campus Dashboard" menu item in `UserMenu.tsx` and "Campus Overview" in `Sidebar.tsx` on `user?.role?.toUpperCase() === 'ADMIN'`.
+  5. **Automated Verification**:
+     - Added test suite `backend/tests/test_dashboard_api.py` validating anonymous rejection (401), teacher forbidden (403), and admin authorized (200) with complete response structure.
+  6. **Local Development Proxy & Topbar Alignment Resolution**:
+     - Diagnosed why the dashboard previously failed to load with "Not Found" 404: `frontend/.env` had `VITE_API_BASE_URL` pointing to the remote Render production instance (`https://timetable-application-5soq.onrender.com`), causing the Vite dev server proxy to forward `/api/admin/dashboard/stats` to Render (which lacked the new endpoint) rather than the active local backend on `127.0.0.1:8000`. Configured `frontend/.env` and `vite.config.ts` so that in development mode, the proxy always targets the local FastAPI server (`http://127.0.0.1:8000`).
+     - Fixed the text overlap inside the Topbar search input by replacing hardcoded `px-3` in the shadcn input primitive with explicit padding (`paddingLeft: 2.6rem`, `paddingRight: 2.8rem`), ensuring the search icon and `⌘K` badge never collide with typed text.
+     - Normalized heights and alignments across all Topbar controls (`h-10` for Search, Semester Dropdown, `+ New schedule` button, and notification bell button) with the notification badge cleanly pinned inside the button boundary.
+     - Updated `CampusDashboard.tsx` to render the complete dashboard layout immediately with zero layout shift, seamlessly updating all cards with the live database calculations once the API call returns.
+### 22. Calcutta University Timetable Dashboard Redesign & Transparent Auth Refresh
+- **Decision**: Overhauled the Campus Timetable Dashboard to match Calcutta University requirements and exact visual styling:
+  1. **Branding & Identity**: Updated university branding to "Calcutta University" (Timetable Console), with full integration of authentic faculty profiles (Dr. Nabendu Chaki, Dr. Rajat Kumar Pal, Dr. Sankhayan Choudhury, Dr. Sanjit Kumar Setua, Dr. Rajib Kumar Das, Dr. Banani Saha, Dr. Pritha Banerjee, Dr. Sunirmal Khatua) and authentic department classrooms (`R#205`, `R#207A`, `R#207B`, `R#208`, `R#209`, `R#303`, `R#403`), eliminating all demo/placeholder names.
+  2. **Sidebar Specifications**:
+     - Fixed width `260px` with `100vh` sticky height, horizontal padding `24px` (`px-6`).
+     - Menu items: `44px` height with `8–12px` vertical spacing. Active item uses lighter navy `#223147` with `11px` rounded corners, bright teal icon, bolder white text, and muted inactive items.
+     - Bottom profile area: Three distinct visual sections consisting of a `14px` radius semester progress card (`#1c2a3f`), thin divider, and 40px administrator profile avatar with name, role, and right-aligned dropdown arrow.
+  3. **Visual Palette & Theme**:
+     - Main canvas background: `#F7F6F2`.
+     - Cards: Pure white `#FFFFFF`, border `1px solid #EAE9E4`, border-radius `18px`, subtle shadow `0 2px 8px rgba(15,23,42,0.035)`.
+     - Sidebar: Dark navy `#142033`.
+     - Primary accents: Teal `#008B87`, Dark Teal `#006F6B`, Light Teal `#DDF5F1`, Muted `#F5F5F2`.
+     - Typography: Imported Inter and Space Grotesk fonts with crisp letter spacing.
+  4. **Top Navigation Bar**:
+     - Fixed `64px` height with backdrop blur and `#EAE9E4` bottom border.
+     - Search bar: `450px` width, `42px` height, `14px` border-radius, non-overlapping `pl-10` padding with `⌘K` badge.
+     - Semester dropdown (`190px` width, `42px` height, `14px` radius) and primary teal `+ New schedule` button (`42px` height, `px-4.5`).
+     - Circular `42px` notification button with conflict badge indicator.
+  5. **12-Column Layout Proportions (8:4 Proportions)**:
+     - 6 KPI Cards: `min-h-[120px]`, `18px` radius, `p-5`, leading 26px bold values, trend arrows, and 8-bar sparklines (light teal `#D9F3EF`, latest `#008B87`).
+     - Row 1: Weekly Class Distribution (`8 cols`, Lecture `#008B87`, Lab `#E5A83D`, Tutorial `#854A83`, Seminar `#5B8FC4`, 2px dashed navy `#142033` total line) + School Mix Donut (`4 cols`, total hours badge).
+     - Row 2: Room Utilization Heat Map (`8 cols`, `35px` rounded cells, color scale `#F5F5F2` to `#008B87`, peak/lightest insights, room chips) + Today's Schedule (`4 cols`, `72px` rows, time, room, color-coded badges, live active session indicator).
+     - Row 3: Conflicts & Alerts (`8 cols`, severity icons, "Resolve all →", empty state with check circle) + Faculty Workload (`4 cols`, progress bars with Calcutta University faculty) + Facilities 2x2 grid.
+     - Row 4: Departments at a Glance (`8 cols`, initials badges, utilization bars) + Recent Activity feed (`4 cols`).
+  6. **Transparent Token Refresh (`frontend/src/api.ts`)**:
+     - Implemented automatic silent refresh interceptor for HTTP 401 responses. When an access token expires, `request()` transparently calls `POST /api/auth/refresh` using the stored `refresh_token`, updates `localStorage`, and retries the original request without user disruption or "Invalid or expired token" errors.
+### 23. Removal of the Dashboard Feature
+- **Decision**: Completely removed the experimental university campus dashboard feature as requested by the user:
+  1. **Frontend Cleanup**:
+     - Removed `/dashboard` and `/admin/dashboard` routes from `frontend/src/App.tsx`.
+     - Removed "Campus Dashboard" navigation links from `UserMenu.tsx`, `Sidebar.tsx`, and `AdminPanel.tsx`.
+     - Deleted dashboard components (`CampusDashboard.tsx`, `campus-dashboard.css`, `frontend/src/components/dashboard/`, `frontend/src/data/`, `frontend/src/components/ui/`, `frontend/src/lib/`).
+     - Removed `DashboardStats` types and `getDashboardStats()` from `frontend/src/api.ts` (retaining the silent 401 token refresh mechanism for global session stability).
+     - Reverted `frontend/package.json`, `package-lock.json`, and `frontend/vite.config.ts` back to their lean, production build footprint.
+  2. **Backend Cleanup**:
+     - Removed `dashboard` router registration from `backend/app/api/router.py`.
+     - Deleted `backend/app/api/dashboard.py` and `backend/tests/test_dashboard_api.py`.
+  3. **Verification**:
+     - Verified frontend compilation (`tsc -b && vite build`) built cleanly in 5.6s with zero errors.
+     - Verified backend test suite runs cleanly.
+     - Preserved user-provided reference source code in `campus-timetable-hub/`.
+- **Reasoning**: Honors the user's explicit request to remove the dashboard feature while preserving core application integrity, timetable studio, admin controls, and public views.
+
+
+
+## Date: 2026-11-04
+
+### 1. Integration of Automated Full-Institution Timetable Generator (CSP + Repair + Simulated Annealing)
+- **Decision**: Integrated the new automated scheduling engine from `timetable_generator_new.py` into the application architecture:
+  1. **Core Scheduling Module (`backend/app/scheduler/timetable_generator.py`)**:
+     - Placed the 4-phase optimization engine into `app.scheduler.timetable_generator` while preserving 100% of its algorithmic logic (Phase 0 validate/compile, Phase 1 MRV construction, Phase 2 ejection-chain min-conflicts repair with augmenting paths, Phase 3 simulated annealing over soft costs).
+     - Enhanced `Facility.parse` to handle combined aliases (`blackboard+projector`, `blackboard_and_projector`, `both`).
+     - Added `SchedulingBoard.to_dict()` and `SchedulingBoard.from_dict()` for seamless JSON serialization and API interoperability.
+     - Enhanced `TimetableResult.to_dict()` to export classes, issues, violations, complete flag, and human-readable summary.
+     - Implemented `build_board_from_db(db)` to automatically synthesize a scheduling board from live database tables (programs, semesters, subjects, teachers, and busy slots), with graceful fallback to the demo benchmark dataset.
+     - Preserved `timetable_generator_new.py` at the project root for standalone execution.
+  2. **Dedicated Backend API Router (`backend/app/api/generator.py`)**:
+     - Registered `/api/timetable/generator` in `backend/app/api/router.py`.
+     - `GET /api/timetable/generator/presets`: Returns both the pre-verified university benchmark demo and the dynamic DB catalog board.
+     - `POST /api/timetable/generator/validate`: Performs pre-flight capacity and constraint validation on any board configuration.
+     - `POST /api/timetable/generator/generate`: Executes the solver and returns the conflict-free schedule, statistics, preference report, and telemetry.
+     - `POST /api/timetable/generator/save-draft`: Converts scheduled classes into standard `TimetableEntry` database records, creates a new `TimetableVersion` draft (or publishes directly), records an audit log, and invalidates cache layers.
+  3. **Interactive Frontend Workspace (`frontend/src/components/generator/TimetableGeneratorView.tsx`)**:
+     - Created a rich generator user interface featuring:
+       - **Configuration & Entities Tab**: Interactive parameter tuning (time limit, random seed, working days, extension slot toggles) plus inspectable lists for Semesters, Rooms, Faculty preferences, and Course subjects.
+       - **Telemetry & Stats Tab**: 6 executive KPI cards (Classes scheduled, 0 hard violations confirmation, Teacher preference satisfaction percentage, Extension slot count, Runtime, SA iterations), console telemetry display, and quick actions to save as draft, publish immediately, export CSV, and export JSON.
+       - **Interactive Matrix Tab**: Multi-view timetable explorer (By Semester grid matrix with slot rows and day columns, By Teacher view with guaranteed free day tags, Preferences audit report, and All Classes filterable table).
+     - Added "Auto Generator" navigation to `Sidebar.tsx`, `ActionPanel.tsx`, empty workspace prompt in `TeacherWorkspace.tsx`, and `AdminPanel.tsx`.
+  4. **Verification**:
+     - Added test suite `backend/tests/test_timetable_generator.py` testing presets, validation, generation, and draft persistence.
+     - Verified frontend compilation (`tsc -b && vite build`) built cleanly with zero errors.
+     - Ran test suites across action engine, action API, timetable, suggestions, and schedule smart weekly with all 39 tests passing.
+- **Reasoning**: Fulfills the user's requirement to flawlessly integrate `timetable_generator_new.py` into the application with full logic preservation, robust backend API endpoints, and a dedicated, user-friendly frontend interface.
+
+### 2. "All Semesters" Matrix View, Dual Curriculum File Extraction & Complete Manual Input Configuration (2026-11-04)
+- **Decision**: Expanded the automated generator with master institution overview, tolerant curriculum file parsing, and full manual entity configuration:
+  1. **"All Semesters" Matrix Grid View (`frontend/src/components/generator/TimetableGeneratorView.tsx`)**:
+     - Added an `"ALL"` option to the Semester selection dropdown (`All Semesters (${board.semesters.length})`), defaulting to active upon timetable generation.
+     - When `"ALL"` is selected, renders the master institution schedule: every academic semester's full timetable grid is stacked sequentially with custom header cards displaying the semester code, programme, semester number, descriptive name, student strength, and total session count.
+     - Each grid table maintains the standard slot-by-slot and day-by-day matrix layout with theory/practical color-coding, room allocations, teacher names, extension slot tags, and preference satisfaction badges (`Pref #1`, `Pref #2`, `Pref #3`), with a quick "Focus View" button to zoom into an individual semester.
+  2. **Dual Curriculum File Ingestion & Parser Engine (`backend/app/scheduler/file_parser.py` & `backend/app/api/generator.py`)**:
+     - Built tolerant CSV/TSV/Text parsers supporting user-submitted files:
+       - **File 1 (Subject Allocations & Semesters)**: Extracts semester names and numbers across current semesters of **B.Tech, M.Tech, and M.Sc**, mapping subject code, title, internal teacher ID, external teacher ID, class type (Theory/Practical), sessions per week, and required facility.
+       - **File 2 (Teacher Profiles & Preferences)**: Extracts teacher ID, teacher name, and up to 3 preferred time slots. Maps user time strings (`10-12:00` to Slot 1, `12-2` to Slot 2, `2:30-4:30` to Slot 3) and facility requirements (`black board`, `projector`, `blackboard and projector` / `both`).
+     - Added endpoints:
+       - `GET /api/timetable/generator/templates`: Returns downloadable sample CSV templates for subject allocations and teacher preferences.
+       - `POST /api/timetable/generator/extract-files`: Ingests and cross-references both files, compiling discovered semesters, teachers, and subjects with summary telemetry.
+  3. **File Ingestion Modal & Sample Template Downloads (`TimetableGeneratorView.tsx`)**:
+     - Added an "Import Data Files" modal featuring drag-and-drop file uploaders and direct text paste areas for both File 1 and File 2.
+     - One-click "Download Sample Template" buttons for both files.
+     - Interactive extraction preview reporting discovered counts and options to either "Replace Board (Clean Slate)" or "Merge with Existing".
+  4. **Complete In-App Manual CRUD & Blank Slate**:
+     - Added "Blank Slate / Clear All" allowing users to clear all entities and start completely from scratch.
+     - Added interactive creation modals for all entities:
+       - **+ Add Semester**: Programme (B.Tech, M.Tech, M.Sc, etc.), semester number, ID, display name, and cohort strength.
+       - **+ Add Room**: Room number, kind (classroom/lab), facility (blackboard, projector, both, none), and capacity.
+       - **+ Add Faculty**: Teacher ID, name, faculty type (internal/external), 3 preferred slots (day, slot 10-12:00 / 12-2 / 2:30-4:30, and facility), and unavailable days.
+       - **+ Add Subject**: Subject code, title, semester selector, teacher selector, class type, sessions per week, and facility requirement.
+     - Provided entity deletion buttons on all semesters, rooms, teachers, and subjects.
+  5. **Verification**:
+     - Tested frontend build with `tsc -b && vite build` (zero errors, code 0).
+     - Verified backend generator unit tests in `test_timetable_generator.py` (4 passed in 2.81s).
+- **Reasoning**: Fulfills the user's explicit requirements that semester selection must include an "All Semesters" option and that input can be completely user-driven—either through manual in-app creation or via extraction from two specific institution files.
+
+### 3. Detailed Pre-Flight Validation Diagnostics with Faculty Names, Course Titles & Actionable Remedies (2026-11-04)
+- **Decision**: Enhanced the validation compiler in [`backend/app/scheduler/timetable_generator.py`](file:///home/ankit/Downloads/timetable-application/backend/app/scheduler/timetable_generator.py), [`timetable_generator_new.py`](file:///home/ankit/Downloads/timetable-application/timetable_generator_new.py), and [`TimetableGeneratorView.tsx`](file:///home/ankit/Downloads/timetable-application/frontend/src/components/generator/TimetableGeneratorView.tsx):
+  1. **Replaced Opaque IDs with Full Faculty Names & Subject Titles**:
+     - Added `t_label(tid)` helper across all validation checks: automatically maps raw teacher IDs (`I03`, `I04`, `I06`, etc.) to full faculty names and IDs (e.g., `Prof. C. Das (I03)`, `Dr. D. Menon (I04)`).
+     - Subject references now include both code and descriptive title (e.g., `CS308 ('Operating Systems')`).
+  2. **Detailed Breakdown of Workload & Day Constraints**:
+     - Replaced cryptic `Teacher I03 has 6 theory classes but only 4 usable day(s)` with rich multi-part diagnostic:
+       - Displays exact courses and weekly counts: `Prof. C. Das (I03) has 6 theory classes scheduled per week [3x CS301 (Data Structures), 3x CS302 (Database Systems)]`.
+       - Explains why days are limited: `out of 5 working days (Mon, Tue, Wed, Thu, Fri); 1 guaranteed weekly research/free day kept`.
+       - Explains the underlying institutional rule: `Maximum 1 theory class per day per faculty member to prevent faculty burnout`.
+       - Provides concrete solution: `Reassign at least 2 theory class(es) to another teacher or co-teacher, or add an additional working day such as Saturday`.
+  3. **Detailed Breakdown of Semester Cohort Slot Capacity**:
+     - Replaced `B.Tech Sem 3 has 17 classes/week but only 15 slots exist` with full breakdown of all contributing courses, available slots math (`5 working days x 3 slots/day = 15 slots`), and actionable solutions (registering electives/sections under separate cohort IDs, enabling Tier-1 extension slots, adding working days, or reducing session counts).
+  4. **Detailed Breakdown of Institutional Room Capacity Deficit**:
+     - Replaced `Total classes (96) exceed total room-slots (75)` with exact room calculations (`75 available room-slots = 5 rooms x 5 working days x 3 slots/day`), computing the deficit (21 classes) and the exact minimum number of rooms needed (at least 7 rooms total).
+  5. **Rich Diagnostic Card UI in Frontend (`TimetableGeneratorView.tsx`)**:
+     - Redesigned the validation alert banner with structured diagnostic cards, filter buttons (`All`, `Errors`, `Warnings`), expand/collapse toggles, and dedicated `💡 Remedy:` highlight boxes for every issue.
+  6. **Verification**:
+     - Frontend builds with zero TypeScript errors (`tsc -b && vite build`, exit code 0).
+     - Backend test suite passes (`4 passed in 2.57s`).
+- **Reasoning**: Addresses the user's request to eliminate raw ID codes and provide comprehensive, actionable, and human-readable diagnostic messages with faculty names, course titles, capacity math, and concrete solutions.
+
+### 4. In-Place Entity Editing Options & Live Auto-Revalidation (2026-11-04)
+- **Decision**: Implemented dedicated in-place editing controls and real-time auto-revalidation for all scheduling entities in [`frontend/src/components/generator/TimetableGeneratorView.tsx`](file:///home/ankit/Downloads/timetable-application/frontend/src/components/generator/TimetableGeneratorView.tsx):
+  1. **Interactive Edit Controls on Entity Cards**:
+     - Added dedicated `<Pencil size={11} />` Edit buttons directly on the cards for:
+       - **Faculty & Preferences Cards**: Display full faculty names, internal/external badges, preferred slots, and unavailable days with one-click Edit and Delete buttons.
+       - **Course Subjects & Allocations Cards**: Display subject code, full course title, target semester, teacher assignments with full names (e.g. `Sumit Chakraborty (I01)`), theory/practical tags, session count, and facility badge with one-click Edit and Delete buttons.
+       - **Semesters & Cohorts Cards**: Display programme, semester number, cohort size, and edit trigger.
+       - **Rooms & Venues Cards**: Display room number, capacity, room kind, facility badges, and edit trigger.
+  2. **Dedicated Edit Modals**:
+     - **Edit Faculty Modal (`editingTeacher`)**: Allows modifying full name, teacher ID, faculty type (Internal with free day target vs. External without free day constraint), all 3 preferred time slots (day of week, time slot: `10-12:00`, `12-2`, `2:30-4:30`, and facility: `black board`, `projector`, `blackboard and projector`, `none`), and unavailable days.
+     - **Edit Subject Modal (`editingSubject`)**: Allows modifying course code, descriptive title, target semester, primary internal teacher assignment, co-teacher / external teacher assignment, class type (Theory/Practical), weekly sessions, external session distribution, and required room facility.
+     - **Edit Semester Modal (`editingSemester`)**: Allows editing academic programme, semester number, internal ID, descriptive label, and cohort student strength.
+     - **Edit Room Modal (`editingRoom`)**: Allows editing room number, venue kind (Classroom / Lab), installed facilities, and seating capacity.
+  3. **Real-Time Auto-Revalidation (`autoValidateBoard`)**:
+     - Added `autoValidateBoard(updatedBoard)` helper: immediately upon saving edits or deleting any entity, the frontend automatically dispatches a pre-flight validation request to `/api/timetable/generator/validate`.
+     - The validation notice banner and diagnostic cards dynamically update their error and warning counts and remedy tips without requiring the user to manually click "Pre-flight Check".
+  4. **Verification**:
+     - Frontend builds with zero TypeScript errors (`tsc -b && vite build`, exit code 0).
+     - Backend test suite passes (`test_timetable_generator.py`: 4 passed in 3.14s).
+- **Reasoning**: Fulfills the user's explicit request ("GIVE EDITING OPTIONS HERE ..proper way") for the Faculty & Preferences and Course Subjects & Allocations cards shown in the user's screenshot, allowing instant correction of validation issues like teacher internal/external role mismatches and class over-allocations directly within the UI.
+
+### 5. Rich Slot-by-Slot Unscheduled Classes Diagnostics & Interactive Inspector (2026-11-04)
+- **Decision**: Replaced cryptic unscheduled messages (e.g. `semester already has a class (10 slots); teacher already teaching (5 slots)`) with detailed faculty names, course titles, specific time slot listings, and an interactive slot inspector:
+  1. **Rich Diagnostic Engine in Generator Solver (`backend/app/scheduler/timetable_generator.py` & `timetable_generator_new.py`)**:
+     - Added `_diagnose_unscheduled(st, sid, board)`:
+       - Evaluates every single active slot `(day, slot)` against all physical and institutional constraints.
+       - Replaces raw IDs with full teacher names and IDs (e.g. `Sumit Chakraborty (I01)`), subject titles (e.g. `CS301: Data Structures`), and cohort names (e.g. `B.Tech Sem 3 (BT-3)`).
+       - Identifies exact occupying sessions and conflicts:
+         - **Cohort Clashing Slots**: Identifies which exact slots the cohort is busy (e.g. `Mon 10:00–12:00 [CS302 with Dr. B. Sen in R#101]`, `Mon 12:00–14:00 [CS303 with Dr. C. Roy in R#102]`).
+         - **Faculty Busy Slots**: Identifies which exact slots the teacher is teaching other cohorts (e.g. `Mon 14:30–16:30 [teaching CS336 in BT-7 in R#105]`).
+         - **Teacher Daily Theory Limit**: Identifies exact days where the teacher already teaches a theory class (e.g. `Mon, Tue, Wed, Thu`), enforcing the 1 theory/day limit.
+         - **Protected Weekly Free Day**: Identifies which day (e.g. `Friday`) is preserved as the faculty member's guaranteed weekly free day.
+         - **No Room Available**: Identifies slots where no classroom or lab with the required facility is vacant.
+       - Formulates an actionable, context-aware `remedy` explaining cohort saturation, faculty day limits, or room deficits.
+     - Updated `summary()` and CLI export to print full descriptive titles, specific slot listings, and remedy tips.
+  2. **Comprehensive Frontend Diagnostic Inspector (`frontend/src/components/generator/TimetableGeneratorView.tsx`)**:
+     - Designed an interactive **Unscheduled Classes Inspector**:
+       - **Header Alert**: Summarizes unscheduled session count and provides a 1-click **Enable Extension Slots** shortcut if Tier-1 extension slots are disabled.
+       - **Cohort Filter & Search Bar**: Quick filter chips by cohort (e.g. `All`, `B.Tech Sem 3`, `B.Tech Sem 5`, `B.Tech Sem 7`) and instant text search by subject, teacher, or slot.
+       - **Rich Class Cards**: Displays subject code & title, cohort badge, full faculty member label, and theory/practical tag.
+       - **Direct Quick Actions**: Dedicated `✏️ Edit Course` and `✏️ Edit Faculty` buttons on every unscheduled card that instantly open the respective editing modals with pre-filled entity details.
+       - **Conflict Badges**: Color-coded badges summarizing cohort busy slots, faculty busy slots, daily theory limit days, and protected free days.
+       - **Expandable 15-Slot Conflict Table**: `🔍 Inspect All Evaluated Slots & Blockers` expands a full breakdown table displaying every evaluated slot, time string, constraint blocker badge, and detailed explanation.
+  3. **Verification**:
+     - Frontend builds with zero TypeScript errors (`tsc -b && vite build`, exit code 0).
+     - Backend test suite passes (`test_timetable_generator.py`: 4 passed in 2.74s).
+     - Standalone script `timetable_generator_new.py` runs cleanly with zero violations.
+- **Reasoning**: Fulfills the user's explicit request ("HERE INSTEAD OF SLOTS AND TEACHER MAKE IT MORE SPECIFIC...WRITE WHICH WHICH SLOT IN PROPER WAY"), giving complete visibility into why each class was unscheduled, which exact slots and classes clashed, and providing immediate in-place tools to resolve them.
+
+### 6. Integration of Modified Timetable Generator Engine (Fractional Sessions, Split Fallback & 1-Hour Extension Slot) (2026-11-05)
+- **Decision**: Flawlessly integrated `/home/ankit/Downloads/timetable-application/timetable_generator_modified.py` into the application codebase while maintaining 100% of its new scheduling logic, and updated backend, frontend types, and user interfaces:
+  1. **Core Scheduling Logic Enhancements (`timetable_generator_modified.py` & `backend/app/scheduler/timetable_generator.py`)**:
+     - **Fractional Sessions**: `sessions_per_week` and `external_sessions` now accept fractional values in multiples of `0.5` (e.g. `2 = 4h`, `2.5 = 5h` [two 2-hour classes + one 1-hour class], `3 = 6h`). Each 0.5 unit represents exactly 1 hour of teaching.
+     - **Dedicated 1-Hour Extension Slot (`16:30–17:30`)**: Replaced 2-hour extension slots with exactly one 1-hour extension slot: Slot 4 (`16:30–17:30`, tier 1, 60 minutes). This slot hosts 1-hour classes and 0.5-session remainders.
+     - **Split Sessions Fallback (`allow_split_sessions`)**: When `allow_split_sessions=True`, if a 2-hour class cannot fit in regular slots because the week is saturated, the solver iteratively splits it into two 1-hour classes on two separate days scheduled in the 16:30–17:30 slot (`1h + 1h`), re-compiling until all sessions fit or `max_split_rounds` is reached.
+     - **Optional 1h Class in Regular Slot (`allow_short_in_regular_slot`)**: Flag allowing 1-hour classes into 2-hour regular slots as a last-resort fallback with heavy penalty (`PENALTY_SHORT_IN_REGULAR_SLOT = 2500`).
+     - **Enhanced Class Metadata & Stats**:
+       - `ScheduledClass`: Tracks `duration_hours` (2.0 or 1.0), `is_half_session` (bool), `is_split_piece` (bool).
+       - `GeneratorStats`: Tracks `weekly_hours_scheduled`, `weekly_hours_required`, `half_session_classes`, `split_piece_classes`, `split_rounds`, `split_sessions`.
+  2. **File Parser Decimal Support (`backend/app/scheduler/file_parser.py`)**:
+     - Updated curriculum file parsing for `sessions_per_week` and `external_sessions` to parse `float` instead of checking `str.isdigit()`, preventing decimal truncation or fallback errors on imported `2.5` or `0.5` session values.
+  3. **Frontend Integration (`frontend/src/types.ts` & `TimetableGeneratorView.tsx`)**:
+     - **Types**: Extended `GeneratorConfig`, `GeneratorScheduledClass`, `GeneratorUnscheduledClass`, and `GeneratorResult.stats` with all new duration, split session, and solver parameters.
+     - **Grid Rendering**: Displays distinctive badges (`1h`, `1h Split`) and renders the single 1-hour extension slot header `Ext Slot (4:30–5:30 PM)`.
+     - **Solver Parameters Controls**: Added Config tab controls for 1-Hour Extension Slot (`use_extension_slots`), Split Sessions Fallback (`allow_split_sessions`, `max_split_rounds`), and 1h in Regular Slot (`allow_short_in_regular_slot`).
+     - **KPI Telemetry**: Added an executive KPI card for `1-Hour / Split Classes` and teaching hours completion (`weekly_hours_scheduled` / `weekly_hours_required`).
+     - **Modals & Cards**: Updated Add Subject and Edit Subject modals with `step="0.5"`, `min="0.5"`, float parsing, and clear helper text explaining `0.5` multiples. Course subject cards display sessions/week and total weekly hours.
+     - **CSV Export**: Export includes `duration_hours`, `is_half_session`, and `is_split_piece` columns.
+  4. **Verification**:
+     - Standalone script `timetable_generator_modified.py` and root `timetable_generator_new.py` execute cleanly (57 classes scheduled, 0 unscheduled, 110 of 110 hours, 0 violations, 88.1% preferences honoured).
+     - Backend test suite: `pytest backend/tests/test_timetable_generator.py` (4 passed in 2.46s).
+     - Frontend build: `npm run build` (`tsc -b && vite build`) built cleanly in 6.54s with 0 errors.
+- **Reasoning**: Fulfills the user's explicit request to integrate `timetable_generator_modified.py` flawlessly into the current codebase without losing any new logic, ensuring complete end-to-end compatibility across the Python scheduler engine, REST API, file parsing, and interactive React frontend.
+
+
+### 7. Teacher Short Form Presentation & Automatic Multi-Semester Catalog Sync with Account Credential Generation (2026-11-06)
+- **Decision**: Implemented an end-to-end solution addressing both parts of the user's requirements: (1) eliminating raw benchmark/internal teacher IDs (`I01`, `I02`, ..., `I09`, `I19`, `E02`) across timetable matrix displays, replacing them with clean faculty short forms (e.g. `AR`, `DC`, `SCh`, `NC`, `SKS`, `SK`, `RD`, `AD`), and (2) automatically syncing teachers and subjects into the database catalog when added via interactive UI buttons or CSV file uploads, while automatically generating institutional user accounts (email & secure passwords) with the `TEACHER` role:
+  1. **Short Form Resolution & Presentation Guard**:
+     - **Root Cause**: Identified that `backend/app/api/generator.py` (`save_generated_draft`) was persisting `"teacher": c.get("teacher_id") or c.get("teacher")`, where `teacher_id` was the internal benchmark sequence identifier (`I01..I19, E02`).
+     - **Dual-Layer Protection**:
+       - *Presentation Layer* ([`frontend/src/utils.ts`](file:///home/ankit/Downloads/timetable-application/frontend/src/utils.ts)): Created `formatTeacherShortName(rawId, subjectName, catalogTeachers)` and `deriveTeacherShortForm(fullName, fallbackId)`. Updated [`ClassCell.tsx`](file:///home/ankit/Downloads/timetable-application/frontend/src/components/timetable/ClassCell.tsx), [`ClassDetailModal.tsx`](file:///home/ankit/Downloads/timetable-application/frontend/src/components/timetable/ClassDetailModal.tsx), and [`TimetableGeneratorView.tsx`](file:///home/ankit/Downloads/timetable-application/frontend/src/components/generator/TimetableGeneratorView.tsx) to pass all teacher representations through this resolver, preventing raw ID leakage even for legacy entries.
+       - *Pre-Persistence Layer* ([`backend/app/services/teacher_catalog_service.py`](file:///home/ankit/Downloads/timetable-application/backend/app/services/teacher_catalog_service.py)): Implemented `resolve_entry_teacher_short_name` to map any benchmark ID or full name to a clean 2–4 letter initial before saving to `timetable_entries`.
+     - *Database Remediation* ([`backend/app/services/migrate_legacy_teacher_ids.py`](file:///home/ankit/Downloads/timetable-application/backend/app/services/migrate_legacy_teacher_ids.py)): Successfully migrated live Supabase PostgreSQL database entries (including Version 10) from raw codes to clean short forms (`Remaining raw IDs: 0`).
+  2. **Automated Catalog Synchronization & User Credential Generation**:
+     - Built comprehensive catalog service in [`backend/app/services/teacher_catalog_service.py`](file:///home/ankit/Downloads/timetable-application/backend/app/services/teacher_catalog_service.py):
+       - `derive_teacher_short_form(full_name, fallback_id, existing_shorts)`: Removes academic titles and cleans parentheses to generate standardized initials (e.g. "Dr. Debesh Choudhury" -> "DC").
+       - `ensure_teacher_account(db, full_name, short_name, is_internal, ...)`: Atomically ensures/creates a `User` record (`role=TEACHER`, unique institutional email `{short_name.lower()}@college.edu`, and secure generated password) and a corresponding `Teacher` catalog entity, automatically updating `subjects_csv`.
+       - `ensure_subject_catalog(db, code, name, program, semester, ...)`: Atomically registers academic `Program` and `Subject` under the target semester, linking assigned faculty.
+       - `sync_extracted_files_to_catalog(db, semesters, subjects, teachers)`: Atomic ingestion service for curriculum and teacher preference files, generating accounts for all newly detected faculty and returning structured telemetry.
+  3. **REST API Endpoint Upgrades (`backend/app/api/generator.py`)**:
+     - `POST /api/timetable/generator/extract-files`: Now connects to the database and automatically synchronizes extracted semesters, subjects, and teachers to the catalog, returning `created_accounts`.
+     - `POST /api/timetable/generator/faculty`: Dedicated endpoint for creating a faculty member via interactive UI button with auto email/password generation.
+     - `POST /api/timetable/generator/subject`: Dedicated endpoint for adding course subjects to the semester catalog linked to teachers.
+     - `POST /api/timetable/generator/save-draft`: Enforces short forms on all timetable entry teachers, ensures catalog entries for all scheduled classes, and returns newly created teacher credentials.
+  4. **Frontend Interactive User Experience**:
+     - **Generator View ([`TimetableGeneratorView.tsx`](file:///home/ankit/Downloads/timetable-application/frontend/src/components/generator/TimetableGeneratorView.tsx))**:
+       - *Add Faculty Member Modal*: Wires button to `createGeneratorFaculty`, automatically updates board state and catalog store, and displays an instant credential banner with teacher name, short form, login email, auto-generated password, and a "Copy Credentials" action.
+       - *Add Subject Allocation Modal*: Wires button to `createGeneratorSubject`, automatically synchronizing the new subject to the database catalog under the selected semester and linking the primary faculty.
+       - *Accounts Feedback Modal (Modal 10)*: Opens when bulk CSV files are imported or when a generated draft is saved, presenting a structured credentials table, a "Copy All Credentials" clipboard button, and an "Export Credentials CSV" download button.
+     - **Catalog Manager ([`CatalogManager.tsx`](file:///home/ankit/Downloads/timetable-application/frontend/src/components/catalog/CatalogManager.tsx))**:
+       - *Subjects Tab*: Added teacher assignment dropdown to "+ New Subject", linking the chosen faculty to the subject and updating `Teacher.subjects_csv` via `createGeneratorSubject`.
+       - *Import CSV Tab*: Added a dedicated "Import CSV" tab supporting drag-and-drop or pasting of Subject Allocations and Teacher Preferences CSV files, complete with downloadable sample templates, real-time import summary, and a credentials review table with copy and CSV export capabilities.
+  5. **Verification**:
+     - **Backend Unit Tests**: All 6 tests in [`backend/tests/test_timetable_generator.py`](file:///home/ankit/Downloads/timetable-application/backend/tests/test_timetable_generator.py) pass cleanly in 9.85s, verifying extraction catalog sync, dedicated faculty/subject endpoints, and absence of raw benchmark IDs in saved drafts.
+     - **Frontend Production Build**: `npm --prefix frontend run build` (`tsc -b && vite build`) builds with 0 errors in 10.06s.
+     - **Live Database**: Version 10 in Supabase verified with 0 legacy teacher codes remaining.
+- **Reasoning**: Fulfills the user's explicit instructions: (1) never display teacher IDs like `I01..I09` on timetable cards and use clean short forms instead, and (2) when the user inputs subject names and teachers (via buttons or CSV files), automatically add them to the corresponding semester subjects and teacher catalog, and automatically generate institutional login email and passwords for their accounts.
