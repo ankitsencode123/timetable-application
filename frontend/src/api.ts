@@ -220,9 +220,31 @@ export async function login(form: LoginForm): Promise<AuthResponse> {
   return data;
 }
 
-// ── Optimistic preload (Disabled for testing) ────────────────────────────────
-export function warmBackend(_email: string = ''): void {
-  // Disabled: testing baseline application latency without optimistic preloading.
+// ── Optimistic preload (login page) ──────────────────────────────────────────
+// Fire-and-forget hint to the backend that someone is about to log in: wakes
+// the server, warms DB/crypto and preloads dashboard data into RAM.
+// NEVER include the password. Errors are ignored.
+
+const WARM_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+let _warmLastEmail = '';
+let _warmLastAt = 0;
+
+export function warmBackend(email: string = ''): void {
+  const e = (email || '').trim().toLowerCase();
+  const valid = WARM_EMAIL_RE.test(e);
+  if (valid && e === _warmLastEmail && Date.now() - _warmLastAt < 15000) return;
+  if (valid) { _warmLastEmail = e; _warmLastAt = Date.now(); }
+  try {
+    fetch(`${BASE}/preload/warm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(valid ? { email: e } : {}),
+      credentials: 'omit',
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* best effort */
+  }
 }
 
 export async function logout(): Promise<void> {

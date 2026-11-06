@@ -65,6 +65,17 @@ app = FastAPI(
 from app.services.cache_layer import install_cache  # noqa: E402
 install_cache(app)
 
+# Optimistic preloading (login-page warm-up + RAM-served dashboard data).
+# Must run AFTER install_cache and BEFORE include_router so the shadow GET
+# routes below win over the original DB-backed handlers.
+from app.services.preload import install_preload  # noqa: E402
+install_preload(
+    app,
+    versions_prefix="/api/versions",        # GET /api/versions, GET /api/versions/{id}
+    draft_path="/api/timetable/draft",      # GET /api/timetable/draft
+    users_path="/api/users",                # GET /api/users (Admin Panel users list)
+)
+
 
 _cors_origins = settings.cors_origin_list
 _allow_all = _cors_origins == ["*"]
