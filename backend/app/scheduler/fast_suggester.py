@@ -37,6 +37,15 @@ import random
 import time
 from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+import pickle
+
+try:
+    from app.core.redis import redis_get, redis_set, redis_delete
+except ImportError:
+    try:
+        from backend.app.core.redis import redis_get, redis_set, redis_delete
+    except ImportError:
+        redis_get = redis_set = redis_delete = None  # type: ignore
 
 # --------------------------------------------------------------------------------------
 # Imports from the app (with a tiny standalone fallback so the self-test runs anywhere)
@@ -554,9 +563,27 @@ _IDX_CACHE: Tuple[Optional[tuple], Optional[ScheduleIndex]] = (None, None)
 def get_busy_map(ttl: float = 30.0) -> Dict[str, Set[str]]:
     global _BUSY_CACHE
     ts, val = _BUSY_CACHE
-    if time.monotonic() - ts > ttl:
-        val = fetch_global_busy_days()
-        _BUSY_CACHE = (time.monotonic(), val)
+    if time.monotonic() - ts <= ttl and val:
+        return val
+
+    # Check Redis
+    if redis_get is not None:
+        try:
+            raw = redis_get("tt:scheduler:busy_map")
+            if raw:
+                val = pickle.loads(raw)
+                _BUSY_CACHE = (time.monotonic(), val)
+                return val
+        except Exception:
+            pass
+
+    val = fetch_global_busy_days()
+    _BUSY_CACHE = (time.monotonic(), val)
+    if redis_set is not None:
+        try:
+            redis_set("tt:scheduler:busy_map", pickle.dumps(val), ex=int(ttl * 2))
+        except Exception:
+            pass
     return val
 
 
@@ -573,6 +600,11 @@ def invalidate_caches() -> None:
     """Call after the timetable or busy-slots change."""
     global _BUSY_CACHE, _IDX_CACHE
     _BUSY_CACHE, _IDX_CACHE = (0.0, {}), (None, None)
+    if redis_delete is not None:
+        try:
+            redis_delete("tt:scheduler:busy_map")
+        except Exception:
+            pass
 
 
 def get_index(schedule: Sequence[dict], busy_map: Optional[dict] = None) -> ScheduleIndex:

@@ -628,3 +628,31 @@
      - **Frontend Production Build**: `npm --prefix frontend run build` (`tsc -b && vite build`) builds with 0 errors in 10.06s.
      - **Live Database**: Version 10 in Supabase verified with 0 legacy teacher codes remaining.
 - **Reasoning**: Fulfills the user's explicit instructions: (1) never display teacher IDs like `I01..I09` on timetable cards and use clean short forms instead, and (2) when the user inputs subject names and teachers (via buttons or CSV files), automatically add them to the corresponding semester subjects and teacher catalog, and automatically generate institutional login email and passwords for their accounts.
+
+## 2026-11-07
+
+- **Decision**: Integrated Distributed Redis Caching (Upstash Redis over TLS) across Preloading, Timetable Snapshots, AI Chat Answers, Teacher Schedule Contexts, Advanced Actions Plans, and Scheduler Busy Maps.
+  1. **Core Redis Infrastructure ([`backend/app/core/redis.py`](file:///home/ankit/Downloads/timetable-application/backend/app/core/redis.py))**:
+     - Centralized connection management supporting sync (`redis.Redis`) and async (`redis.asyncio.Redis`) clients with connection pooling (`max_connections=20`, `socket_timeout=2.5s`, `socket_connect_timeout=3.0s`, `retry_on_timeout=True`).
+     - Normalizes incoming Redis connection strings, supporting direct CLI invocations (`redis-cli --tls -u ...`), standard URIs, and auto-upgrading to TLS (`rediss://`) for Upstash.
+     - Implemented loop-aware async client resolution (`get_async_redis_client()`) to ensure resilience across multiple or restarting asyncio event loops.
+     - Built safe, fail-open wrappers (`redis_get`, `redis_set`, `redis_delete`, `redis_delete_pattern`, `redis_get_json`, `redis_set_json` and async equivalents) ensuring that any Redis blip or timeout never crashes the app.
+  2. **Dashboard Preloading ([`backend/app/services/preload.py`](file:///home/ankit/Downloads/timetable-application/backend/app/services/preload.py))**:
+     - `BundleStore._sync_refresh()`: Checks Redis key `tt:preload:bundle` on refresh. On server cold starts or worker restarts, the entire bundle (versions list, published version, latest draft, and users list) is restored in ~20ms directly from Redis without hitting Supabase Postgres.
+     - `BundleStore.detail()`: Stores and fetches on-demand version detail blobs (`tt:preload:detail:{id}`) via Redis.
+     - `BundleStore.invalidate()`: Purges `tt:preload:bundle` and `tt:preload:detail:*` on database commits or admin purges.
+  3. **Timetable Snapshot & Public Routes ([`backend/app/services/cache_layer.py`](file:///home/ankit/Downloads/timetable-application/backend/app/services/cache_layer.py))**:
+     - `SnapshotStore._sync_refresh()`: Checks Redis `tt:snapshot:published` against the DB probe fingerprint. If matched, rehydrates the full snapshot with pre-serialized and pre-gzipped JSON payloads from Redis.
+     - `SnapshotStore.invalidate()` & `invalidate_timetable_data()`: Deletes Redis snapshot and schedule context keys on timetable commits.
+  4. **Public AI Chatbot Answers ([`backend/app/services/cache_layer.py`](file:///home/ankit/Downloads/timetable-application/backend/app/services/cache_layer.py))**:
+     - Implemented an L2 Redis answer cache (`tt:chat:ans:{key}`) behind L1 in-memory `CHAT_CACHE`.
+     - When L1 misses, Redis L2 is queried. If cached, answers are served with `X-Cache: HIT` without consuming Groq free-tier tokens or RPM quota.
+     - When `POST /api/admin/cache/purge` is called, all `tt:chat:*` keys in Redis are flushed using non-blocking SCAN deletion.
+  5. **Schedule Context, Advanced Plans & Busy Maps**:
+     - `build_schedule_context_cached`: Caches live schedule markdown context in Redis (`tt:ctx:{id}`).
+     - `_TTLStore` in [`backend/app/actions/advanced_chat.py`](file:///home/ankit/Downloads/timetable-application/backend/app/actions/advanced_chat.py): Upgraded with prefix-aware Redis caching for execution plans (`tt:plan:{ckey}`), session rules, and actions.
+     - `fast_suggester.py`: Caches `busy_map` in Redis (`tt:scheduler:busy_map`).
+  6. **Configuration & Telemetry**:
+     - Added `REDIS_URL` and `REDIS_ENABLED` to [`backend/app/core/config.py`](file:///home/ankit/Downloads/timetable-application/backend/app/core/config.py), `backend/.env`, `backend/.env.production`, and `backend/.env.example`.
+     - Exposes masked Redis connection status, ping latency, memory usage, and key count in `GET /api/admin/cache/stats`.
+- **Reasoning**: Provides shared, distributed caching across multiple Render web service workers, edge instances, and container cold restarts. Prevents redundant database loads on Supabase and protects the Groq LLM quota from duplicate queries across server restarts.

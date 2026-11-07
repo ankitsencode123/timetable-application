@@ -133,6 +133,7 @@ import time
 import unicodedata
 from collections import Counter, OrderedDict, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
+import pickle
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -143,6 +144,37 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
 from sqlalchemy import func
+
+try:
+    from app.core.redis import (
+        redis_get,
+        redis_set,
+        redis_delete,
+        redis_delete_pattern,
+        redis_get_json,
+        redis_set_json,
+        async_redis_get_json,
+        async_redis_set_json,
+        get_redis_stats,
+    )
+except ImportError:
+    try:
+        from backend.app.core.redis import (
+            redis_get,
+            redis_set,
+            redis_delete,
+            redis_delete_pattern,
+            redis_get_json,
+            redis_set_json,
+            async_redis_get_json,
+            async_redis_set_json,
+            get_redis_stats,
+        )
+    except ImportError:
+        redis_get = redis_set = redis_delete = redis_delete_pattern = None  # type: ignore
+        redis_get_json = redis_set_json = async_redis_get_json = async_redis_set_json = None  # type: ignore
+        get_redis_stats = lambda: {"enabled": False, "connected": False}
+
 
 from app.api.auth import get_current_user
 from app.core.database import get_db
@@ -578,6 +610,11 @@ class SnapshotStore:
         with self._lock:
             self._gen += 1
             self._dirty = True
+        if redis_delete is not None:
+            try:
+                redis_delete("tt:snapshot:published")
+            except Exception:
+                pass
 
     # ---- synchronous worker (runs in _DB_EXEC)
     def _sync_refresh(self) -> Snapshot:
@@ -597,8 +634,28 @@ class SnapshotStore:
                 if reusable:
                     snap = cur
                 else:
-                    snap = _build_snapshot(db, fp)
-                    METRICS.inc("snapshot_builds")
+                    snap = None
+                    if not force and redis_get is not None:
+                        try:
+                            cached_bytes = redis_get("tt:snapshot:published")
+                            if cached_bytes:
+                                candidate = pickle.loads(cached_bytes)
+                                if candidate and candidate.fingerprint == fp:
+                                    snap = candidate
+                                    METRICS.inc("snapshot_redis_hits")
+                                    logger.debug("[cache] restored snapshot from Redis")
+                        except Exception as exc:
+                            logger.debug(f"[cache] Redis snapshot restore error: {exc}")
+
+                    if snap is None:
+                        snap = _build_snapshot(db, fp)
+                        METRICS.inc("snapshot_builds")
+                        if redis_set is not None:
+                            try:
+                                redis_set("tt:snapshot:published", pickle.dumps(snap), ex=int(self.cfg.snapshot_hard_ttl * 4))
+                                METRICS.inc("snapshot_redis_sets")
+                            except Exception as exc:
+                                logger.debug(f"[cache] Redis snapshot save error: {exc}")
             with self._lock:
                 if self._gen == gen:           # nothing invalidated while we were reading
                     self._snap = snap
@@ -701,6 +758,11 @@ def invalidate_timetable_data(reason: str = "manual") -> None:
     """Drop snapshot + schedule-context caches (+ notify companion tiers). Safe from any thread."""
     STORE.invalidate()
     _CTX_CACHE.clear()
+    if redis_delete_pattern is not None:
+        try:
+            redis_delete_pattern("tt:ctx:*")
+        except Exception:
+            pass
     for fn in tuple(_INVALIDATION_LISTENERS):
         try:
             fn(reason)
@@ -1068,6 +1130,11 @@ class ChatEngine:
         text = _fallback_answer(snap, msg, _now_ist()) or _FALLBACK_GENERIC
         payload = _payload(text)
         self.cache.set(key, payload, self.cfg.chat_fallback_ttl)
+        if redis_set_json is not None:
+            try:
+                redis_set_json(f"tt:chat:ans:{key}", payload, ex=int(self.cfg.chat_fallback_ttl))
+            except Exception:
+                pass
         return payload, "FALLBACK"
 
     # ---- the one flight per distinct question
@@ -1098,6 +1165,12 @@ class ChatEngine:
         if cal is not None:
             METRICS.inc("chat_calendar")
             self.cache.set(key, cal, cfg.chat_calendar_ttl)
+            if async_redis_set_json is not None:
+                try:
+                    await async_redis_set_json(f"tt:chat:ans:{key}", cal, ex=int(cfg.chat_calendar_ttl))
+                    METRICS.inc("chat_redis_sets")
+                except Exception:
+                    pass
             return cal, "CALENDAR"
 
         # 2) LLM, guarded by breaker -> concurrency -> RPM budget
@@ -1123,6 +1196,12 @@ class ChatEngine:
         self.breaker.success()
         payload = _payload(content)
         self.cache.set(key, payload, cfg.chat_ttl)
+        if async_redis_set_json is not None:
+            try:
+                await async_redis_set_json(f"tt:chat:ans:{key}", payload, ex=int(cfg.chat_ttl))
+                METRICS.inc("chat_redis_sets")
+            except Exception as exc:
+                logger.debug(f"[chat] Redis L2 set error: {exc}")
         return payload, "MISS"
 
     def _flight_done(self, key: str, task: "asyncio.Task") -> None:
@@ -1147,6 +1226,18 @@ class ChatEngine:
         if hit is not None:
             METRICS.inc("chat_hits")
             return hit, "HIT"
+
+        # Check Redis L2 cache before scheduling a flight
+        rkey = f"tt:chat:ans:{key}"
+        if async_redis_get_json is not None:
+            try:
+                rhit = await async_redis_get_json(rkey)
+                if rhit is not None:
+                    METRICS.inc("chat_redis_hits")
+                    self.cache.set(key, rhit, self.cfg.chat_ttl)
+                    return rhit, "HIT"
+            except Exception as exc:
+                logger.debug(f"[chat] Redis L2 get error: {exc}")
 
         task = self.inflight.get(key)
         if task is None:
@@ -1223,6 +1314,16 @@ def build_schedule_context_cached(db, version_id: Optional[int] = None) -> str:
     hit = _CTX_CACHE.get(key)
     if hit is not None:
         return hit
+    rkey = f"tt:ctx:{version_id or 'latest'}"
+    if redis_get is not None:
+        try:
+            rhit = redis_get(rkey)
+            if rhit:
+                decoded = rhit.decode("utf-8")
+                _CTX_CACHE.set(key, decoded, _CTX_TTL)
+                return decoded
+        except Exception:
+            pass
     gen = STORE.generation
     try:
         value = _compute_schedule_context(db, version_id)
@@ -1231,6 +1332,11 @@ def build_schedule_context_cached(db, version_id: Optional[int] = None) -> str:
         return ""
     if value and STORE.generation == gen:      # never cache data read across an invalidation
         _CTX_CACHE.set(key, value, _CTX_TTL)
+        if redis_set is not None:
+            try:
+                redis_set(rkey, value.encode("utf-8"), ex=int(_CTX_TTL))
+            except Exception:
+                pass
     return value
 
 
@@ -1307,6 +1413,7 @@ def collect_stats() -> Dict[str, Any]:
         },
         "chat": CHAT.stats(),
         "schedule_context_cache": _CTX_CACHE.stats(),
+        "redis": get_redis_stats(),
         "config": asdict(CFG),
     }
     for name, fn in tuple(_STATS_PROVIDERS.items()):
@@ -1331,6 +1438,14 @@ async def cache_purge(_: User = Depends(_require_admin)):
 def purge_all_caches() -> None:
     """Admin / emergency: clear AI answers (L1 + companion L2) and force a snapshot rebuild."""
     CHAT_CACHE.clear()
+    _CTX_CACHE.clear()
+    if redis_delete_pattern is not None:
+        try:
+            redis_delete_pattern("tt:chat:*")
+            redis_delete_pattern("tt:ctx:*")
+            redis_delete_pattern("tt:snapshot:*")
+        except Exception:
+            pass
     for fn in tuple(_PURGE_LISTENERS):
         try:
             fn()

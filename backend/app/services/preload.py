@@ -168,6 +168,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, text
 from concurrent.futures import ThreadPoolExecutor
 
+import pickle
 from app.api.auth import require_teacher_or_admin, require_admin
 from app.models.timetable import TimetableVersion
 from app.models.timetable_entry import TimetableEntry
@@ -178,6 +179,28 @@ import app.models.teacher  # noqa: F401
 from app.schemas.timetable import VersionDetail, VersionOut
 from app.schemas.user import UserOut
 from app.services import timetable_service
+
+try:
+    from app.core.redis import (
+        redis_get,
+        redis_set,
+        redis_delete,
+        redis_delete_pattern,
+        get_redis_stats,
+    )
+except ImportError:
+    try:
+        from backend.app.core.redis import (
+            redis_get,
+            redis_set,
+            redis_delete,
+            redis_delete_pattern,
+            get_redis_stats,
+        )
+    except ImportError:
+        redis_get = redis_set = redis_delete = redis_delete_pattern = None  # type: ignore
+        get_redis_stats = lambda: {"enabled": False, "connected": False}
+
 
 # Building blocks shared with the existing cache layer (same process, same
 # metrics, same invalidation hooks, same /api/admin/cache/stats endpoint).
@@ -538,6 +561,16 @@ class BundleStore:
             self._gen += 1
             self._dirty = True
         self._extra.clear()
+        if redis_delete is not None:
+            try:
+                redis_delete("tt:preload:bundle")
+            except Exception:
+                pass
+        if redis_delete_pattern is not None:
+            try:
+                redis_delete_pattern("tt:preload:detail:*")
+            except Exception:
+                pass
         METRICS.inc("preload_invalidations")
         loop = self.loop
         if self.cfg.eager_rebuild and loop is not None and self.recently_active():
@@ -586,8 +619,28 @@ class BundleStore:
                 if reusable:
                     bundle = cur
                 else:
-                    bundle = _build_bundle(db, fp, self.cfg)
-                    METRICS.inc("preload_builds")
+                    bundle = None
+                    if not force and redis_get is not None:
+                        try:
+                            cached_bytes = redis_get("tt:preload:bundle")
+                            if cached_bytes:
+                                candidate = pickle.loads(cached_bytes)
+                                if candidate and candidate.fingerprint == fp:
+                                    bundle = candidate
+                                    METRICS.inc("preload_redis_hits")
+                                    logger.info(f"[preload] bundle restored from Redis cache (latest={bundle.latest_id})")
+                        except Exception as exc:
+                            logger.debug(f"[preload] Redis bundle restore error: {exc}")
+
+                    if bundle is None:
+                        bundle = _build_bundle(db, fp, self.cfg)
+                        METRICS.inc("preload_builds")
+                        if redis_set is not None:
+                            try:
+                                redis_set("tt:preload:bundle", pickle.dumps(bundle), ex=int(self.cfg.hard_ttl * 2))
+                                METRICS.inc("preload_redis_sets")
+                            except Exception as exc:
+                                logger.debug(f"[preload] Redis bundle save error: {exc}")
             with self._lock:
                 if self._gen == gen:     # nothing was committed while we were reading
                     self._bundle = bundle
@@ -668,6 +721,20 @@ class BundleStore:
         blob = self._extra.get(version_id)
         if blob is not None:
             return blob
+
+        rkey = f"tt:preload:detail:{version_id}"
+        if redis_get is not None:
+            try:
+                rhit = redis_get(rkey)
+                if rhit:
+                    candidate = pickle.loads(rhit)
+                    if candidate:
+                        self._extra.set(version_id, candidate, self.cfg.hard_ttl)
+                        METRICS.inc("preload_detail_redis_hits")
+                        return candidate
+            except Exception as exc:
+                logger.debug(f"[preload] Redis detail restore error: {exc}")
+
         task = self._detail_flights.get(version_id)
         if task is not None and not task.done() and not _task_usable(task):
             task = None                                 # stale flight from an old event loop
@@ -679,6 +746,12 @@ class BundleStore:
                 result = await loop.run_in_executor(_executor(), _load_version_blob_sync, version_id)
                 if result is not None and self.generation == gen:   # never cache across a commit
                     self._extra.set(version_id, result, self.cfg.hard_ttl)
+                    if redis_set is not None:
+                        try:
+                            redis_set(rkey, pickle.dumps(result), ex=int(self.cfg.hard_ttl))
+                            METRICS.inc("preload_detail_redis_sets")
+                        except Exception:
+                            pass
                 return result
 
             task = asyncio.get_running_loop().create_task(_load())
@@ -1066,6 +1139,9 @@ def collect_preload_stats() -> Dict[str, Any]:
         "recently_active": BUNDLES.recently_active(),
         "pending_warm_tasks": len(WARM._tasks),
         "extra_detail_cache": BUNDLES._extra.stats(),
+        "redis": get_redis_stats(),
+        "redis_hits": METRICS.snapshot().get("preload_redis_hits", 0),
+        "redis_sets": METRICS.snapshot().get("preload_redis_sets", 0),
         "config": asdict(PCFG),
     }
 

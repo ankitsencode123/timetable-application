@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: str = "lax"   # lax | strict | none
     COOKIE_DOMAIN: str = ""        # leave empty for localhost
 
+    # ── Redis / Distributed Cache ─────────────────────────────────────────────
+    REDIS_URL: str = (
+        "rediss://default:gQAAAAAAAegbAAIgcDI0MWYwZjNlNzExNWQ0YmEwODRmYmYxM2VhYTBlNjcxMw"
+        "@pure-oyster-124955.upstash.io:6379"
+    )
+    REDIS_ENABLED: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -65,6 +65,7 @@ import re
 import threading
 import time
 import uuid
+import pickle
 from collections import Counter, OrderedDict, defaultdict, deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -75,6 +76,25 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from loguru import logger
 from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy.orm import Session
+
+try:
+    from app.core.redis import (
+        redis_get,
+        redis_set,
+        redis_delete,
+        get_redis_stats,
+    )
+except ImportError:
+    try:
+        from backend.app.core.redis import (
+            redis_get,
+            redis_set,
+            redis_delete,
+            get_redis_stats,
+        )
+    except ImportError:
+        redis_get = redis_set = redis_delete = None  # type: ignore
+        get_redis_stats = lambda: {"enabled": False, "connected": False}
 
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -249,24 +269,38 @@ def _clip(s: Any, n: int) -> str:
 
 
 class _TTLStore:
-    """Thread-safe LRU + TTL map."""
+    """Thread-safe LRU + TTL map with optional Redis backing."""
 
-    def __init__(self, max_items: int, ttl: float):
+    def __init__(self, max_items: int, ttl: float, prefix: Optional[str] = None):
         self._d: "OrderedDict[str, Tuple[float, Any]]" = OrderedDict()
         self._lock = threading.Lock()
         self.max_items, self.ttl = max_items, ttl
+        self.prefix = prefix
 
     def get(self, key: str):
         with self._lock:
             it = self._d.get(key)
-            if not it:
-                return None
-            ts, val = it
-            if time.time() - ts > self.ttl:
+            if it:
+                ts, val = it
+                if time.time() - ts <= self.ttl:
+                    self._d.move_to_end(key)
+                    return val
                 self._d.pop(key, None)
-                return None
-            self._d.move_to_end(key)
-            return val
+        
+        # Check Redis if prefix provided
+        if self.prefix and redis_get is not None:
+            try:
+                rkey = f"tt:{self.prefix}:{key}"
+                raw = redis_get(rkey)
+                if raw:
+                    val = pickle.loads(raw)
+                    with self._lock:
+                        self._d[key] = (time.time(), val)
+                        self._d.move_to_end(key)
+                    return val
+            except Exception:
+                pass
+        return None
 
     def set(self, key: str, val: Any):
         with self._lock:
@@ -274,11 +308,23 @@ class _TTLStore:
             self._d.move_to_end(key)
             while len(self._d) > self.max_items:
                 self._d.popitem(last=False)
+        if self.prefix and redis_set is not None:
+            try:
+                rkey = f"tt:{self.prefix}:{key}"
+                redis_set(rkey, pickle.dumps(val), ex=int(self.ttl))
+            except Exception:
+                pass
 
     def pop(self, key: str):
         with self._lock:
             it = self._d.pop(key, None)
-            return it[1] if it else None
+            val = it[1] if it else None
+        if self.prefix and redis_delete is not None:
+            try:
+                redis_delete(f"tt:{self.prefix}:{key}")
+            except Exception:
+                pass
+        return val
 
     def __len__(self):
         return len(self._d)
@@ -1228,9 +1274,9 @@ class _Session:
     counter: int = 0
 
 
-_SESSIONS = _TTLStore(500, Cfg.SESSION_TTL)
-_PLANS = _TTLStore(500, Cfg.PLAN_TTL)
-_PLAN_CACHE = _TTLStore(Cfg.CACHE_MAX, Cfg.CACHE_TTL)
+_SESSIONS = _TTLStore(500, Cfg.SESSION_TTL, prefix="action_sess")
+_PLANS = _TTLStore(500, Cfg.PLAN_TTL, prefix="action_plan")
+_PLAN_CACHE = _TTLStore(Cfg.CACHE_MAX, Cfg.CACHE_TTL, prefix="plan")
 
 
 def _get_session(key: str) -> _Session:
@@ -2315,6 +2361,7 @@ def advanced_chat_status(user: User = Depends(require_teacher_or_admin)):
         "stored_plans": len(_PLANS), "sessions": len(_SESSIONS),
         "providers": [f"{p['name']}:{p['model']}" for p in _providers()],
         "engine_simulation": _simulate_one is not None,
+        "redis": get_redis_stats(),
     }
 
 

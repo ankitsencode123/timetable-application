@@ -14,6 +14,8 @@ def test_cache_stats_admin(client, auth_headers):
     assert "uptime_seconds" in data
     assert "metrics" in data
     assert "config" in data
+    assert "redis" in data
+    assert data["redis"]["enabled"] is True
 
 
 def test_cache_purge_admin(client, auth_headers):
@@ -125,5 +127,62 @@ def test_public_chat_cache_layer_pipeline(client, db, admin_user, auth_headers):
         assert r3.status_code == 200
         assert r3.headers.get("x-cache") == "MISS"
         assert len(calls) == 2
+
+
+def test_redis_l2_chat_hit_on_memory_clear(client, db, admin_user):
+    """When in-memory L1 cache is wiped, public chat serves HIT directly from Redis L2."""
+    from app.services.cache_layer import CHAT_CACHE
+
+    calls = []
+
+    def mock_llm(snap, message):
+        calls.append(message)
+        return "Dr. Alan Turing teaches Cryptography."
+
+    with patch("app.services.cache_layer._llm_sync", side_effect=mock_llm):
+        # 1) Populate cache -> MISS, calls LLM, saves to L1 & Redis
+        r1 = client.post("/api/public/chat", json={"message": "Who teaches Cryptography?"})
+        assert r1.status_code == 200
+        assert r1.headers.get("x-cache") == "MISS"
+        assert len(calls) == 1
+
+        # 2) Wipe in-memory L1 cache completely
+        CHAT_CACHE.clear()
+        assert len(CHAT_CACHE) == 0
+
+        # 3) Query identical question -> must be served from Redis L2 as HIT without calling LLM
+        r2 = client.post("/api/public/chat", json={"message": "Who teaches Cryptography?"})
+        assert r2.status_code == 200
+        assert r2.headers.get("x-cache") == "HIT"
+        assert "Alan Turing" in r2.json()["message"]
+        assert len(calls) == 1  # No additional LLM call
+
+
+def test_redis_preload_bundle_rehydration(client, admin_user, auth_headers):
+    """Preloaded dashboard bundle is cached in Redis and rehydrated across in-memory wipes."""
+    from app.services.preload import BUNDLES
+    from app.core.redis import redis_get
+
+    # 1) Query preload bundle
+    r1 = client.get("/api/preload/bundle", headers=auth_headers)
+    assert r1.status_code == 200
+    data1 = r1.json()
+    assert "versions" in data1
+
+    # Verify bundle was written to Redis
+    cached_redis = redis_get("tt:preload:bundle")
+    assert cached_redis is not None
+
+    # 2) Wipe in-memory bundle
+    BUNDLES._bundle = None
+    BUNDLES._checked_at = 0.0
+    BUNDLES._dirty = False
+
+    # 3) Query again -> served instantly from Redis
+    r2 = client.get("/api/preload/bundle", headers=auth_headers)
+    assert r2.status_code == 200
+    data2 = r2.json()
+    assert data2["latest_version_id"] == data1["latest_version_id"]
+
 
 
